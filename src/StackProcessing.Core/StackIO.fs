@@ -2411,7 +2411,8 @@ let private bytesOfZarrImage<'T when 'T: equality> (image: Image<'T>) =
     else
         bytesOfScalarImage image
 
-let writeZarr<'T when 'T: equality>
+let writeZarrWithCompression<'T when 'T: equality>
+    (compression: ZarrCompression)
     (outputPath: string)
     (name: string)
     (depth: uint)
@@ -2448,7 +2449,8 @@ let writeZarr<'T when 'T: equality>
                 ChunkT = 1,
                 PhysicalSizeX = physicalSizeX,
                 PhysicalSizeY = physicalSizeY,
-                PhysicalSizeZ = physicalSizeZ)
+                PhysicalSizeZ = physicalSizeZ,
+                Compression = compression)
 
         let created =
             OmeZarrWriter.CreateAsync(outputPath, descriptor, CancellationToken.None)
@@ -2503,7 +2505,483 @@ let writeZarr<'T when 'T: equality>
     Stage.mapi $"writeZarr \"{outputPath}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 
+let writeZarr<'T when 'T: equality>
+    (outputPath: string)
+    (name: string)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<Image<'T>, Image<'T>> =
+
+    writeZarrWithCompression
+        ZarrCompression.BloscLz4
+        outputPath
+        name
+        depth
+        chunkX
+        chunkY
+        chunkZ
+        physicalSizeX
+        physicalSizeY
+        physicalSizeZ
+        maxConcurrentWrites
+
+let private writeZarrComplex64InterleavedFloat32PlanesWithCompression
+    (compression: ZarrCompression)
+    (outputPath: string)
+    (name: string)
+    (logicalWidth: uint)
+    (height: uint)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<Chunk<float32>, unit> =
+
+    suppressZarrNetDebugLogging ()
+
+    let logicalWidth = int logicalWidth
+    let height = int height
+    let depth = int depth
+    let chunkX = max 1u chunkX |> int
+    let chunkY = max 1u chunkY |> int
+    let chunkZ = max 1u chunkZ |> int
+    let mutable writer: OmeZarrWriter option = None
+
+    let createWriter () =
+        let descriptor =
+            BioImageDescriptor(
+                logicalWidth,
+                height,
+                ZCT(depth, 1, 1),
+                Name = name,
+                DataType = "complex64",
+                ChunkX = chunkX,
+                ChunkY = chunkY,
+                ChunkZ = chunkZ,
+                ChunkC = 1,
+                ChunkT = 1,
+                PhysicalSizeX = physicalSizeX,
+                PhysicalSizeY = physicalSizeY,
+                PhysicalSizeZ = physicalSizeZ,
+                Compression = compression)
+
+        let created =
+            OmeZarrWriter.CreateAsync(outputPath, descriptor, CancellationToken.None)
+            |> runTask
+        deleteZarrNetDebugLogs ()
+
+        if maxConcurrentWrites > 0 then
+            OmeZarrWriter.MaxConcurrentWrites <- maxConcurrentWrites
+
+        writer <- Some created
+        created
+
+    let mapper (debug: bool) (idx: int64) (chunk: Chunk<float32>) =
+        try
+            if logicalWidth <= 0 || height <= 0 || depth <= 0 then
+                invalidArg "shape" "writeZarrComplex64InterleavedFloat32 expects positive logical width, height, and depth."
+            if idx >= int64 depth then
+                failwith $"writeZarrComplex64InterleavedFloat32 received slice {idx}, but declared depth is {depth}."
+
+            let chunkWidth, chunkHeight, chunkDepth = chunk.Size
+            if chunkDepth <> 1UL then
+                failwith $"writeZarrComplex64InterleavedFloat32 expects 2D interleaved complex64 chunks with depth 1, got {chunk.Size}."
+            if chunkWidth <> uint64 (2 * logicalWidth) || chunkHeight <> uint64 height then
+                failwith $"writeZarrComplex64InterleavedFloat32 expected chunk size {2 * logicalWidth}x{height}x1, got {chunk.Size}."
+
+            let zarrWriter =
+                match writer with
+                | Some writer -> writer
+                | None -> createWriter ()
+
+            let expectedBytes = logicalWidth * height * 2 * sizeof<float32>
+            if chunk.ByteLength <> expectedBytes then
+                failwith $"writeZarrComplex64InterleavedFloat32 expected {expectedBytes} bytes, got {chunk.ByteLength}."
+
+            let planeBytes = Array.zeroCreate<byte> expectedBytes
+            Buffer.BlockCopy(chunk.Bytes, 0, planeBytes, 0, expectedBytes)
+
+            if debug then
+                printfn "[writeZarrComplex64InterleavedFloat32] Saved plane %d to %s as complex64" idx outputPath
+
+            zarrWriter.WritePlaneAsync(int idx, planeBytes, CancellationToken.None)
+            |> runUnitTask
+            deleteZarrNetDebugLogs ()
+
+            if idx = int64 (depth - 1) then
+                zarrWriter.DisposeAsync().AsTask()
+                |> runUnitTask
+                writer <- None
+                deleteZarrNetDebugLogs ()
+        finally
+            Chunk.decRef chunk
+
+    let memoryNeed nPixels =
+        // Input chunk plus the exact byte payload required by the current Zarr.NET writer.
+        nPixels * uint64 (4 + 8)
+
+    Stage.mapi $"writeZarrComplex64InterleavedFloat32 \"{outputPath}\"" mapper memoryNeed id
+
+let private writeZarrComplex64InterleavedFloat32SlabsWithCompression
+    (compression: ZarrCompression)
+    (outputPath: string)
+    (name: string)
+    (logicalWidth: uint)
+    (height: uint)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<Chunk<float32>, unit> =
+
+    suppressZarrNetDebugLogging ()
+
+    let logicalWidth = int logicalWidth
+    let height = int height
+    let depth = int depth
+    let chunkX = max 1u chunkX |> int
+    let chunkY = max 1u chunkY |> int
+    let chunkZ = max 1u chunkZ |> int
+    let mutable writer: OmeZarrWriter option = None
+    let mutable level: ResolutionLevelNode option = None
+
+    let createWriter () =
+        let descriptor =
+            BioImageDescriptor(
+                logicalWidth,
+                height,
+                ZCT(depth, 1, 1),
+                Name = name,
+                DataType = "complex64",
+                ChunkX = chunkX,
+                ChunkY = chunkY,
+                ChunkZ = chunkZ,
+                ChunkC = 1,
+                ChunkT = 1,
+                PhysicalSizeX = physicalSizeX,
+                PhysicalSizeY = physicalSizeY,
+                PhysicalSizeZ = physicalSizeZ,
+                Compression = compression)
+
+        let created =
+            OmeZarrWriter.CreateAsync(outputPath, descriptor, CancellationToken.None)
+            |> runTask
+        deleteZarrNetDebugLogs ()
+
+        if maxConcurrentWrites > 0 then
+            OmeZarrWriter.MaxConcurrentWrites <- maxConcurrentWrites
+
+        writer <- Some created
+        level <- Some(openZarrResolutionLevel outputPath 0 0)
+        created
+
+    let expectedPlaneBytes = logicalWidth * height * 2 * sizeof<float32>
+
+    let validateChunk (chunk: Chunk<float32>) =
+        let chunkWidth, chunkHeight, chunkDepth = chunk.Size
+        if chunkDepth <> 1UL then
+            failwith $"writeZarrComplex64InterleavedFloat32 expects 2D interleaved complex64 chunks with depth 1, got {chunk.Size}."
+        if chunkWidth <> uint64 (2 * logicalWidth) || chunkHeight <> uint64 height then
+            failwith $"writeZarrComplex64InterleavedFloat32 expected chunk size {2 * logicalWidth}x{height}x1, got {chunk.Size}."
+        if chunk.ByteLength <> expectedPlaneBytes then
+            failwith $"writeZarrComplex64InterleavedFloat32 expected {expectedPlaneBytes} bytes, got {chunk.ByteLength}."
+
+    let writeSlab debug slabIndex (chunks: ResizeArray<Chunk<float32>>) =
+        if logicalWidth <= 0 || height <= 0 || depth <= 0 then
+            invalidArg "shape" "writeZarrComplex64InterleavedFloat32 expects positive logical width, height, and depth."
+        if chunks.Count = 0 then
+            ()
+        else
+            let zStart = slabIndex * chunkZ
+            let zCount = chunks.Count
+            let zStop = zStart + zCount
+            if zStop > depth then
+                failwith $"writeZarrComplex64InterleavedFloat32 received slab {slabIndex} ending at z={zStop}, but declared depth is {depth}."
+
+            let slabBytes = Array.zeroCreate<byte> (expectedPlaneBytes * zCount)
+
+            for i = 0 to chunks.Count - 1 do
+                let chunk = chunks[i]
+                validateChunk chunk
+                Buffer.BlockCopy(chunk.Bytes, 0, slabBytes, i * expectedPlaneBytes, expectedPlaneBytes)
+
+            let zarrLevel =
+                match level with
+                | Some level -> level
+                | None ->
+                    createWriter () |> ignore
+                    level.Value
+
+            let region =
+                PixelRegion(
+                    [| 0L; 0L; int64 zStart; 0L; 0L |],
+                    [| 1L; 1L; int64 zStop; int64 height; int64 logicalWidth |])
+
+            if debug then
+                printfn "[writeZarrComplex64InterleavedFloat32] Saved z %d..%d to %s as complex64" zStart (zStop - 1) outputPath
+
+            zarrLevel.WriteRegionAsync(region, slabBytes, CancellationToken.None)
+            |> runUnitTask
+            deleteZarrNetDebugLogs ()
+
+            if zStop = depth then
+                match writer with
+                | Some zarrWriter ->
+                    zarrWriter.DisposeAsync().AsTask()
+                    |> runUnitTask
+                    writer <- None
+                    level <- None
+                    deleteZarrNetDebugLogs ()
+                | None -> ()
+
+    let apply debug (input: AsyncSeq<Chunk<float32>>) =
+        asyncSeq {
+            let slab = ResizeArray<Chunk<float32>>(chunkZ)
+            let mutable slabIndex = 0
+
+            let releaseSlab () =
+                for chunk in slab do
+                    Chunk.decRef chunk
+                slab.Clear()
+
+            try
+                for chunk in input do
+                    slab.Add chunk
+                    if slab.Count = chunkZ then
+                        try
+                            writeSlab debug slabIndex slab
+                        finally
+                            releaseSlab ()
+                        slabIndex <- slabIndex + 1
+
+                if slab.Count > 0 then
+                    try
+                        writeSlab debug slabIndex slab
+                    finally
+                        releaseSlab ()
+
+                yield ()
+            with
+            | ex ->
+                releaseSlab ()
+                raise ex
+        }
+
+    let memoryNeed nPixels =
+        nPixels * uint64 chunkZ * uint64 (4 + 8)
+
+    Stage.fromAsyncSeq
+        $"writeZarrComplex64InterleavedFloat32Slabs \"{outputPath}\""
+        apply
+        (ProfileTransition.create Streaming Constant)
+        (StageMemoryModel.fromSinglePeak Reduce memoryNeed)
+        id
+
+let writeZarrComplex64InterleavedFloat32WithCompression
+    (compression: ZarrCompression)
+    (outputPath: string)
+    (name: string)
+    (logicalWidth: uint)
+    (height: uint)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<Chunk<float32>, unit> =
+
+    let chunkZ = max 1u chunkZ
+    if chunkZ = 1u then
+        writeZarrComplex64InterleavedFloat32PlanesWithCompression
+            compression
+            outputPath
+            name
+            logicalWidth
+            height
+            depth
+            chunkX
+            chunkY
+            chunkZ
+            physicalSizeX
+            physicalSizeY
+            physicalSizeZ
+            maxConcurrentWrites
+    else
+        writeZarrComplex64InterleavedFloat32SlabsWithCompression
+            compression
+            outputPath
+            name
+            logicalWidth
+            height
+            depth
+            chunkX
+            chunkY
+            chunkZ
+            physicalSizeX
+            physicalSizeY
+            physicalSizeZ
+            maxConcurrentWrites
+
+let writeZarrComplex64InterleavedFloat32
+    (outputPath: string)
+    (name: string)
+    (logicalWidth: uint)
+    (height: uint)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<Chunk<float32>, unit> =
+
+    writeZarrComplex64InterleavedFloat32WithCompression
+        ZarrCompression.None
+        outputPath
+        name
+        logicalWidth
+        height
+        depth
+        chunkX
+        chunkY
+        chunkZ
+        physicalSizeX
+        physicalSizeY
+        physicalSizeZ
+        maxConcurrentWrites
+
+let fftZComplex64InterleavedZarrTiles
+    (inputPath: string)
+    (outputPath: string)
+    (name: string)
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (tileX: uint)
+    (tileY: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    =
+
+    suppressZarrNetDebugLogging ()
+    NativeSp.ensureAvailable ()
+
+    let width = int width
+    let height = int height
+    let depth = int depth
+    let tileX = max 1u tileX |> int
+    let tileY = max 1u tileY |> int
+    let chunkX = max 1u chunkX |> int
+    let chunkY = max 1u chunkY |> int
+    let chunkZ = max 1u chunkZ |> int
+
+    if width <= 0 || height <= 0 || depth <= 0 then
+        invalidArg "shape" "fftZComplex64InterleavedZarrTiles expects positive width, height, and depth."
+
+    let inputLevel = openZarrResolutionLevel inputPath 0 0
+    if not (String.Equals(inputLevel.DataType, "complex64", StringComparison.OrdinalIgnoreCase)) then
+        invalidOp $"fftZComplex64InterleavedZarrTiles expected complex64 input Zarr, got {inputLevel.DataType}."
+    if inputLevel.Shape.Length <> 5 then
+        invalidOp $"fftZComplex64InterleavedZarrTiles expected 5D OME-Zarr input, got rank {inputLevel.Shape.Length}."
+    if inputLevel.Shape[0] <> 1L || inputLevel.Shape[1] <> 1L || inputLevel.Shape[2] <> int64 depth || inputLevel.Shape[3] <> int64 height || inputLevel.Shape[4] <> int64 width then
+        let actualShape = String.Join(",", inputLevel.Shape)
+        invalidOp $"fftZComplex64InterleavedZarrTiles expected input shape [1,1,{depth},{height},{width}], got [{actualShape}]."
+
+    let descriptor =
+        BioImageDescriptor(
+            width,
+            height,
+            ZCT(depth, 1, 1),
+            Name = name,
+            DataType = "complex64",
+            ChunkX = chunkX,
+            ChunkY = chunkY,
+            ChunkZ = chunkZ,
+            ChunkC = 1,
+            ChunkT = 1,
+            PhysicalSizeX = physicalSizeX,
+            PhysicalSizeY = physicalSizeY,
+            PhysicalSizeZ = physicalSizeZ,
+            Compression = ZarrCompression.None)
+
+    let writer =
+        OmeZarrWriter.CreateAsync(outputPath, descriptor, CancellationToken.None)
+        |> runTask
+    deleteZarrNetDebugLogs ()
+
+    if maxConcurrentWrites > 0 then
+        OmeZarrWriter.MaxConcurrentWrites <- maxConcurrentWrites
+
+    let outputLevel = openZarrResolutionLevel outputPath 0 0
+
+    try
+        let mutable y0 = 0
+        while y0 < height do
+            let currentTileY = min tileY (height - y0)
+            let mutable x0 = 0
+            while x0 < width do
+                let currentTileX = min tileX (width - x0)
+                let region =
+                    PixelRegion(
+                        [| 0L; 0L; 0L; int64 y0; int64 x0 |],
+                        [| 1L; 1L; int64 depth; int64 (y0 + currentTileY); int64 (x0 + currentTileX) |])
+
+                let result =
+                    inputLevel.ReadPixelRegionAsync(region, Nullable<int>(1), CancellationToken.None)
+                    |> runTask
+
+                let expectedBytes = currentTileX * currentTileY * depth * 2 * sizeof<float32>
+                if result.Data.Length <> expectedBytes then
+                    invalidOp $"fftZComplex64InterleavedZarrTiles expected tile payload {expectedBytes} bytes, got {result.Data.Length}."
+
+                let mutable dataHandle = Unchecked.defaultof<GCHandle>
+                let mutable dataPinned = false
+                try
+                    dataHandle <- GCHandle.Alloc(result.Data, GCHandleType.Pinned)
+                    dataPinned <- true
+                    NativeSp.fftwfComplexZInplace(dataHandle.AddrOfPinnedObject(), currentTileX, currentTileY, depth, 0)
+                    |> NativeSp.checkStatus "fftwf z complex tiled"
+                finally
+                    if dataPinned then
+                        dataHandle.Free()
+
+                outputLevel.WriteRegionAsync(region, result.Data, CancellationToken.None)
+                |> runUnitTask
+                deleteZarrNetDebugLogs ()
+
+                x0 <- x0 + tileX
+            y0 <- y0 + tileY
+    finally
+        writer.DisposeAsync().AsTask()
+        |> runUnitTask
+        deleteZarrNetDebugLogs ()
+
 let private writeZarrSlabStage<'T when 'T: equality>
+    (compression: ZarrCompression)
     (outputPath: string)
     (name: string)
     (depth: uint)
@@ -2542,7 +3020,8 @@ let private writeZarrSlabStage<'T when 'T: equality>
                 ChunkT = 1,
                 PhysicalSizeX = physicalSizeX,
                 PhysicalSizeY = physicalSizeY,
-                PhysicalSizeZ = physicalSizeZ)
+                PhysicalSizeZ = physicalSizeZ,
+                Compression = compression)
 
         let created =
             OmeZarrWriter.CreateAsync(outputPath, descriptor, CancellationToken.None)
@@ -2630,7 +3109,8 @@ let private sourcePeekUInt<'S, 'T> (key: string) (pl: Plan<'S, 'T>) =
     | None ->
         failwith "Source metadata is unavailable. Use the explicit writer when the output shape is not inherited from a metadata-carrying source."
 
-let writeZarrSlabNamed<'S, 'T when 'T: equality>
+let writeZarrSlabNamedWithCompression<'S, 'T when 'T: equality>
+    (compression: ZarrCompression)
     (outputPath: string)
     (name: string)
     (chunkX: uint)
@@ -2644,7 +3124,37 @@ let writeZarrSlabNamed<'S, 'T when 'T: equality>
 
     let depth = sourcePeekUInt "depth" pl
     pl
-    >=> writeZarrSlabStage outputPath name depth chunkX chunkY physicalSizeX physicalSizeY physicalSizeZ maxConcurrentWrites
+    >=> writeZarrSlabStage compression outputPath name depth chunkX chunkY physicalSizeX physicalSizeY physicalSizeZ maxConcurrentWrites
+
+let writeZarrSlabNamed<'S, 'T when 'T: equality>
+    (outputPath: string)
+    (name: string)
+    (chunkX: uint)
+    (chunkY: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    (pl: Plan<'S, Image<'T>>)
+    : Plan<'S, Image<'T>> =
+
+    pl
+    |> writeZarrSlabNamedWithCompression ZarrCompression.BloscLz4 outputPath name chunkX chunkY physicalSizeX physicalSizeY physicalSizeZ maxConcurrentWrites
+
+let writeZarrSlabWithCompression<'S, 'T when 'T: equality>
+    (compression: ZarrCompression)
+    (outputPath: string)
+    (chunkX: uint)
+    (chunkY: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    (pl: Plan<'S, Image<'T>>)
+    : Plan<'S, Image<'T>> =
+
+    pl
+    |> writeZarrSlabNamedWithCompression compression outputPath "image" chunkX chunkY physicalSizeX physicalSizeY physicalSizeZ maxConcurrentWrites
 
 let writeZarrSlab<'S, 'T when 'T: equality>
     (outputPath: string)
@@ -2658,7 +3168,7 @@ let writeZarrSlab<'S, 'T when 'T: equality>
     : Plan<'S, Image<'T>> =
 
     pl
-    |> writeZarrSlabNamed outputPath "image" chunkX chunkY physicalSizeX physicalSizeY physicalSizeZ maxConcurrentWrites
+    |> writeZarrSlabWithCompression ZarrCompression.BloscLz4 outputPath chunkX chunkY physicalSizeX physicalSizeY physicalSizeZ maxConcurrentWrites
 
 let writeNexus<'T when 'T: equality>
     (outputPath: string)

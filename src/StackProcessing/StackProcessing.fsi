@@ -470,6 +470,48 @@ val writeZarr:
      float -> int -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
+val writeZarrWithCompression:
+  (ZarrNET.Core.ZarrCompression ->
+     string ->
+     string ->
+     uint ->
+     uint ->
+     uint ->
+     uint ->
+     float ->
+     float ->
+     float -> int -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
+    when 'a: equality
+
+val writeZarrComplex64InterleavedFloat32:
+  (string ->
+     string ->
+     uint ->
+     uint ->
+     uint ->
+     uint ->
+     uint ->
+     uint ->
+     float ->
+     float ->
+     float -> int -> StackCore.Stage<StackCore.Chunk<float32>,unit>)
+
+val fftZComplex64InterleavedZarrTiles:
+  (string ->
+     string ->
+     string ->
+     uint ->
+     uint ->
+     uint ->
+     uint ->
+     uint ->
+     uint ->
+     uint ->
+     uint ->
+     float ->
+     float ->
+     float -> int -> unit)
+
 val writeZarrSlab:
   (string ->
      uint ->
@@ -481,8 +523,33 @@ val writeZarrSlab:
      SlimPipeline.Plan<'a,StackCore.Image<'b>> ->
      SlimPipeline.Plan<'a,StackCore.Image<'b>>) when 'b: equality
 
+val writeZarrSlabWithCompression:
+  (ZarrNET.Core.ZarrCompression ->
+     string ->
+     uint ->
+     uint ->
+     float ->
+     float ->
+     float ->
+     int ->
+     SlimPipeline.Plan<'a,StackCore.Image<'b>> ->
+     SlimPipeline.Plan<'a,StackCore.Image<'b>>) when 'b: equality
+
 val writeZarrSlabNamed:
   (string ->
+     string ->
+     uint ->
+     uint ->
+     float ->
+     float ->
+     float ->
+     int ->
+     SlimPipeline.Plan<'a,StackCore.Image<'b>> ->
+     SlimPipeline.Plan<'a,StackCore.Image<'b>>) when 'b: equality
+
+val writeZarrSlabNamedWithCompression:
+  (ZarrNET.Core.ZarrCompression ->
+     string ->
      string ->
      uint ->
      uint ->

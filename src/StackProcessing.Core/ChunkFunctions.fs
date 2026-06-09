@@ -4895,6 +4895,52 @@ let copy<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :>
 
     releaseUnaryChunk $"chunkCopy.{typeof<'T>.Name}" mapper (fun n -> 2UL * chunkMemoryNeed<'T> n)
 
+let fftXYFloat32ToComplex64Interleaved : Stage<Chunk<float32>, Chunk<float32>> =
+    let mapper (input: Chunk<float32>) =
+        let width64, height64, depth64 = input.Size
+        if depth64 <> 1UL then
+            invalidArg "input" $"Chunk FFT XY expects 2D slice chunks with depth 1, got {input.Size}."
+        if width64 > uint64 Int32.MaxValue || height64 > uint64 Int32.MaxValue then
+            invalidArg "input" $"Chunk FFT XY slice dimensions must fit Int32, got {input.Size}."
+
+        let width = int width64
+        let height = int height64
+        let output = Chunk.create<float32> (2UL * width64, height64, 1UL)
+
+        try
+            let inputSpan = Chunk.span<float32> input
+            let outputSpan = Chunk.span<float32> output
+            let mutable i = 0
+            let mutable j = 0
+            while i < inputSpan.Length do
+                outputSpan[j] <- inputSpan[i]
+                outputSpan[j + 1] <- 0.0f
+                i <- i + 1
+                j <- j + 2
+
+            NativeSp.ensureAvailable ()
+            let mutable outputHandle = Unchecked.defaultof<GCHandle>
+            let mutable outputPinned = false
+            try
+                outputHandle <- GCHandle.Alloc(output.Bytes, GCHandleType.Pinned)
+                outputPinned <- true
+                NativeSp.fftwfComplexXYInplace(outputHandle.AddrOfPinnedObject(), width, height, 0)
+                |> NativeSp.checkStatus "fftwf xy complex"
+            finally
+                if outputPinned then
+                    outputHandle.Free()
+
+            output
+        with
+        | _ ->
+            Chunk.decRef output
+            reraise()
+
+    releaseUnaryChunk
+        "chunkFftXYFloat32ToComplex64Interleaved"
+        mapper
+        (fun nPixels -> nPixels * uint64 (sizeof<float32> + 2 * sizeof<float32>))
+
 let inline map<'T, 'U when 'T: equality and 'U: equality
                          and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType
                          and 'U: (new: unit -> 'U) and 'U: struct and 'U :> ValueType>
