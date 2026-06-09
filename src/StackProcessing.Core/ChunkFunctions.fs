@@ -4895,51 +4895,83 @@ let copy<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :>
 
     releaseUnaryChunk $"chunkCopy.{typeof<'T>.Name}" mapper (fun n -> 2UL * chunkMemoryNeed<'T> n)
 
+let private fftXYFloat32ToComplex64InterleavedChunk (input: Chunk<float32>) =
+    let width64, height64, depth64 = input.Size
+    if depth64 <> 1UL then
+        invalidArg "input" $"Chunk FFT XY expects 2D slice chunks with depth 1, got {input.Size}."
+    if width64 > uint64 Int32.MaxValue || height64 > uint64 Int32.MaxValue then
+        invalidArg "input" $"Chunk FFT XY slice dimensions must fit Int32, got {input.Size}."
+
+    let width = int width64
+    let height = int height64
+    let output = Chunk.create<float32> (2UL * width64, height64, 1UL)
+
+    try
+        let inputSpan = Chunk.span<float32> input
+        let outputSpan = Chunk.span<float32> output
+        let mutable i = 0
+        let mutable j = 0
+        while i < inputSpan.Length do
+            outputSpan[j] <- inputSpan[i]
+            outputSpan[j + 1] <- 0.0f
+            i <- i + 1
+            j <- j + 2
+
+        NativeSp.ensureAvailable ()
+        let mutable outputHandle = Unchecked.defaultof<GCHandle>
+        let mutable outputPinned = false
+        try
+            outputHandle <- GCHandle.Alloc(output.Bytes, GCHandleType.Pinned)
+            outputPinned <- true
+            NativeSp.fftwfComplexXYInplace(outputHandle.AddrOfPinnedObject(), width, height, 0)
+            |> NativeSp.checkStatus "fftwf xy complex"
+        finally
+            if outputPinned then
+                outputHandle.Free()
+
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
 let fftXYFloat32ToComplex64Interleaved : Stage<Chunk<float32>, Chunk<float32>> =
     let mapper (input: Chunk<float32>) =
-        let width64, height64, depth64 = input.Size
-        if depth64 <> 1UL then
-            invalidArg "input" $"Chunk FFT XY expects 2D slice chunks with depth 1, got {input.Size}."
-        if width64 > uint64 Int32.MaxValue || height64 > uint64 Int32.MaxValue then
-            invalidArg "input" $"Chunk FFT XY slice dimensions must fit Int32, got {input.Size}."
-
-        let width = int width64
-        let height = int height64
-        let output = Chunk.create<float32> (2UL * width64, height64, 1UL)
-
-        try
-            let inputSpan = Chunk.span<float32> input
-            let outputSpan = Chunk.span<float32> output
-            let mutable i = 0
-            let mutable j = 0
-            while i < inputSpan.Length do
-                outputSpan[j] <- inputSpan[i]
-                outputSpan[j + 1] <- 0.0f
-                i <- i + 1
-                j <- j + 2
-
-            NativeSp.ensureAvailable ()
-            let mutable outputHandle = Unchecked.defaultof<GCHandle>
-            let mutable outputPinned = false
-            try
-                outputHandle <- GCHandle.Alloc(output.Bytes, GCHandleType.Pinned)
-                outputPinned <- true
-                NativeSp.fftwfComplexXYInplace(outputHandle.AddrOfPinnedObject(), width, height, 0)
-                |> NativeSp.checkStatus "fftwf xy complex"
-            finally
-                if outputPinned then
-                    outputHandle.Free()
-
-            output
-        with
-        | _ ->
-            Chunk.decRef output
-            reraise()
+        fftXYFloat32ToComplex64InterleavedChunk input
 
     releaseUnaryChunk
         "chunkFftXYFloat32ToComplex64Interleaved"
         mapper
         (fun nPixels -> nPixels * uint64 (sizeof<float32> + 2 * sizeof<float32>))
+
+let fftXYFloat32ToComplex64InterleavedParallelCollect (workers: int) : Stage<Chunk<float32>, Chunk<float32>> =
+    if workers < 1 then
+        invalidArg "workers" $"Chunk FFT XY parallelCollect expects at least one worker, got {workers}."
+    if workers = 1 then
+        fftXYFloat32ToComplex64Interleaved
+    else
+        let mapper _debug (window: Window<Chunk<float32>>) =
+            match window.Items with
+            | [ chunk ] ->
+                try
+                    [ fftXYFloat32ToComplex64InterleavedChunk chunk ]
+                finally
+                    Chunk.decRef chunk
+            | items ->
+                for chunk in items do
+                    Chunk.decRef chunk
+                invalidArg "window" $"Chunk FFT XY parallelCollect expects singleton windows, got {items.Length} items."
+
+        Stage.parallelCollect
+            $"chunkFftXYFloat32ToComplex64Interleaved.parallelCollect.workers{workers}"
+            1
+            workers
+            1
+            0
+            (fun _ chunk -> chunk)
+            mapper
+            (fun nPixels -> nPixels * uint64 (sizeof<float32> + 2 * sizeof<float32>))
+            id
 
 let inline map<'T, 'U when 'T: equality and 'U: equality
                          and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType

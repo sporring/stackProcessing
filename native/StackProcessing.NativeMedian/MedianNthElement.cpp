@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <mutex>
 #include <vector>
 #include <fftw3.h>
 
@@ -9,6 +10,8 @@
 #else
 #define SP_MEDIAN_API
 #endif
+
+static std::mutex fftwf_planner_mutex;
 
 template <typename T>
 static void median_nth_slab(
@@ -402,7 +405,11 @@ static int fftwf_complex_xy_inplace(float* interleaved, int width, int height, i
 
     fftwf_complex* data = reinterpret_cast<fftwf_complex*>(interleaved);
     const int sign = inverse ? FFTW_BACKWARD : FFTW_FORWARD;
-    fftwf_plan plan = fftwf_plan_dft_2d(height, width, data, data, sign, FFTW_ESTIMATE);
+    fftwf_plan plan = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(fftwf_planner_mutex);
+        plan = fftwf_plan_dft_2d(height, width, data, data, sign, FFTW_ESTIMATE);
+    }
 
     if (plan == nullptr) {
         return 2;
@@ -429,21 +436,25 @@ static int fftwf_complex_z_inplace(float* interleaved, int width, int height, in
     int n[] = { depth };
     const int sign = inverse ? FFTW_BACKWARD : FFTW_FORWARD;
 
-    fftwf_plan plan =
-        fftwf_plan_many_dft(
-            1,
-            n,
-            plane,
-            data,
-            nullptr,
-            plane,
-            1,
-            data,
-            nullptr,
-            plane,
-            1,
-            sign,
-            FFTW_ESTIMATE);
+    fftwf_plan plan = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(fftwf_planner_mutex);
+        plan =
+            fftwf_plan_many_dft(
+                1,
+                n,
+                plane,
+                data,
+                nullptr,
+                plane,
+                1,
+                data,
+                nullptr,
+                plane,
+                1,
+                sign,
+                FFTW_ESTIMATE);
+    }
 
     if (plan == nullptr) {
         return 2;

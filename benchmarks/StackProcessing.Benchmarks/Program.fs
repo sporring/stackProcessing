@@ -61,9 +61,9 @@ Run:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-readonly --pixel-type UInt8|UInt16|Float32 --input ZARR [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-writeonly --pixel-type UInt8|UInt16|Float32 --shape WxHxD --output ZARR [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-float32-zarr --shape WxHxD --input DIR --output ZARR [--chunk-size N] [--compression none|blosc] [--available-memory BYTES]
-  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-xy-float32-zarr --shape WxHxD --input DIR --output ZARR [--chunk-size N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-xy-float32-zarr --shape WxHxD --input DIR --output ZARR [--chunk-size N] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-z-complex64-zarr --shape WxHxD --input ZARR --output ZARR [--chunk-size N]
-  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-native-float32-zarr --shape WxHxD --input DIR --output ZARR [--chunk-size N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-native-float32-zarr --shape WxHxD --input DIR --output ZARR [--chunk-size N] [--workers N] [--available-memory BYTES]
 
 ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-arraypool --operation copy|threshold|connectedComponents --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X]
@@ -1821,7 +1821,7 @@ let private zarrChunkRegions (shape: Shape) =
                         [| 1L; 1L; int64 zStop; int64 yStop; int64 xStop |])
     }
 
-let private createOmeZarrWriter output dataType (shape: Shape) =
+let private createOmeZarrWriterWithChunks output dataType (shape: Shape) chunkX chunkY chunkZ =
     let descriptor =
         BioImageDescriptor(
             int shape.Width,
@@ -1829,9 +1829,9 @@ let private createOmeZarrWriter output dataType (shape: Shape) =
             ZCT(int shape.Depth, 1, 1),
             Name = "benchmark",
             DataType = dataType,
-            ChunkX = 256,
-            ChunkY = 256,
-            ChunkZ = 16,
+            ChunkX = chunkX,
+            ChunkY = chunkY,
+            ChunkZ = chunkZ,
             ChunkC = 1,
             ChunkT = 1,
             PhysicalSizeX = 1.0,
@@ -1840,6 +1840,9 @@ let private createOmeZarrWriter output dataType (shape: Shape) =
 
     OmeZarrWriter.CreateAsync(output, descriptor, Threading.CancellationToken.None)
     |> runTask
+
+let private createOmeZarrWriter output dataType (shape: Shape) =
+    createOmeZarrWriterWithChunks output dataType shape 256 256 16
 
 let private alignOutputZarrCodecsWithInput input output =
     let inputMetadataPath = Path.Combine(input, "0", "zarr.json")
@@ -1865,6 +1868,7 @@ let private runZarrDirectCopy opts =
     let shape = require "shape" opts |> parseShape
     let input = require "input" opts
     let output = require "output" opts
+    let chunkSize = optional "chunk-size" "0" opts |> Int32.Parse
 
     ensureCleanDirectory output
 
@@ -1873,7 +1877,67 @@ let private runZarrDirectCopy opts =
     let dataType = zarrDataType pixelType
     validateZarrArrayType inputArray dataType
 
-    let writer = createOmeZarrWriter output dataType shape
+    let writer =
+        if chunkSize > 0 then
+            createOmeZarrWriterWithChunks output dataType shape chunkSize chunkSize chunkSize
+        else
+            createOmeZarrWriter output dataType shape
+    alignOutputZarrCodecsWithInput input output
+
+    try
+        let outputArray = openZarrArray output
+        let outputChunks = zarrChunkLookup outputArray
+        for inputChunk in collectZarrChunks inputArray do
+            let outputChunk = outputChunks[zarrChunkCoordKey inputChunk]
+            let encoded =
+                inputArray.ReadChunkEncodedAsync(inputChunk, Threading.CancellationToken.None)
+                |> runTask
+
+            if isNull encoded then
+                let decoded =
+                    inputArray.ReadChunkDecodedAsync(inputChunk, Threading.CancellationToken.None)
+                    |> runTask
+                outputArray.WriteChunkDecodedAsync(outputChunk, decoded, Threading.CancellationToken.None)
+                |> runUnitTask
+            else
+                outputArray.WriteChunkEncodedAsync(outputChunk, encoded, Threading.CancellationToken.None)
+                |> runUnitTask
+    finally
+        writer.DisposeAsync().AsTask()
+        |> runUnitTask
+
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    0
+
+let private runZarrDirectCopySameGrid opts =
+    let input = require "input" opts
+    let output = require "output" opts
+
+    ensureCleanDirectory output
+
+    let stopwatch = Stopwatch.StartNew()
+    let inputArray = openZarrArray input
+    let shapeValues = inputArray.Metadata.Shape
+    let chunkValues = inputArray.Metadata.ChunkShape
+    if shapeValues.Length <> 5 || chunkValues.Length <> 5 then
+        failwith $"run-zarr-direct-copy-same-grid expects TCZYX rank 5 input, got shape rank {shapeValues.Length} and chunk rank {chunkValues.Length}."
+
+    let shape =
+        { Width = uint32 shapeValues[4]
+          Height = uint32 shapeValues[3]
+          Depth = uint32 shapeValues[2] }
+
+    let dataType = inputArray.Metadata.DataType.TypeString
+    let writer =
+        createOmeZarrWriterWithChunks
+            output
+            dataType
+            shape
+            (int chunkValues[4])
+            (int chunkValues[3])
+            (int chunkValues[2])
+
     alignOutputZarrCodecsWithInput input output
 
     try
@@ -2507,12 +2571,13 @@ let private runZarrReadOnly opts =
     writeInternalSeconds stopwatch.Elapsed
     exitCode
 
-let private runZarrWriteOnlyTyped<'T when 'T: equality> (shape: Shape) output availableMemory =
+let private runZarrWriteOnlyTyped<'T when 'T: equality> (shape: Shape) output chunkSize availableMemory =
     ensureCleanDirectory output
     let src = benchmarkSource availableMemory
+    let chunkSize = max 1u chunkSize
     src
     |> zero<'T> shape.Width shape.Height shape.Depth
-    >=> writeZarr output "benchmark" shape.Depth 256u 256u 16u 1.0 1.0 1.0 0
+    >=> writeZarrWithCompression ZarrCompression.None output "benchmark" shape.Depth chunkSize chunkSize chunkSize 1.0 1.0 1.0 0
     |> sink
     0
 
@@ -2520,14 +2585,15 @@ let private runZarrWriteOnly opts =
     let pixelType = require "pixel-type" opts |> parsePixelType
     let shape = require "shape" opts |> parseShape
     let output = require "output" opts
+    let chunkSize = optional "chunk-size" "128" opts |> UInt32.Parse
     let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
     let stopwatch = Stopwatch.StartNew()
     let exitCode =
         match pixelType with
-        | UInt8 -> runZarrWriteOnlyTyped<uint8> shape output availableMemory
-        | UInt16 -> runZarrWriteOnlyTyped<uint16> shape output availableMemory
-        | Int32 -> runZarrWriteOnlyTyped<int32> shape output availableMemory
-        | Float32 -> runZarrWriteOnlyTyped<float32> shape output availableMemory
+        | UInt8 -> runZarrWriteOnlyTyped<uint8> shape output chunkSize availableMemory
+        | UInt16 -> runZarrWriteOnlyTyped<uint16> shape output chunkSize availableMemory
+        | Int32 -> runZarrWriteOnlyTyped<int32> shape output chunkSize availableMemory
+        | Float32 -> runZarrWriteOnlyTyped<float32> shape output chunkSize availableMemory
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
     exitCode
@@ -2559,6 +2625,7 @@ let private runChunkFftXYFloat32Zarr opts =
     let input = require "input" opts
     let output = require "output" opts
     let chunkSize = optional "chunk-size" "64" opts |> UInt32.Parse
+    let workers = optional "workers" "1" opts |> Int32.Parse
     let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
 
     ensureCleanDirectory output
@@ -2567,7 +2634,7 @@ let private runChunkFftXYFloat32Zarr opts =
 
     src
     |> readChunkSlices<float32> input ".tiff"
-    >=> ChunkFunctions.fftXYFloat32ToComplex64Interleaved
+    >=> ChunkFunctions.fftXYFloat32ToComplex64InterleavedParallelCollect workers
     >=> writeZarrComplex64InterleavedFloat32 output "fft_xy" shape.Width shape.Height shape.Depth chunkSize chunkSize chunkSize 1.0 1.0 1.0 0
     |> sink
 
@@ -2610,6 +2677,7 @@ let private runChunkFftNativeFloat32Zarr opts =
     let input = require "input" opts
     let output = require "output" opts
     let chunkSize = optional "chunk-size" "64" opts |> UInt32.Parse
+    let workers = optional "workers" "1" opts |> Int32.Parse
     let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
     let tempXY = output.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + ".xy.tmp.zarr"
 
@@ -2621,7 +2689,7 @@ let private runChunkFftNativeFloat32Zarr opts =
         let src = benchmarkSource availableMemory
         src
         |> readChunkSlices<float32> input ".tiff"
-        >=> ChunkFunctions.fftXYFloat32ToComplex64Interleaved
+        >=> ChunkFunctions.fftXYFloat32ToComplex64InterleavedParallelCollect workers
         >=> writeZarrComplex64InterleavedFloat32 tempXY "fft_xy" shape.Width shape.Height shape.Depth chunkSize chunkSize chunkSize 1.0 1.0 1.0 0
         |> sink
 
@@ -3982,6 +4050,7 @@ let main args =
         | _ when args[0] = "run" -> args[1..] |> parseArgs |> run
         | _ when args[0] = "run-zarr" -> args[1..] |> parseArgs |> runZarr
         | _ when args[0] = "run-zarr-direct-copy" -> args[1..] |> parseArgs |> runZarrDirectCopy
+        | _ when args[0] = "run-zarr-direct-copy-same-grid" -> args[1..] |> parseArgs |> runZarrDirectCopySameGrid
         | _ when args[0] = "run-zarr-direct-threshold" -> args[1..] |> parseArgs |> runZarrDirectThreshold
         | _ when args[0] = "run-zarr-direct-threshold-raw" -> args[1..] |> parseArgs |> runZarrDirectThresholdRaw
         | _ when args[0] = "run-zarr-direct-threshold-intype" -> args[1..] |> parseArgs |> runZarrDirectThresholdInType
