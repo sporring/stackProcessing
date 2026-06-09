@@ -563,7 +563,7 @@ type MainView() as this =
             | "Write" ->
                 match selectedFormat node with
                 | "Volume file" -> ImageFileFormat.readSupportedTypes ".tiff"
-                | "OME-Zarr" -> [ UInt8; UInt16 ]
+                | "OME-Zarr" -> [ UInt8; UInt16; Float32; Float64; Complex64 ]
                 | "NeXus/HDF5" -> [ UInt8; Int8; UInt16; Int16; UInt32; Int32; Float32; Float64 ]
                 | _ -> ImageFileFormat.supportedTypes (selectedSuffix node)
             | _ -> ImageFileFormat.supportedTypes (selectedSuffix node)

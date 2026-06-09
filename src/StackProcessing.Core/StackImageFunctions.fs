@@ -6,6 +6,8 @@ open System
 open System.Collections.Generic
 open System.Globalization
 open System.IO
+open System.Runtime.InteropServices
+open SharpFFTW
 open StackCore
 open StackIO
 open TinyLinAlg
@@ -411,6 +413,130 @@ let toComplex : Stage<Image<float> * Image<float>, Image<System.Numerics.Complex
 let polarToComplex : Stage<Image<float> * Image<float>, Image<System.Numerics.Complex>> =
     liftPairReleaseAfter "polarToComplex" Image.polarToComplex
 
+let private interleavedComplexOfReal2D (values: float32[,]) =
+    let width = values.GetLength 0
+    let height = values.GetLength 1
+    let output = Array.zeroCreate<float32> (2 * width * height)
+
+    for y in 0 .. height - 1 do
+        let row = y * width
+        for x in 0 .. width - 1 do
+            output[2 * (row + x)] <- values[x, y]
+
+    output
+
+let private interleavedComplexOfComplex2D (values: Image.ComplexFloat32[,]) =
+    let width = values.GetLength 0
+    let height = values.GetLength 1
+    let output = Array.zeroCreate<float32> (2 * width * height)
+
+    for y in 0 .. height - 1 do
+        let row = y * width
+        for x in 0 .. width - 1 do
+            let value = values[x, y]
+            let i = 2 * (row + x)
+            output[i] <- value.Real
+            output[i + 1] <- value.Imaginary
+
+    output
+
+let private scaleInterleavedComplexFloat32 (scale: float32) (values: float32[]) =
+    for i in 0 .. values.Length - 1 do
+        values[i] <- values[i] * scale
+
+let private sharpFftwResolver =
+    lazy
+        let assembly = typeof<SharpFFTW.Single.Plan>.Assembly
+
+        let resolver (library: string) (assembly: Reflection.Assembly) (searchPath: Nullable<DllImportSearchPath>) =
+            if library.StartsWith("fftw", StringComparison.Ordinal) then
+                let candidates =
+                    if RuntimeInformation.IsOSPlatform(OSPlatform.OSX) then
+                        [ $"/opt/homebrew/opt/fftw/lib/lib{library}.3.dylib"
+                          $"/opt/homebrew/lib/lib{library}.3.dylib"
+                          $"/usr/local/opt/fftw/lib/lib{library}.3.dylib"
+                          $"/usr/local/lib/lib{library}.3.dylib" ]
+                    elif RuntimeInformation.IsOSPlatform(OSPlatform.Linux) then
+                        [ $"lib{library}.so.3" ]
+                    else
+                        []
+
+                candidates
+                |> List.tryFind File.Exists
+                |> Option.map NativeLibrary.Load
+                |> Option.defaultValue IntPtr.Zero
+            else
+                IntPtr.Zero
+
+        try
+            NativeLibrary.SetDllImportResolver(assembly, DllImportResolver resolver)
+        with
+        | :? InvalidOperationException ->
+            ()
+
+let private sharpFftwXYComplexFloat32 inverse width height (interleaved: float32[]) =
+    sharpFftwResolver.Force()
+    use data = new SharpFFTW.Single.ComplexArray(interleaved)
+    use plan =
+        SharpFFTW.Single.Plan.Create2(
+            height,
+            width,
+            data,
+            data,
+            (if inverse then Direction.Backward else Direction.Forward),
+            Options.Estimate)
+
+    plan.Execute()
+    data.CopyTo(interleaved)
+
+    if inverse then
+        scaleInterleavedComplexFloat32 (1.0f / float32 (width * height)) interleaved
+
+let private complex2DOfInterleaved width height (values: float32[]) =
+    Array2D.init width height (fun x y ->
+        let i = 2 * (y * width + x)
+        Image.ComplexFloat32(values[i], values[i + 1]))
+
+let private fftwXYRealFloat32 inverse (image: Image<'T>) : Image<Image.ComplexFloat32> =
+    if image.GetDimensions() <> 2u then
+        failwith $"fftwXYRealFloat32: image must be 2D, got {image.GetDimensions()}D"
+
+    let input, shouldRelease =
+        if typeof<'T> = typeof<float32> then
+            image |> box :?> Image<float32>, false
+        else
+            image.castTo<float32>(), true
+
+    try
+        let values = input.toArray2D()
+        let width = values.GetLength 0
+        let height = values.GetLength 1
+        let interleaved = interleavedComplexOfReal2D values
+        sharpFftwXYComplexFloat32 inverse width height interleaved
+        complex2DOfInterleaved width height interleaved
+        |> fun output -> Image<Image.ComplexFloat32>.ofComplexFloat32Array2D(output, "fftwXYRealFloat32", image.index)
+    finally
+        if shouldRelease then
+            input.decRefCount()
+
+let private fftwXYComplexFloat32 inverse (image: Image<Image.ComplexFloat32>) : Image<Image.ComplexFloat32> =
+    if image.GetDimensions() <> 2u then
+        failwith $"fftwXYComplexFloat32: image must be 2D, got {image.GetDimensions()}D"
+
+    let values = image.toComplexFloat32Array2D()
+    let width = values.GetLength 0
+    let height = values.GetLength 1
+    let interleaved = interleavedComplexOfComplex2D values
+    sharpFftwXYComplexFloat32 inverse width height interleaved
+    complex2DOfInterleaved width height interleaved
+    |> fun output -> Image<Image.ComplexFloat32>.ofComplexFloat32Array2D(output, "fftwXYComplexFloat32", image.index)
+
+let FFTXYFloat32Native<'T when 'T: equality> : Stage<Image<'T>, Image<Image.ComplexFloat32>> =
+    liftUnaryReleaseAfter "FFTXYFloat32Native" (fftwXYRealFloat32 false) id id
+
+let inverseFFTXYFloat32Native : Stage<Image<Image.ComplexFloat32>, Image<Image.ComplexFloat32>> =
+    liftUnaryReleaseAfter "inverseFFTXYFloat32Native" (fftwXYComplexFloat32 true) id id
+
 let FFT<'T when 'T: equality> chunkX chunkY chunkZ : Stage<Image<'T>, Image<System.Numerics.Complex>> =
     let stage =
         StackIO.chunkedVolumeOperation
@@ -425,6 +551,21 @@ let FFT<'T when 'T: equality> chunkX chunkY chunkZ : Stage<Image<'T>, Image<Syst
     let costUnits input = inputValue input |> float
     stage
     |> withCostModel (imageOperatorCost<'T> "FFT" Map memoryModel None None None None [] costUnits)
+
+let FFTFloat32<'T when 'T: equality> chunkX chunkY chunkZ : Stage<Image<'T>, Image<Image.ComplexFloat32>> =
+    let stage =
+        StackIO.chunkedVolumeOperation
+            "FFTFloat32"
+            FFTXYFloat32Native
+            StackIO.chunkedFFTFloat32AlongZ
+            chunkX
+            chunkY
+            chunkZ
+    let memoryNeed nPixels = 2UL * nPixels * getBytesPerComponent<float32>
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let costUnits input = inputValue input |> float
+    stage
+    |> withCostModel (imageOperatorCost<'T> "FFTFloat32" Map memoryModel None None None None [] costUnits)
 
 let invFFT chunkX chunkY chunkZ : Stage<Image<System.Numerics.Complex>, Image<float>> =
     let stage =
@@ -441,6 +582,22 @@ let invFFT chunkX chunkY chunkZ : Stage<Image<System.Numerics.Complex>, Image<fl
     let costUnits input = inputValue input |> float
     stage
     |> withCostModel (imageOperatorCost<float> "InvFFT" Map memoryModel None None None None [] costUnits)
+
+let invFFTFloat32 chunkX chunkY chunkZ : Stage<Image<Image.ComplexFloat32>, Image<float32>> =
+    let stage =
+        (StackIO.chunkedVolumeOperation
+            "invFFTFloat32"
+            inverseFFTXYFloat32Native
+            StackIO.chunkedInvFFTFloat32AlongZ
+            chunkX
+            chunkY
+            chunkZ)
+        --> liftUnaryReleaseAfter "invFFTFloat32.realPart" ImageFunctions.realPartFloat32 id id
+    let memoryNeed nPixels = 2UL * nPixels * getBytesPerComponent<float32>
+    let memoryModel = StageMemoryModel.fromSinglePeak Map memoryNeed
+    let costUnits input = inputValue input |> float
+    stage
+    |> withCostModel (imageOperatorCost<float32> "InvFFTFloat32" Map memoryModel None None None None [] costUnits)
 
 let shiftFFT chunkX chunkY chunkZ : Stage<Image<System.Numerics.Complex>, Image<System.Numerics.Complex>> =
     let stage =

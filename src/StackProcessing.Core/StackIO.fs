@@ -4,6 +4,7 @@ open SlimPipeline // Core processing model
 open System
 open System.IO
 open System.Reflection
+open System.Runtime.InteropServices
 open System.Text.RegularExpressions
 open System.Threading
 open System.Threading.Tasks
@@ -293,8 +294,18 @@ let private zarrDataType<'T> () =
         "uint16"
     elif typeof<'T> = typeof<float32> then
         "float32"
+    elif typeof<'T> = typeof<float> then
+        "float64"
+    elif typeof<'T> = typeof<Image.ComplexFloat32> then
+        "complex64"
+    elif typeof<'T> = typeof<System.Numerics.Complex> then
+        "complex128"
     else
-        failwith $"ZarrNET image IO currently supports UInt8, UInt16, and Float32 scalar images, but was {typeof<'T>.Name}."
+        failwith $"ZarrNET image IO currently supports UInt8, UInt16, Float32, Float64, Complex64, and Complex128 images, but was {typeof<'T>.Name}."
+
+let private isSupportedZarrDataType (dataType: string) =
+    [ "uint8"; "uint16"; "float32"; "float64"; "complex64"; "complex128" ]
+    |> List.exists (fun supported -> String.Equals(dataType, supported, StringComparison.OrdinalIgnoreCase))
 
 let private nullableParallelChunks maxParallelChunks =
     if maxParallelChunks > 0 then
@@ -325,9 +336,49 @@ let private flatArrayOfZarrBytes<'T> (width: int) (height: int) (depth: int) (by
         blockCopyZarrBytes<float32> elementCount (elementCount * 4) bytes
         |> box
         |> unbox<'T[]>
+    elif typeof<'T> = typeof<float> then
+        blockCopyZarrBytes<float> elementCount (elementCount * 8) bytes
+        |> box
+        |> unbox<'T[]>
     else
         zarrDataType<'T> () |> ignore
         failwith "unreachable"
+
+let private complexFloat32ImageOfZarrBytes width height depth (bytes: byte[]) name =
+    let elementCount = width * height * depth
+    let components = blockCopyZarrBytes<float32> (elementCount * 2) (elementCount * 8) bytes
+    let real = Array.zeroCreate<float32> elementCount
+    let imag = Array.zeroCreate<float32> elementCount
+    for i in 0 .. elementCount - 1 do
+        let j = 2 * i
+        real[i] <- components[j]
+        imag[i] <- components[j + 1]
+
+    let realImage = Image<float32>.ofFlatArray([ uint width; uint height; uint depth ], real, $"{name}.Re")
+    let imagImage = Image<float32>.ofFlatArray([ uint width; uint height; uint depth ], imag, $"{name}.Im")
+    try
+        Image<float32>.ofImagePairToComplexFloat32 realImage imagImage
+    finally
+        realImage.decRefCount()
+        imagImage.decRefCount()
+
+let private complexFloat64ImageOfZarrBytes width height depth (bytes: byte[]) name =
+    let elementCount = width * height * depth
+    let components = blockCopyZarrBytes<float> (elementCount * 2) (elementCount * 16) bytes
+    let real = Array.zeroCreate<float> elementCount
+    let imag = Array.zeroCreate<float> elementCount
+    for i in 0 .. elementCount - 1 do
+        let j = 2 * i
+        real[i] <- components[j]
+        imag[i] <- components[j + 1]
+
+    let realImage = Image<float>.ofFlatArray([ uint width; uint height; uint depth ], real, $"{name}.Re")
+    let imagImage = Image<float>.ofFlatArray([ uint width; uint height; uint depth ], imag, $"{name}.Im")
+    try
+        Image<float>.ofImagePairToComplex realImage imagImage
+    finally
+        realImage.decRefCount()
+        imagImage.decRefCount()
 
 let private zarrSlabImageAs<'T when 'T: equality> (dataType: string) width height depth (bytes: byte[]) name =
     let castNative (nativeImage: Image<'Native>) =
@@ -347,8 +398,18 @@ let private zarrSlabImageAs<'T when 'T: equality> (dataType: string) width heigh
         flatArrayOfZarrBytes<float32> width height depth bytes
         |> fun pixels -> Image<float32>.ofFlatArray([ uint width; uint height; uint depth ], pixels, name)
         |> castNative
+    elif String.Equals(dataType, "float64", StringComparison.OrdinalIgnoreCase) then
+        flatArrayOfZarrBytes<float> width height depth bytes
+        |> fun pixels -> Image<float>.ofFlatArray([ uint width; uint height; uint depth ], pixels, name)
+        |> castNative
+    elif String.Equals(dataType, "complex64", StringComparison.OrdinalIgnoreCase) then
+        complexFloat32ImageOfZarrBytes width height depth bytes name
+        |> castNative
+    elif String.Equals(dataType, "complex128", StringComparison.OrdinalIgnoreCase) then
+        complexFloat64ImageOfZarrBytes width height depth bytes name
+        |> castNative
     else
-        failwith $"ZarrNET image IO currently supports UInt8, UInt16, and Float32 scalar datasets, but dataset type was {dataType}."
+        failwith $"ZarrNET image IO currently supports UInt8, UInt16, Float32, Float64, Complex64, and Complex128 datasets, but dataset type was {dataType}."
 
 let private openZarrResolutionLevel (path: string) multiscaleIndex datasetIndex : ResolutionLevelNode =
     suppressZarrNetDebugLogging ()
@@ -1542,10 +1603,8 @@ let private readZarrSlabStackedWithDepth<'T when 'T: equality>
         invalidArg "timepoint" $"Timepoint {timepoint} is outside the Zarr time range 0..{sizeT - 1}."
     if channel < 0 || channel >= sizeC then
         invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
-    if not (String.Equals(level.DataType, "uint8", StringComparison.OrdinalIgnoreCase)
-            || String.Equals(level.DataType, "uint16", StringComparison.OrdinalIgnoreCase)
-            || String.Equals(level.DataType, "float32", StringComparison.OrdinalIgnoreCase)) then
-        failwith $"ZarrNET image IO currently supports UInt8, UInt16, and Float32 scalar datasets, but dataset type was {level.DataType}."
+    if not (isSupportedZarrDataType level.DataType) then
+        failwith $"ZarrNET image IO currently supports UInt8, UInt16, Float32, Float64, Complex64, and Complex128 datasets, but dataset type was {level.DataType}."
 
     let slabDepth = max 1u slabDepth |> int
     let depth = (sizeZ + slabDepth - 1) / slabDepth |> uint64
@@ -1670,10 +1729,8 @@ let readZarrRandom<'T when 'T: equality>
         invalidArg "timepoint" $"Timepoint {timepoint} is outside the Zarr time range 0..{sizeT - 1}."
     if channel < 0 || channel >= sizeC then
         invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
-    if not (String.Equals(level.DataType, "uint8", StringComparison.OrdinalIgnoreCase)
-            || String.Equals(level.DataType, "uint16", StringComparison.OrdinalIgnoreCase)
-            || String.Equals(level.DataType, "float32", StringComparison.OrdinalIgnoreCase)) then
-        failwith $"ZarrNET image IO currently supports UInt8, UInt16, and Float32 scalar datasets, but dataset type was {level.DataType}."
+    if not (isSupportedZarrDataType level.DataType) then
+        failwith $"ZarrNET image IO currently supports UInt8, UInt16, Float32, Float64, Complex64, and Complex128 datasets, but dataset type was {level.DataType}."
 
     let selected = randomIndices count sizeZ
     let elementBytes =
@@ -1756,10 +1813,8 @@ let readZarrRange<'T when 'T: equality>
         invalidArg "timepoint" $"Timepoint {timepoint} is outside the Zarr time range 0..{sizeT - 1}."
     if channel < 0 || channel >= sizeC then
         invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
-    if not (String.Equals(level.DataType, "uint8", StringComparison.OrdinalIgnoreCase)
-            || String.Equals(level.DataType, "uint16", StringComparison.OrdinalIgnoreCase)
-            || String.Equals(level.DataType, "float32", StringComparison.OrdinalIgnoreCase)) then
-        failwith $"ZarrNET image IO currently supports UInt8, UInt16, and Float32 scalar datasets, but dataset type was {level.DataType}."
+    if not (isSupportedZarrDataType level.DataType) then
+        failwith $"ZarrNET image IO currently supports UInt8, UInt16, Float32, Float64, Complex64, and Complex128 datasets, but dataset type was {level.DataType}."
 
     let selected = rangeIndices first step last sizeZ
     let elementBytes =
@@ -2302,6 +2357,60 @@ let writeVolume<'T when 'T: equality> (filename: string) : Stage<Image<'T>, unit
 
     Stage.reduce "writeVolume" reducer Streaming id (fun _ -> 1UL)
 
+let private bytesOfScalarImage<'T when 'T: equality> (image: Image<'T>) =
+    if image.GetNumberOfComponentsPerPixel() <> 1u then
+        invalidArg "image" $"Expected a scalar image, got {image.GetNumberOfComponentsPerPixel()} components per pixel."
+
+    let pixels = image.toFlatArray()
+    let byteCount = pixels.Length * int (Image.getBytesPerComponent typeof<'T>)
+    let bytes = Array.zeroCreate<byte> byteCount
+    Buffer.BlockCopy(pixels, 0, bytes, 0, byteCount)
+    bytes
+
+let private interleavedComplexBytes<'Component when 'Component: equality>
+    (realImage: Image<'Component>)
+    (imagImage: Image<'Component>) =
+
+    let real = realImage.toFlatArray()
+    let imag = imagImage.toFlatArray()
+    if real.Length <> imag.Length then
+        invalidOp $"Complex image real/imaginary component sizes differ: {real.Length} vs {imag.Length}."
+
+    let components = Array.zeroCreate<'Component> (2 * real.Length)
+    for i in 0 .. real.Length - 1 do
+        let j = 2 * i
+        components[j] <- real[i]
+        components[j + 1] <- imag[i]
+
+    let byteCount = components.Length * int (Image.getBytesPerComponent typeof<'Component>)
+    let bytes = Array.zeroCreate<byte> byteCount
+    Buffer.BlockCopy(components, 0, bytes, 0, byteCount)
+    bytes
+
+let private bytesOfZarrImage<'T when 'T: equality> (image: Image<'T>) =
+    if typeof<'T> = typeof<Image.ComplexFloat32> then
+        let realItk = extractComplexRealImage (image.toSimpleITK())
+        let imagItk = extractComplexImagImage (image.toSimpleITK())
+        let realImage = Image<float32>.ofSimpleITKNDispose(realItk, "writeZarr.Re", image.index)
+        let imagImage = Image<float32>.ofSimpleITKNDispose(imagItk, "writeZarr.Im", image.index)
+        try
+            interleavedComplexBytes realImage imagImage
+        finally
+            realImage.decRefCount()
+            imagImage.decRefCount()
+    elif typeof<'T> = typeof<System.Numerics.Complex> then
+        let realItk = extractComplexRealImage (image.toSimpleITK())
+        let imagItk = extractComplexImagImage (image.toSimpleITK())
+        let realImage = Image<float>.ofSimpleITKNDispose(realItk, "writeZarr.Re", image.index)
+        let imagImage = Image<float>.ofSimpleITKNDispose(imagItk, "writeZarr.Im", image.index)
+        try
+            interleavedComplexBytes realImage imagImage
+        finally
+            realImage.decRefCount()
+            imagImage.decRefCount()
+    else
+        bytesOfScalarImage image
+
 let writeZarr<'T when 'T: equality>
     (outputPath: string)
     (name: string)
@@ -2365,7 +2474,7 @@ let writeZarr<'T when 'T: equality>
             | Some writer -> writer
             | None -> createWriter image
 
-        let planeBytes = ImageIO.bytesOfScalarImage2D image
+        let planeBytes = bytesOfZarrImage image
         if debug then
             printfn "[writeZarr] Saved plane %d to %s as %s" idx outputPath (friendlyImageTypeName image)
 
@@ -2393,16 +2502,6 @@ let writeZarr<'T when 'T: equality>
 
     Stage.mapi $"writeZarr \"{outputPath}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
-
-let private bytesOfScalarImage<'T when 'T: equality> (image: Image<'T>) =
-    if image.GetNumberOfComponentsPerPixel() <> 1u then
-        invalidArg "image" $"Expected a scalar image, got {image.GetNumberOfComponentsPerPixel()} components per pixel."
-
-    let pixels = image.toFlatArray()
-    let byteCount = pixels.Length * int (Image.getBytesPerComponent typeof<'T>)
-    let bytes = Array.zeroCreate<byte> byteCount
-    Buffer.BlockCopy(pixels, 0, bytes, 0, byteCount)
-    bytes
 
 let private writeZarrSlabStage<'T when 'T: equality>
     (outputPath: string)
@@ -2480,7 +2579,7 @@ let private writeZarrSlabStage<'T when 'T: equality>
                 createWriter image |> ignore
                 level.Value
 
-        let slabBytes = bytesOfScalarImage image
+        let slabBytes = bytesOfZarrImage image
         let region =
             PixelRegion(
                 [| 0L; 0L; int64 zStart; 0L; 0L |],
@@ -2936,6 +3035,74 @@ let chunkedFFTAlongZ debug inputDir outputDir suffix chunkX chunkY chunkZ =
 
 let chunkedInvFFTAlongZ debug inputDir outputDir suffix chunkX chunkY chunkZ =
     chunkedFFTAlongZCore true debug inputDir outputDir suffix chunkX chunkY chunkZ
+
+let private interleavedComplexOfComplex3D (values: Image.ComplexFloat32[,,]) =
+    let width = values.GetLength 0
+    let height = values.GetLength 1
+    let depth = values.GetLength 2
+    let plane = width * height
+    let output = Array.zeroCreate<float32> (2 * plane * depth)
+
+    for z in 0 .. depth - 1 do
+        let zOffset = z * plane
+        for y in 0 .. height - 1 do
+            let row = zOffset + y * width
+            for x in 0 .. width - 1 do
+                let value = values[x, y, z]
+                let i = 2 * (row + x)
+                output[i] <- value.Real
+                output[i + 1] <- value.Imaginary
+
+    output
+
+let private complex3DOfInterleaved width height depth (values: float32[]) =
+    Array3D.init width height depth (fun x y z ->
+        let i = 2 * (z * width * height + y * width + x)
+        Image.ComplexFloat32(values[i], values[i + 1]))
+
+let private fftwZComplexFloat32 inverse (image: Image<Image.ComplexFloat32>) : Image<Image.ComplexFloat32> =
+    if image.GetDimensions() <> 3u then
+        failwith $"fftwZComplexFloat32: image must be 3D, got {image.GetDimensions()}D"
+
+    NativeSp.ensureAvailable ()
+    let values = image.toComplexFloat32Array3D()
+    let width = values.GetLength 0
+    let height = values.GetLength 1
+    let depth = values.GetLength 2
+    let interleaved = interleavedComplexOfComplex3D values
+    let mutable handle = Unchecked.defaultof<GCHandle>
+
+    try
+        handle <- GCHandle.Alloc(interleaved, GCHandleType.Pinned)
+        NativeSp.fftwfComplexZInplace(handle.AddrOfPinnedObject(), width, height, depth, if inverse then 1 else 0)
+        |> NativeSp.checkStatus "fftwf z complex"
+    finally
+        if handle.IsAllocated then
+            handle.Free()
+
+    complex3DOfInterleaved width height depth interleaved
+    |> fun output -> Image<Image.ComplexFloat32>.ofComplexFloat32Array3D(output, "fftwZComplexFloat32", image.index)
+
+let private chunkedFFTFloat32AlongZCore inverse debug inputDir outputDir suffix _chunkX _chunkY chunkZ =
+    if Directory.Exists(outputDir) then Directory.Delete(outputDir, true)
+    Directory.CreateDirectory(outputDir) |> ignore
+
+    let chunkInfo = getChunkInfo inputDir suffix
+    let chunkZ = max 1u chunkZ
+
+    for i in 0 .. chunkInfo.chunks[0] - 1 do
+        for j in 0 .. chunkInfo.chunks[1] - 1 do
+            let column = readChunkColumn<Image.ComplexFloat32> inputDir suffix chunkInfo i j
+            let transformed = fftwZComplexFloat32 inverse column
+            column.decRefCount()
+            writeChunkColumn debug outputDir suffix i j chunkZ transformed
+            transformed.decRefCount()
+
+let chunkedFFTFloat32AlongZ debug inputDir outputDir suffix chunkX chunkY chunkZ =
+    chunkedFFTFloat32AlongZCore false debug inputDir outputDir suffix chunkX chunkY chunkZ
+
+let chunkedInvFFTFloat32AlongZ debug inputDir outputDir suffix chunkX chunkY chunkZ =
+    chunkedFFTFloat32AlongZCore true debug inputDir outputDir suffix chunkX chunkY chunkZ
 
 let chunkedShiftFFT debug inputDir outputDir suffix chunkX chunkY chunkZ =
     if Directory.Exists(outputDir) then Directory.Delete(outputDir, true)

@@ -115,13 +115,13 @@ module BuiltInCatalog =
       makeParameter "format" "Target" "Image stack" BasicType.String
 
   let private writeFormatDescription =
-      "Writes image data from a slice stream. Target selects whether output is an image stack directory, one volume file, an OME-Zarr store, or a NeXus/HDF5 detector dataset. File type selects the on-disk image format where that applies. The selected target controls which image types can be connected: TIFF stack/volume output supports 8/16-bit integer and Float32 scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; OME-Zarr currently supports UInt8 and UInt16; NeXus/HDF5 supports the scalar numeric set used by Studio. Cast before write when a target cannot store the current image type."
+      "Writes image data from a slice stream. Target selects whether output is an image stack directory, one volume file, an OME-Zarr store, or a NeXus/HDF5 detector dataset. File type selects the on-disk image format where that applies. The selected target controls which image types can be connected: TIFF stack/volume output supports 8/16-bit integer and Float32 scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; OME-Zarr supports UInt8, UInt16, Float32, Float64, and Complex64 from Studio; NeXus/HDF5 supports the scalar numeric set used by Studio. Cast before write when a target cannot store the current image type."
 
   let private chunkWriteFormatDescription =
       "Writes a stack as 3D chunk files for later chunked reading. The selected format controls which image types can be connected to the input pin, using the same constraints as write. MetaImage (.mha) is usually faster than TIFF for 3D chunks because each chunk is saved as a small volume rather than a stack of image pages."
 
   let private zarrFormatDescription =
-      "Reads or writes an OME-Zarr volume through ZarrNET. The current native .NET implementation is used here for UInt8 and UInt16 scalar images. readZarrSlab serves 2D slices from a selected timepoint/channel/resolution; writeZarr writes a single timepoint/channel volume and exposes chunk sizes and physical voxel spacing so Studio can be used as a stack-to-Zarr converter."
+      "Reads or writes an OME-Zarr volume through ZarrNET. The native .NET implementation supports UInt8, UInt16, Float32, Float64, Complex64, and Complex128 in StackProcessing; Studio exposes Complex64 by default to keep memory pressure low. readZarrSlab serves 2D slices from a selected timepoint/channel/resolution; writeZarr writes a single timepoint/channel volume and exposes chunk sizes and physical voxel spacing so Studio can be used as a stack-to-Zarr converter."
 
   let private nexusFormatDescription =
       "Reads a rank-3 NeXus/HDF5 detector stack through PureHDF using an explicit dataset path and axis mapping. This covers common MAX IV and ESRF detector-stack layouts while keeping streaming slice reads larger-than-memory friendly. Compressed detector files that use external HDF5 filters may require a later native/plugin fallback."
@@ -301,6 +301,7 @@ module BuiltInCatalog =
       | Float32 -> "1.0"
       | Float64
       | Number -> "1.0"
+      | Complex64 -> "1.0"
       | Complex -> "1.0"
 
   let private scalarDefaultValue tp =

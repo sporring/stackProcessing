@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdint>
 #include <vector>
+#include <fftw3.h>
 
 #if defined(_WIN32)
 #define SP_MEDIAN_API __declspec(dllexport)
@@ -385,6 +386,79 @@ static void convolve_uint8_slice_outputs(
     }
 }
 
+static void scale_complex_buffer(float* interleaved, int complex_count, float scale)
+{
+    const int value_count = 2 * complex_count;
+    for (int i = 0; i < value_count; ++i) {
+        interleaved[i] *= scale;
+    }
+}
+
+static int fftwf_complex_xy_inplace(float* interleaved, int width, int height, int inverse)
+{
+    if (interleaved == nullptr || width <= 0 || height <= 0) {
+        return 1;
+    }
+
+    fftwf_complex* data = reinterpret_cast<fftwf_complex*>(interleaved);
+    const int sign = inverse ? FFTW_BACKWARD : FFTW_FORWARD;
+    fftwf_plan plan = fftwf_plan_dft_2d(height, width, data, data, sign, FFTW_ESTIMATE);
+
+    if (plan == nullptr) {
+        return 2;
+    }
+
+    fftwf_execute(plan);
+    fftwf_destroy_plan(plan);
+
+    if (inverse) {
+        scale_complex_buffer(interleaved, width * height, 1.0f / static_cast<float>(width * height));
+    }
+
+    return 0;
+}
+
+static int fftwf_complex_z_inplace(float* interleaved, int width, int height, int depth, int inverse)
+{
+    if (interleaved == nullptr || width <= 0 || height <= 0 || depth <= 0) {
+        return 1;
+    }
+
+    const int plane = width * height;
+    fftwf_complex* data = reinterpret_cast<fftwf_complex*>(interleaved);
+    int n[] = { depth };
+    const int sign = inverse ? FFTW_BACKWARD : FFTW_FORWARD;
+
+    fftwf_plan plan =
+        fftwf_plan_many_dft(
+            1,
+            n,
+            plane,
+            data,
+            nullptr,
+            plane,
+            1,
+            data,
+            nullptr,
+            plane,
+            1,
+            sign,
+            FFTW_ESTIMATE);
+
+    if (plan == nullptr) {
+        return 2;
+    }
+
+    fftwf_execute(plan);
+    fftwf_destroy_plan(plan);
+
+    if (inverse) {
+        scale_complex_buffer(interleaved, plane * depth, 1.0f / static_cast<float>(depth));
+    }
+
+    return 0;
+}
+
 extern "C" {
 
 SP_MEDIAN_API void sp_median_uint8_nth_slab(
@@ -550,6 +624,25 @@ SP_MEDIAN_API void sp_convolve_uint8_slices(
         kernel_depth,
         output_start,
         output_count);
+}
+
+SP_MEDIAN_API int sp_fftwf_complex_xy_inplace(
+    float* interleaved,
+    int width,
+    int height,
+    int inverse)
+{
+    return fftwf_complex_xy_inplace(interleaved, width, height, inverse);
+}
+
+SP_MEDIAN_API int sp_fftwf_complex_z_inplace(
+    float* interleaved,
+    int width,
+    int height,
+    int depth,
+    int inverse)
+{
+    return fftwf_complex_z_inplace(interleaved, width, height, depth, inverse);
 }
 
 }

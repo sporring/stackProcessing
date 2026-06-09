@@ -258,6 +258,7 @@ module private ScalarNode =
           Numeric Int64
           Numeric Float32
           Numeric Float64
+          Numeric Complex64
           Numeric Complex
           Bool
           String ]
@@ -284,6 +285,7 @@ module private ScalarNode =
             | Float32
             | Float64
             | Number
+            | Complex64
             | Complex -> "1.0"
             | UInt8
             | Int8
@@ -336,6 +338,7 @@ module private ScalarNode =
             | Float32
             | Float64
             | Number
+            | Complex64
             | Complex -> isFloat trimmed || isStandardNumericName trimmed
 
     let ensureValueMatchesType (state: PipelineNodeState) =
@@ -386,6 +389,7 @@ module private ScalarOpNode =
           Numeric Int64
           Numeric Float32
           Numeric Float64
+          Numeric Complex64
           Numeric Complex ]
         |> List.map BasicType.toString
 
@@ -466,6 +470,7 @@ module private SourceImageNode =
           Int64
           Float32
           Float64
+          Complex64
           Complex ]
         |> List.map NumericType.toString
 
@@ -682,7 +687,7 @@ module private SourceImageNode =
             |> List.choose NumericType.tryParse
         | "Write" ->
             match selectedFormat state with
-            | "OME-Zarr" -> [ UInt8; UInt16 ]
+            | "OME-Zarr" -> [ UInt8; UInt16; Float32; Float64; Complex64 ]
             | "NeXus/HDF5" -> [ UInt8; Int8; UInt16; Int16; UInt32; Int32; Float32; Float64 ]
             | "Volume file" -> ImageFileFormat.readSupportedTypes ".tiff"
             | _ -> selectedSuffix state |> ImageFileFormat.supportedTypes
@@ -786,6 +791,7 @@ module private PairOperationNode =
           Int64
           Float32
           Float64
+          Complex64
           Complex ]
         |> List.map NumericType.toString
 
@@ -2116,6 +2122,7 @@ type MainWindowViewModel() as this =
                 | "FFT", "type" ->
                     let options =
                         PairOperationNode.typeOptions
+                        |> List.filter ((<>) (NumericType.toString Complex64))
                         |> List.filter ((<>) (NumericType.toString Complex))
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 

@@ -20,7 +20,7 @@ let domainSuite =
     testList "Studio.Graph domain" [
         testCase "numeric and basic type strings roundtrip" <| fun _ ->
             let numericTypes =
-                [ Number; UInt8; Int8; UInt16; Int16; UInt32; Int32; UInt64; Int64; Float32; Float64; Complex ]
+                [ Number; UInt8; Int8; UInt16; Int16; UInt32; Int32; UInt64; Int64; Float32; Float64; Complex64; Complex ]
 
             for numericType in numericTypes do
                 let text = NumericType.toString numericType

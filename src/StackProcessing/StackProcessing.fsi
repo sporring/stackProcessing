@@ -959,6 +959,17 @@ val invFFT:
     chunkY: uint ->
     chunkZ: uint -> Stage<Image<System.Numerics.Complex>,Image<float>>
 
+val FFTFloat32:
+  chunkX: uint ->
+    chunkY: uint ->
+    chunkZ: uint -> Stage<Image<'T>,Image<Image.ComplexFloat32>>
+    when 'T: equality
+
+val invFFTFloat32:
+  chunkX: uint ->
+    chunkY: uint ->
+    chunkZ: uint -> Stage<Image<Image.ComplexFloat32>,Image<float32>>
+
 val shiftFFT:
   chunkX: uint ->
     chunkY: uint ->
@@ -1629,4 +1640,3 @@ val permuteAxes:
   (uint * uint * uint ->
      uint -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
-

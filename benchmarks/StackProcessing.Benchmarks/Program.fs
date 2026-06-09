@@ -60,6 +60,7 @@ Run:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-chunk-copy --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-readonly --pixel-type UInt8|UInt16|Float32 --input ZARR [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-writeonly --pixel-type UInt8|UInt16|Float32 --shape WxHxD --output ZARR [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-float32-zarr --shape WxHxD --input DIR --output ZARR [--chunk-size N] [--available-memory BYTES]
 
 ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-arraypool --operation copy|threshold|connectedComponents --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X]
@@ -2522,6 +2523,27 @@ let private runZarrWriteOnly opts =
     writeInternalSeconds stopwatch.Elapsed
     exitCode
 
+let private runChunkFftFloat32Zarr opts =
+    let shape = require "shape" opts |> parseShape
+    let input = require "input" opts
+    let output = require "output" opts
+    let chunkSize = optional "chunk-size" "64" opts |> UInt32.Parse
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+
+    ensureCleanDirectory output
+    let src = benchmarkSource availableMemory
+    let stopwatch = Stopwatch.StartNew()
+
+    src
+    |> read<float32> input ".tiff"
+    >=> FFTFloat32<float32> chunkSize chunkSize chunkSize
+    >=> writeZarr output "fft" shape.Depth chunkSize chunkSize chunkSize 1.0 1.0 1.0 0
+    |> sink
+
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    0
+
 let private runConnectedComponents input output windowSize availableMemory =
     ensureCleanDirectory output
     let window = max 1u windowSize
@@ -3862,6 +3884,7 @@ let main args =
         | _ when args[0] = "run-zarr-chunk-copy" -> args[1..] |> parseArgs |> runZarrChunkCopy
         | _ when args[0] = "run-zarr-readonly" -> args[1..] |> parseArgs |> runZarrReadOnly
         | _ when args[0] = "run-zarr-writeonly" -> args[1..] |> parseArgs |> runZarrWriteOnly
+        | _ when args[0] = "run-chunk-fft-float32-zarr" -> args[1..] |> parseArgs |> runChunkFftFloat32Zarr
         | _ when args[0] = "run-arraypool" -> args[1..] |> parseArgs |> runArrayPool
         | _ when args[0] = "run-arraypool-slice" -> args[1..] |> parseArgs |> runArrayPoolSlice
         | _ when args[0] = "run-arraypool-slice-reuse" -> args[1..] |> parseArgs |> runArrayPoolSliceReuse

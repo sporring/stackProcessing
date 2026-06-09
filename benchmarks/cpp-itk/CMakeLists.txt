@@ -15,6 +15,7 @@ find_package(
     ITKBinaryMathematicalMorphology
     ITKConnectedComponents
     ITKConvolution
+    ITKFFT
     ITKSmoothing
 )
 include(${ITK_USE_FILE})

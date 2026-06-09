@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <complex>
 #include <cstdlib>
 #include <cstdint>
 #include <filesystem>
@@ -16,6 +17,7 @@
 #include "itkConstantBoundaryCondition.h"
 #include "itkConvolutionImageFilter.h"
 #include "itkBinaryBallStructuringElement.h"
+#include "itkForwardFFTImageFilter.h"
 #include "itkImage.h"
 #include "itkImageFileReader.h"
 #include "itkImageFileWriter.h"
@@ -36,6 +38,7 @@ struct Options {
   double threshold = 128.0;
   unsigned kernelSize = 3;
   unsigned window = 16;
+  unsigned chunkSize = 64;
 };
 
 static std::string argValue(int argc, char** argv, const std::string& name, const std::string& fallback = "") {
@@ -58,6 +61,7 @@ static Options parseOptions(int argc, char** argv) {
   options.threshold = std::stod(argValue(argc, argv, "--threshold", "128"));
   options.kernelSize = static_cast<unsigned>(std::stoul(argValue(argc, argv, "--kernel-size", "3")));
   options.window = static_cast<unsigned>(std::stoul(argValue(argc, argv, "--window", "16")));
+  options.chunkSize = static_cast<unsigned>(std::stoul(argValue(argc, argv, "--chunk-size", "64")));
   if (options.operation.empty() || options.pixelType.empty()) {
     throw std::runtime_error("required arguments: --operation --pixel-type");
   }
@@ -65,6 +69,120 @@ static Options parseOptions(int argc, char** argv) {
     throw std::runtime_error("required arguments for IO operations: --input --output");
   }
   return options;
+}
+
+static void writeTextFile(const fs::path& path, const std::string& text) {
+  fs::create_directories(path.parent_path());
+  std::ofstream out(path, std::ios::binary);
+  if (!out) {
+    throw std::runtime_error("failed to open '" + path.string() + "' for writing");
+  }
+  out << text;
+}
+
+template <typename ComplexImage>
+static void writeComplex64Zarr(typename ComplexImage::Pointer image, const fs::path& output, unsigned chunkSize) {
+  image->Update();
+
+  if (chunkSize == 0) {
+    throw std::runtime_error("--chunk-size must be positive");
+  }
+
+  if (fs::exists(output)) {
+    fs::remove_all(output);
+  }
+  fs::create_directories(output / "0" / "c");
+
+  const auto region = image->GetLargestPossibleRegion();
+  const auto size = region.GetSize();
+  const auto width = static_cast<unsigned>(size[0]);
+  const auto height = static_cast<unsigned>(size[1]);
+  const auto depth = static_cast<unsigned>(size[2]);
+
+  const std::string rootJson =
+      "{\n"
+      "  \"attributes\": {\n"
+      "    \"multiscales\": [\n"
+      "      {\n"
+      "        \"version\": \"0.4\",\n"
+      "        \"axes\": [\n"
+      "          { \"name\": \"t\", \"type\": \"time\" },\n"
+      "          { \"name\": \"c\", \"type\": \"channel\" },\n"
+      "          { \"name\": \"z\", \"type\": \"space\" },\n"
+      "          { \"name\": \"y\", \"type\": \"space\" },\n"
+      "          { \"name\": \"x\", \"type\": \"space\" }\n"
+      "        ],\n"
+      "        \"datasets\": [ { \"path\": \"0\" } ]\n"
+      "      }\n"
+      "    ],\n"
+      "    \"omero\": { \"channels\": [ { \"label\": \"0\" } ] }\n"
+      "  },\n"
+      "  \"zarr_format\": 3,\n"
+      "  \"node_type\": \"group\"\n"
+      "}\n";
+
+  const std::string arrayJson =
+      "{\n"
+      "  \"shape\": [ 1, 1, " + std::to_string(depth) + ", " + std::to_string(height) + ", " + std::to_string(width) + " ],\n"
+      "  \"data_type\": \"complex64\",\n"
+      "  \"chunk_grid\": {\n"
+      "    \"name\": \"regular\",\n"
+      "    \"configuration\": { \"chunk_shape\": [ 1, 1, " + std::to_string(chunkSize) + ", " + std::to_string(chunkSize) + ", " + std::to_string(chunkSize) + " ] }\n"
+      "  },\n"
+      "  \"chunk_key_encoding\": { \"name\": \"default\", \"configuration\": { \"separator\": \"/\" } },\n"
+      "  \"fill_value\": [ 0.0, 0.0 ],\n"
+      "  \"codecs\": [ { \"name\": \"bytes\", \"configuration\": { \"endian\": \"little\" } } ],\n"
+      "  \"attributes\": {},\n"
+      "  \"zarr_format\": 3,\n"
+      "  \"node_type\": \"array\",\n"
+      "  \"storage_transformers\": []\n"
+      "}\n";
+
+  writeTextFile(output / "zarr.json", rootJson);
+  writeTextFile(output / "0" / "zarr.json", arrayJson);
+
+  const auto* buffer = image->GetBufferPointer();
+  const auto xChunks = (width + chunkSize - 1) / chunkSize;
+  const auto yChunks = (height + chunkSize - 1) / chunkSize;
+  const auto zChunks = (depth + chunkSize - 1) / chunkSize;
+
+  for (unsigned zc = 0; zc < zChunks; ++zc) {
+    const auto z0 = zc * chunkSize;
+    const auto z1 = std::min(depth, z0 + chunkSize);
+    for (unsigned yc = 0; yc < yChunks; ++yc) {
+      const auto y0 = yc * chunkSize;
+      const auto y1 = std::min(height, y0 + chunkSize);
+      for (unsigned xc = 0; xc < xChunks; ++xc) {
+        const auto x0 = xc * chunkSize;
+        const auto x1 = std::min(width, x0 + chunkSize);
+
+        const auto values =
+            static_cast<std::size_t>(z1 - z0) * static_cast<std::size_t>(y1 - y0) * static_cast<std::size_t>(x1 - x0);
+        std::vector<float> chunk;
+        chunk.reserve(values * 2u);
+
+        for (unsigned z = z0; z < z1; ++z) {
+          for (unsigned y = y0; y < y1; ++y) {
+            const auto row = (static_cast<std::size_t>(z) * height + y) * width;
+            for (unsigned x = x0; x < x1; ++x) {
+              const auto value = buffer[row + x];
+              chunk.push_back(static_cast<float>(value.real()));
+              chunk.push_back(static_cast<float>(value.imag()));
+            }
+          }
+        }
+
+        const auto chunkPath =
+            output / "0" / "c" / "0" / "0" / std::to_string(zc) / std::to_string(yc) / std::to_string(xc);
+        fs::create_directories(chunkPath.parent_path());
+        std::ofstream out(chunkPath, std::ios::binary);
+        if (!out) {
+          throw std::runtime_error("failed to open chunk '" + chunkPath.string() + "' for writing");
+        }
+        out.write(reinterpret_cast<const char*>(chunk.data()), static_cast<std::streamsize>(chunk.size() * sizeof(float)));
+      }
+    }
+  }
 }
 
 static std::array<unsigned, 3> parseShape(const std::string& shape) {
@@ -291,6 +409,23 @@ static void runTyped(const Options& options) {
 
   auto paths = tiffFiles(options.input);
   auto input = readVolume<T>(paths);
+
+  if (options.operation == "fft-zarr") {
+    using FloatImage = itk::Image<float, 3>;
+    using CastToFloat = itk::CastImageFilter<Image, FloatImage>;
+    using FFT = itk::ForwardFFTImageFilter<FloatImage>;
+
+    auto cast = CastToFloat::New();
+    cast->SetInput(input);
+
+    auto fft = FFT::New();
+    fft->SetInput(cast->GetOutput());
+    fft->Update();
+
+    using ComplexImage = typename FFT::OutputImageType;
+    writeComplex64Zarr<ComplexImage>(fft->GetOutput(), options.output, options.chunkSize);
+    return;
+  }
 
   const auto radiusValue = static_cast<typename Image::SizeValueType>(options.radius);
   typename Image::SizeType radius;

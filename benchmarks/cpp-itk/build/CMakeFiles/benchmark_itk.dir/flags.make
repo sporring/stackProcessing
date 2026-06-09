@@ -6,7 +6,5 @@ CXX_DEFINES = -DITK_FFTIMAGEFILTERINIT_FACTORY_REGISTER_MANAGER -DITK_IMAGEIO_FA
 
 CXX_INCLUDES = -I/Users/jrh630/repositories/stackProcessing/benchmarks/cpp-itk/build/ITKFactoryRegistration -isystem /opt/homebrew/opt/itk/include/ITK-5.4
 
-CXX_FLAGSarm64 = -O3 -DNDEBUG -std=c++17 -arch arm64
-
-CXX_FLAGS = -O3 -DNDEBUG -std=c++17 -arch arm64
+CXX_FLAGS = -O3 -DNDEBUG -std=c++17
 

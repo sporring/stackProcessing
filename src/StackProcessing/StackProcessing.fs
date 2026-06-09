@@ -256,7 +256,9 @@ let conjugate : Stage<Image<System.Numerics.Complex>, Image<System.Numerics.Comp
 let toComplex : Stage<Image<float> * Image<float>, Image<System.Numerics.Complex>> = StackImageFunctions.toComplex
 let polarToComplex : Stage<Image<float> * Image<float>, Image<System.Numerics.Complex>> = StackImageFunctions.polarToComplex
 let FFT<'T when 'T: equality> chunkX chunkY chunkZ : Stage<Image<'T>, Image<System.Numerics.Complex>> = StackImageFunctions.FFT<'T> chunkX chunkY chunkZ
+let FFTFloat32<'T when 'T: equality> chunkX chunkY chunkZ : Stage<Image<'T>, Image<Image.ComplexFloat32>> = StackImageFunctions.FFTFloat32<'T> chunkX chunkY chunkZ
 let invFFT chunkX chunkY chunkZ : Stage<Image<System.Numerics.Complex>, Image<float>> = StackImageFunctions.invFFT chunkX chunkY chunkZ
+let invFFTFloat32 chunkX chunkY chunkZ : Stage<Image<Image.ComplexFloat32>, Image<float32>> = StackImageFunctions.invFFTFloat32 chunkX chunkY chunkZ
 let shiftFFT chunkX chunkY chunkZ : Stage<Image<System.Numerics.Complex>, Image<System.Numerics.Complex>> = StackImageFunctions.shiftFFT chunkX chunkY chunkZ
 let abs<'T when 'T: equality>= StackImageFunctions.abs<'T>
 let acos<'T when 'T: equality>= StackImageFunctions.acos<'T>

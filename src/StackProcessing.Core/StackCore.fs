@@ -56,6 +56,37 @@ type Histogram<'T when 'T: comparison> =
     { Counts: Map<'T, uint64>
       Binning: HistogramBinning option }
 
+module internal NativeSp =
+    [<Literal>]
+    let LibraryPath = "spnth"
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_complex_xy_inplace")>]
+    extern int fftwfComplexXYInplace(
+        nativeint interleaved,
+        int width,
+        int height,
+        int inverse)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_complex_z_inplace")>]
+    extern int fftwfComplexZInplace(
+        nativeint interleaved,
+        int width,
+        int height,
+        int depth,
+        int inverse)
+
+    let ensureAvailable () =
+        let mutable handle = nativeint 0
+        let searchPath = Nullable(DllImportSearchPath.AssemblyDirectory)
+        if NativeLibrary.TryLoad(LibraryPath, typeof<ChunkLayout>.Assembly, searchPath, &handle) then
+            NativeLibrary.Free(handle)
+        else
+            invalidOp "Native StackProcessing helper 'spnth' was not found. Build it with native/StackProcessing.NativeMedian/build.sh so the platform library is placed in the solution lib directory and copied to the application output."
+
+    let checkStatus operation status =
+        if status <> 0 then
+            invalidOp $"{operation} failed in native helper with status {status}."
+
 module Histogram =
     let ofMap counts =
         { Counts = counts

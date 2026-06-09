@@ -2169,6 +2169,97 @@ let stackProcessingSupportSuite =
                 deleteDirectory inputDir
                 deleteDirectory rootDir
 
+        testCase "writeZarr and readZarrSlab support Float64 and complex dtypes" <| fun _ ->
+            let rootDir = tempDirectory "zarr-wide-types"
+            let float64Path = Path.Combine(rootDir, "float64.zarr")
+            let complex64Path = Path.Combine(rootDir, "complex64.zarr")
+            let complex128Path = Path.Combine(rootDir, "complex128.zarr")
+            let mutable float64Slices: Image<float> list = []
+            let mutable complex64Slices: Image<ComplexFloat32> list = []
+            let mutable complex128Slices: Image<System.Numerics.Complex> list = []
+            let mutable float64Slabs: Image<float> list = []
+            let mutable complex64Slabs: Image<ComplexFloat32> list = []
+            let mutable complex128Slabs: Image<System.Numerics.Complex> list = []
+            let mutable complex128SlicesRead: Image<System.Numerics.Complex> list = []
+
+            try
+                float64Slices <-
+                    [ for z in 0 .. 1 ->
+                        Array2D.init 3 2 (fun x y -> float x + 10.0 * float y + 100.0 * float z + 0.25)
+                        |> Image<float>.ofArray2D ]
+                complex64Slices <-
+                    [ for z in 0 .. 1 ->
+                        Array2D.init 3 2 (fun x y ->
+                            ComplexFloat32(
+                                float32 (x + 10 * y + 100 * z),
+                                float32 (1000 + x + 10 * y + 100 * z)))
+                        |> Image<ComplexFloat32>.ofComplexFloat32Array2D ]
+                complex128Slices <-
+                    [ for z in 0 .. 1 ->
+                        Array2D.init 3 2 (fun x y ->
+                            System.Numerics.Complex(
+                                float (x + 10 * y + 100 * z) + 0.5,
+                                float (1000 + x + 10 * y + 100 * z) + 0.75))
+                        |> Image<System.Numerics.Complex>.ofComplexArray2D ]
+
+                imagePlan float64Slices
+                >=> writeZarr float64Path "float64" 2u 3u 2u 2u 1.0 1.0 1.0 0
+                |> sink
+
+                imagePlan complex64Slices
+                >=> writeZarr complex64Path "complex64" 2u 3u 2u 2u 1.0 1.0 1.0 0
+                |> sink
+
+                imagePlan complex128Slices
+                >=> writeZarr complex128Path "complex128" 2u 3u 2u 2u 1.0 1.0 1.0 0
+                |> sink
+
+                Expect.equal (getZarrInfo float64Path 0 0).topLeftInfo.componentType "float64" "Float64 Zarr metadata should expose float64 dtype."
+                Expect.equal (getZarrInfo complex64Path 0 0).topLeftInfo.componentType "complex64" "Complex64 Zarr metadata should expose complex64 dtype."
+                Expect.equal (getZarrInfo complex128Path 0 0).topLeftInfo.componentType "complex128" "Complex128 Zarr metadata should expose complex128 dtype."
+
+                float64Slabs <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readZarrSlabStacked<float> float64Path 0 0 0 0 0
+                    |> drainList
+                complex64Slabs <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readZarrSlabStacked<ComplexFloat32> complex64Path 0 0 0 0 0
+                    |> drainList
+                complex128Slabs <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readZarrSlabStacked<System.Numerics.Complex> complex128Path 0 0 0 0 0
+                    |> drainList
+
+                let float64Values = float64Slabs[0].toArray3D()
+                Expect.floatClose Accuracy.high float64Values[2, 1, 1] 112.25 "Float64 Zarr roundtrip should preserve payload values."
+
+                let complex64Values = complex64Slabs[0].toComplexFloat32Array3D()
+                Expect.floatClose Accuracy.high (float complex64Values[2, 1, 1].Real) 112.0 "Complex64 Zarr roundtrip should preserve real part."
+                Expect.floatClose Accuracy.high (float complex64Values[2, 1, 1].Imaginary) 1112.0 "Complex64 Zarr roundtrip should preserve imaginary part."
+
+                let complex128Values = complex128Slabs[0].toComplexArray3D()
+                Expect.floatClose Accuracy.high complex128Values[2, 1, 1].Real 112.5 "Complex128 Zarr roundtrip should preserve real part."
+                Expect.floatClose Accuracy.high complex128Values[2, 1, 1].Imaginary 1112.75 "Complex128 Zarr roundtrip should preserve imaginary part."
+
+                complex128SlicesRead <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> readZarrSlab<System.Numerics.Complex> complex128Path 0 0 0 0 0
+                    |> drainList
+                Expect.equal complex128SlicesRead.Length 2 "Complex128 readZarrSlab should unstack into individual slices."
+                let complex128SliceValues = complex128SlicesRead[1].toComplexArray2D()
+                Expect.floatClose Accuracy.high complex128SliceValues[2, 1].Real 112.5 "Complex128 readZarrSlab should preserve real part."
+                Expect.floatClose Accuracy.high complex128SliceValues[2, 1].Imaginary 1112.75 "Complex128 readZarrSlab should preserve imaginary part."
+            finally
+                disposeImages float64Slabs
+                disposeImages complex64Slabs
+                disposeImages complex128Slabs
+                disposeImages complex128SlicesRead
+                disposeImages float64Slices
+                disposeImages complex64Slices
+                disposeImages complex128Slices
+                deleteDirectory rootDir
+
         testCase "readNexusSlab reads a rank-3 HDF5 detector dataset as slices and slabs" <| fun _ ->
             let rootDir = tempDirectory "nexus-input"
             let nexusPath = Path.Combine(rootDir, "scan.h5")
@@ -3097,6 +3188,43 @@ let stackProcessingSupportSuite =
                                 expectComplexClose slice.[x, y] System.Numerics.Complex.One "Shifting a constant spectrum should remain constant."
                 finally
                     disposeImages shifted
+            finally
+                disposeImages fftSlices
+                disposeImages inputSlices
+
+        testCase "StackProcessing FFTFloat32 invFFTFloat32 stream through native FFTW chunk workspace" <| fun _ ->
+            let makeSlice z =
+                Image<float32>.ofArray2D (
+                    Array2D.init 2 2 (fun x y ->
+                        if x = 0 && y = 0 && z = 0 then 1.0f else 0.0f))
+
+            let inputSlices = [ makeSlice 0; makeSlice 1 ]
+            let fftSlices =
+                imagePlan inputSlices
+                >=> StackProcessing.FFTFloat32<float32> 1u 1u 1u
+                |> drainList
+
+            try
+                Expect.equal fftSlices.Length 2 "FFTFloat32 should emit one complex slice per input slice."
+                for slice in fftSlices do
+                    let values = slice.toComplexFloat32Array2D()
+                    for x in 0 .. 1 do
+                        for y in 0 .. 1 do
+                            Expect.floatClose Accuracy.medium (float values[x, y].Real) 1.0 "3D FFTFloat32 of an impulse should be one everywhere, real part."
+                            Expect.floatClose Accuracy.medium (float values[x, y].Imaginary) 0.0 "3D FFTFloat32 of an impulse should be real everywhere."
+
+                let recovered =
+                    imagePlan fftSlices
+                    >=> StackProcessing.invFFTFloat32 1u 1u 1u
+                    |> drainList
+
+                try
+                    Expect.equal recovered.Length 2 "invFFTFloat32 should emit one real slice per frequency slice."
+                    Expect.floatClose Accuracy.medium (float recovered[0].[0, 0]) 1.0 "invFFTFloat32 should recover the impulse."
+                    Expect.floatClose Accuracy.medium (float recovered[0].[1, 0]) 0.0 "invFFTFloat32 should recover zero pixels."
+                    Expect.floatClose Accuracy.medium (float recovered[1].[0, 0]) 0.0 "invFFTFloat32 should recover zero z-slices."
+                finally
+                    disposeImages recovered
             finally
                 disposeImages fftSlices
                 disposeImages inputSlices

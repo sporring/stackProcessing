@@ -104,6 +104,7 @@ module PipelineCodeGenerator =
             | Float32 -> $"float32 {constant}"
             | Float64
             | Number -> constant
+            | Complex64 -> $"Image.ComplexFloat32(float32 {constant}, 0.0f)"
             | Complex -> $"System.Numerics.Complex({constant}, 0.0)"
         | None ->
             match numericType with
@@ -132,6 +133,13 @@ module PipelineCodeGenerator =
             | Float64
             | Number ->
                 float64Literal trimmed
+            | Complex64 ->
+                if trimmed.StartsWith("Image.ComplexFloat32", StringComparison.Ordinal)
+                   || trimmed.StartsWith("ComplexFloat32", StringComparison.Ordinal) then
+                    trimmed
+                else
+                    let realLiteral = if hasSuffix [ "f" ] trimmed then trimmed else $"{float64Literal trimmed}f"
+                    $"Image.ComplexFloat32({realLiteral}, 0.0f)"
             | Complex ->
                 if trimmed.StartsWith("System.Numerics.Complex", StringComparison.Ordinal)
                    || trimmed.StartsWith("Complex", StringComparison.Ordinal) then
@@ -207,8 +215,8 @@ module PipelineCodeGenerator =
         | "Int64" -> "int64"
         | "Float32" -> "float32"
         | "Float64" -> "float"
-        | "Complex" | "ComplexFloat64" -> "System.Numerics.Complex"
-        | "ComplexFloat32" -> "Image.ComplexFloat32"
+        | "Complex64" | "ComplexFloat32" -> "Image.ComplexFloat32"
+        | "Complex" | "Complex128" | "ComplexFloat64" -> "System.Numerics.Complex"
         | _ -> suffix
 
     let private pixelTypeNameFromParameter key defaultType (node: SavedNode) =
