@@ -56,6 +56,40 @@ let releaseBinaryChunk name f memoryNeed : Stage<Chunk<'T> * Chunk<'U>, Chunk<'V
 let copy<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<'T>, Chunk<'T>> =
     releaseUnaryChunk $"chunkCopy.{typeof<'T>.Name}" ChunkKernel.copyChunk<'T> (fun n -> 2UL * chunkMemoryNeed<'T> n)
 
+let pad<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    lowerX upperX lowerY upperY lowerZ upperZ value
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    releaseUnaryChunk
+        $"chunkPad.{typeof<'T>.Name}"
+        (ChunkKernel.padChunk<'T> lowerX upperX lowerY upperY lowerZ upperZ value)
+        (fun n -> 3UL * chunkMemoryNeed<'T> n)
+
+let crop<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    lowerX upperX lowerY upperY lowerZ upperZ
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    releaseUnaryChunk
+        $"chunkCrop.{typeof<'T>.Name}"
+        (ChunkKernel.cropChunk<'T> lowerX upperX lowerY upperY lowerZ upperZ)
+        (fun n -> 2UL * chunkMemoryNeed<'T> n)
+
+let squeeze<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    releaseUnaryChunk $"chunkSqueeze.{typeof<'T>.Name}" ChunkKernel.squeezeChunk<'T> (fun n -> 2UL * chunkMemoryNeed<'T> n)
+
+let concatenateAlong<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    axis
+    : Stage<Chunk<'T> * Chunk<'T>, Chunk<'T>> =
+    let mapper a b = ChunkKernel.concatenateChunk<'T> axis a b
+    releaseBinaryChunk $"chunkConcatenateAlong{axis}.{typeof<'T>.Name}" mapper (fun n -> 3UL * chunkMemoryNeed<'T> n)
+
+let permuteAxes<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    order
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    releaseUnaryChunk
+        $"chunkPermuteAxes.{typeof<'T>.Name}"
+        (ChunkKernel.permuteAxesChunk<'T> (order |> Seq.toArray))
+        (fun n -> 2UL * chunkMemoryNeed<'T> n)
+
 let connectedComponentsSauf3DUInt8UInt32ArrayUf () = StackConnectedComponents.connectedComponentsSauf3DUInt8UInt32ArrayUf ()
 let connectedComponentsSauf3DUInt8UInt32 () = StackConnectedComponents.connectedComponentsSauf3DUInt8UInt32 ()
 let connectedComponentsSauf3DUInt8UInt32ParallelCollect windowSize workers = StackConnectedComponents.connectedComponentsSauf3DUInt8UInt32ParallelCollect windowSize workers
@@ -354,6 +388,18 @@ let invertIntensity<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
         unbox (box (invertIntensityFloat32 maximum))
     else
         Stage.compose (castToFloat32<'T>) (Stage.compose (invertIntensityFloat32 maximum) (castFromFloat32<'T>))
+
+let addNormalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> mean stddev : Stage<Chunk<'T>, Chunk<'T>> =
+    let memoryNeed n = 2UL * chunkMemoryNeed<'T> n
+    releaseUnaryChunk $"chunkAddNormalNoise.{typeof<'T>.Name}" (ChunkKernel.addNormalNoiseChunk<'T> mean stddev) memoryNeed
+
+let addSaltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> probability : Stage<Chunk<'T>, Chunk<'T>> =
+    let memoryNeed n = 2UL * chunkMemoryNeed<'T> n
+    releaseUnaryChunk $"chunkAddSaltAndPepperNoise.{typeof<'T>.Name}" (ChunkKernel.addSaltAndPepperNoiseChunk<'T> probability) memoryNeed
+
+let addShotNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> scale : Stage<Chunk<'T>, Chunk<'T>> =
+    let memoryNeed n = 2UL * chunkMemoryNeed<'T> n
+    releaseUnaryChunk $"chunkAddShotNoise.{typeof<'T>.Name}" (ChunkKernel.addShotNoiseChunk<'T> scale) memoryNeed
 
 type DenseHistogram = ChunkKernel.DenseHistogram
 type LeftEdgeHistogram = ChunkKernel.LeftEdgeHistogram

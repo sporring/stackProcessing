@@ -27,6 +27,9 @@ implementation before Chunk can act as the regular StackProcessing backbone.
   - same-type intensity wrappers: `shiftScale`, `clamp`, `intensityWindow`,
     and `invertIntensity`; non-Float32 inputs explicitly detour through
     Float32 and cast back.
+  - Normal, salt-and-pepper, and shot noise have simple Chunk-native stages.
+  - Structural transforms: padding, crop, squeeze, concatenate along an axis,
+    and axis permutation.
 - Existing chunk-native analysis and neighbourhood stages:
   - `thresholdBinary`, `thresholdNative`, and `thresholdNativeParallelCollect`
   - `castToUInt8`, `castToFloat32`, `castFromFloat32`
@@ -49,6 +52,7 @@ implementation before Chunk can act as the regular StackProcessing backbone.
     including a `ParallelCollect` variant
   - XY FFT for `Float32` chunks to complex64-interleaved `Float32` chunks,
     including a `ParallelCollect` variant
+    
 
 ## Still Needing Chunk Versions
 
@@ -62,20 +66,19 @@ implementation before Chunk can act as the regular StackProcessing backbone.
   `mapVectorElements`, `vectorDot`, `vectorCross3D`, `vectorAngleTo`,
   structure-tensor helpers, and vector color conversion.
 - Geometric and resampling operations remain Image/ITK paths:
-  `euler2DTransform`, `euler2DRotate`, `resample2D`, affine resampling, and
-  other coordinate-space operations.
+  `euler2DTransform`, `euler2DRotate`, `resample2D`, and other coordinate-space
+  operations. Affine resampling now has a first simple Chunk-slice stage, but it
+  still needs optimization before it should be considered final.
 - Full FFT workflows and complex-valued arithmetic remain Image/ITK paths.
   The Chunk path currently has native XY FFT for `Float32` chunks to
-  complex64-interleaved `Float32` storage.
+  complex64-interleaved `Float32` storage. Also, it needs speedup!
+- Signed distance band function needs a Chunk version.
 - Exact or ITK-backed neighbourhood filters still need either native Chunk
   versions or explicit bridge decisions:
   bilateral, gradient magnitude, Sobel magnitude, Laplacian, Gaussian
   derivatives, signed distance, label contour, and exact spherical morphology.
-- Noise generators are not yet Chunk-native:
-  normal, salt-and-pepper, shot, and speckle noise.
-- Padding, crop, squeeze, concatenate, stack/unstack, and axis permutation need
-  a Chunk policy. Some are structural enough to belong in `Chunk`; others may
-  be better as `ChunkFunctions`.
+- Stack/unstack still need a Chunk policy. The simple structural single-Chunk
+  transforms now live in `ChunkFunctions`.
 
 ## Design Notes
 
@@ -89,3 +92,4 @@ implementation before Chunk can act as the regular StackProcessing backbone.
   to vector lanes.
 - The bridge functions copy by design. They should be used at ITK or legacy
   Image boundaries, not inside hot chunk pipelines.
+- We are for the moment not porting recursive gaussian filter, speckle noise

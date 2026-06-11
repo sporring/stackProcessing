@@ -2,6 +2,8 @@ module StackBias
 
 open System
 open System.Globalization
+open System.Runtime.InteropServices
+open FSharp.Control
 open Image
 open Image.InternalHelpers
 open SlimPipeline
@@ -191,6 +193,26 @@ let private ensureShape state (image: Image<'T>) =
 
     width, height
 
+let private ensureChunkShape state (chunk: Chunk<'T>) =
+    let width, height, chunkDepth = chunk.Size
+    if chunkDepth <> 1UL then
+        invalidOp $"Bias model fit expects 2D slice chunks with depth 1, got {chunk.Size}."
+
+    let width = uint width
+    let height = uint height
+
+    match state.Width, state.Height with
+    | None, None ->
+        state.Width <- Some width
+        state.Height <- Some height
+    | Some expectedWidth, Some expectedHeight when expectedWidth = width && expectedHeight = height -> ()
+    | Some expectedWidth, Some expectedHeight ->
+        invalidOp $"Bias model fit expected {expectedWidth}x{expectedHeight} chunks, got {width}x{height}."
+    | _ ->
+        invalidOp "Bias model fit has inconsistent shape state."
+
+    width, height
+
 let private addImageObservations state (image: Image<'T>) mask =
     try
         let width, height = ensureShape state image
@@ -220,6 +242,52 @@ let private addImageObservations state (image: Image<'T>) mask =
     finally
         image.decRefCount()
         mask |> Option.iter (fun (maskImage: Image<uint8>) -> maskImage.decRefCount())
+
+    state
+
+let private addChunkObservationsAt<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    z
+    (state: BiasFitState)
+    (chunk: Chunk<'T>)
+    (mask: Chunk<uint8> option)
+    =
+    try
+        let width, height = ensureChunkShape state chunk
+        if z >= state.Depth then
+            invalidOp $"Bias model fit got slice index {z}, outside declared depth {state.Depth}."
+
+        mask
+        |> Option.iter (fun maskChunk ->
+            let maskWidth, maskHeight, maskDepth = maskChunk.Size
+            if maskDepth <> 1UL || maskWidth <> uint64 width || maskHeight <> uint64 height then
+                invalidOp $"fitBiasModelChunkMasked expects image and mask chunks with the same 2D shape at slice {z}.")
+
+        let widthI = int width
+        let heightI = int height
+        let pixels = Chunk.span<'T> chunk
+        let terms = state.Terms |> List.toArray
+        let xPowers = coordinatePowers width state.Order
+        let yPowers = coordinatePowers height state.Order
+        let zPowers = coordinatePowers state.Depth state.Order
+        let zIndex = int z
+
+        match mask with
+        | None ->
+            for y in 0 .. heightI - 1 do
+                for x in 0 .. widthI - 1 do
+                    let values = basisValues terms xPowers yPowers zPowers x y zIndex
+                    observePixelValues state values (pixels[flatIndex2 widthI x y] |> toDouble)
+        | Some maskChunk ->
+            let maskPixels = Chunk.span<uint8> maskChunk
+            for y in 0 .. heightI - 1 do
+                for x in 0 .. widthI - 1 do
+                    let i = flatIndex2 widthI x y
+                    if maskPixels[i] <> 0uy then
+                        let values = basisValues terms xPowers yPowers zPowers x y zIndex
+                        observePixelValues state values (pixels[i] |> toDouble)
+    finally
+        Chunk.decRef chunk
+        mask |> Option.iter Chunk.decRef
 
     state
 
@@ -254,6 +322,54 @@ let fitBiasModelMasked<'T when 'T: equality> order depth : Stage<Image<'T> * Ima
 
     Stage.fold "fitBiasModelMasked" folder (emptyFitState order depth) id (fun _ -> 1UL)
     --> Stage.map "fitBiasModelMasked: solve" (fun _ state -> stateToModel state) id id
+
+let fitBiasModelChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    order
+    depth
+    : Stage<Chunk<'T>, BiasPolynomialModel> =
+    let name = $"fitBiasModelChunk.{typeof<'T>.Name}"
+    let memoryNeed n = n * uint64 (Marshal.SizeOf<'T>())
+    let apply _debug (input: AsyncSeq<Chunk<'T>>) =
+        asyncSeq {
+            let! chunks = input |> AsyncSeq.toListAsync
+            let state = emptyFitState order depth
+            chunks
+            |> List.iteri (fun z chunk ->
+                addChunkObservationsAt (uint z) state chunk None |> ignore)
+            yield stateToModel state
+        }
+
+    let pipe =
+        { Name = name
+          Apply = apply
+          Profile = Streaming }
+
+    Stage.fromPipe name (ProfileTransition.create Streaming Streaming) memoryNeed (fun _ -> 1UL) pipe
+    |> Stage.withSliceCardinality (SliceCardinality.reduceTo 1UL)
+
+let fitBiasModelChunkMasked<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    order
+    depth
+    : Stage<Chunk<'T> * Chunk<uint8>, BiasPolynomialModel> =
+    let name = $"fitBiasModelChunkMasked.{typeof<'T>.Name}"
+    let memoryNeed n = n * uint64 (Marshal.SizeOf<'T>() + Marshal.SizeOf<uint8>())
+    let apply _debug (input: AsyncSeq<Chunk<'T> * Chunk<uint8>>) =
+        asyncSeq {
+            let! chunks = input |> AsyncSeq.toListAsync
+            let state = emptyFitState order depth
+            chunks
+            |> List.iteri (fun z (chunk, mask) ->
+                addChunkObservationsAt (uint z) state chunk (Some mask) |> ignore)
+            yield stateToModel state
+        }
+
+    let pipe =
+        { Name = name
+          Apply = apply
+          Profile = Streaming }
+
+    Stage.fromPipe name (ProfileTransition.create Streaming Streaming) memoryNeed (fun _ -> 1UL) pipe
+    |> Stage.withSliceCardinality (SliceCardinality.reduceTo 1UL)
 
 let private correctedImage (model: BiasPolynomialModel) (image: Image<'T>) mask =
     try
@@ -297,8 +413,112 @@ let private correctedImage (model: BiasPolynomialModel) (image: Image<'T>) mask 
         image.decRefCount()
         mask |> Option.iter (fun (maskImage: Image<uint8>) -> maskImage.decRefCount())
 
+let private correctedChunkAt<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    z
+    (model: BiasPolynomialModel)
+    (chunk: Chunk<'T>)
+    (mask: Chunk<uint8> option)
+    : Chunk<float>
+    =
+    try
+        let width, height, depth = chunk.Size
+        if depth <> 1UL then
+            invalidOp $"Bias correction expects 2D slice chunks with depth 1, got {chunk.Size}."
+        if model.Width <> uint width || model.Height <> uint height then
+            invalidOp $"Bias correction model expects {model.Width}x{model.Height} chunks, got {width}x{height} at slice {z}."
+        if z >= model.Depth then
+            invalidOp $"Bias correction got slice index {z}, outside model depth {model.Depth}."
+
+        mask
+        |> Option.iter (fun maskChunk ->
+            let maskWidth, maskHeight, maskDepth = maskChunk.Size
+            if maskDepth <> 1UL || maskWidth <> width || maskHeight <> height then
+                invalidOp $"correctBiasChunkMasked expects image and mask chunks with the same 2D shape at slice {z}.")
+
+        let widthI = int width
+        let heightI = int height
+        let output = Chunk.create<float> (width, height, 1UL)
+
+        try
+            let inputPixels = Chunk.span<'T> chunk
+            let outputPixels = Chunk.span<float> output
+            let terms = model.Terms |> List.toArray
+            let coefficients = model.Coefficients |> List.toArray
+            let xPowers = coordinatePowers model.Width model.Order
+            let yPowers = coordinatePowers model.Height model.Order
+            let zPowers = coordinatePowers model.Depth model.Order
+            let zIndex = int z
+
+            match mask with
+            | None ->
+                for y in 0 .. heightI - 1 do
+                    for x in 0 .. widthI - 1 do
+                        let i = flatIndex2 widthI x y
+                        let input = inputPixels[i] |> toDouble
+                        outputPixels[i] <- input - evaluateValues terms coefficients xPowers yPowers zPowers x y zIndex
+            | Some maskChunk ->
+                let maskPixels = Chunk.span<uint8> maskChunk
+                for y in 0 .. heightI - 1 do
+                    for x in 0 .. widthI - 1 do
+                        let i = flatIndex2 widthI x y
+                        let input = inputPixels[i] |> toDouble
+                        outputPixels[i] <-
+                            if maskPixels[i] <> 0uy then input - evaluateValues terms coefficients xPowers yPowers zPowers x y zIndex
+                            else input
+
+            output
+        with
+        | _ ->
+            Chunk.decRef output
+            reraise()
+    finally
+        Chunk.decRef chunk
+        mask |> Option.iter Chunk.decRef
+
 let correctBias<'T when 'T: equality> model : Stage<Image<'T>, Image<float>> =
     Stage.map "correctBias" (fun _ image -> correctedImage model image None) id id
 
 let correctBiasMasked<'T when 'T: equality> model : Stage<Image<'T> * Image<uint8>, Image<float>> =
     Stage.map "correctBiasMasked" (fun _ (image, mask) -> correctedImage model image (Some mask)) id id
+
+let correctBiasChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    model
+    : Stage<Chunk<'T>, Chunk<float>> =
+    let name = $"correctBiasChunk.{typeof<'T>.Name}"
+    let memoryNeed n = n * uint64 (Marshal.SizeOf<'T>() + Marshal.SizeOf<float>())
+    let apply _debug (input: AsyncSeq<Chunk<'T>>) =
+        asyncSeq {
+            let mutable z = 0u
+            for chunk in input do
+                let output = correctedChunkAt z model chunk None
+                z <- z + 1u
+                yield output
+        }
+
+    let pipe =
+        { Name = name
+          Apply = apply
+          Profile = Streaming }
+
+    Stage.fromPipe name (ProfileTransition.create Streaming Streaming) memoryNeed id pipe
+
+let correctBiasChunkMasked<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    model
+    : Stage<Chunk<'T> * Chunk<uint8>, Chunk<float>> =
+    let name = $"correctBiasChunkMasked.{typeof<'T>.Name}"
+    let memoryNeed n = n * uint64 (Marshal.SizeOf<'T>() + Marshal.SizeOf<uint8>() + Marshal.SizeOf<float>())
+    let apply _debug (input: AsyncSeq<Chunk<'T> * Chunk<uint8>>) =
+        asyncSeq {
+            let mutable z = 0u
+            for chunk, mask in input do
+                let output = correctedChunkAt z model chunk (Some mask)
+                z <- z + 1u
+                yield output
+        }
+
+    let pipe =
+        { Name = name
+          Apply = apply
+          Profile = Streaming }
+
+    Stage.fromPipe name (ProfileTransition.create Streaming Streaming) memoryNeed id pipe

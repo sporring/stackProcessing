@@ -115,6 +115,11 @@ let readSlabStacked<'T when 'T: equality> = StackIO.readSlabStacked<'T>
 let readSlabAsWindows<'T when 'T: equality> = StackIO.readSlabAsWindows<'T>
 let readSlab<'T when 'T: equality> = StackIO.readSlab<'T>
 let readChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = StackIO.readChunkSlices<'T>
+let chunkPad<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.pad<'T>
+let chunkCrop<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.crop<'T>
+let chunkSqueeze<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.squeeze<'T>
+let chunkConcatenateAlong<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.concatenateAlong<'T>
+let chunkPermuteAxes<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.permuteAxes<'T>
 let convolveNativeXParallelCollect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.convolveNativeXParallelCollect<'T>
 let convolveNativeYParallelCollect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.convolveNativeYParallelCollect<'T>
 let convolveNativeZParallelCollect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.convolveNativeZParallelCollect<'T>
@@ -130,6 +135,9 @@ let gaussianFilterNativeParallelCollectXYZ<'T when 'T: equality and 'T: (new: un
 let sobelXNativeParallelCollect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.sobelXNativeParallelCollect<'T>
 let sobelYNativeParallelCollect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.sobelYNativeParallelCollect<'T>
 let sobelZNativeParallelCollect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.sobelZNativeParallelCollect<'T>
+let chunkAddNormalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.addNormalNoise<'T>
+let chunkAddSaltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.addSaltAndPepperNoise<'T>
+let chunkAddShotNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.addShotNoise<'T>
 let readZarrSlabStacked<'T when 'T: equality> = StackIO.readZarrSlabStacked<'T>
 let readZarrSlab<'T when 'T: equality> = StackIO.readZarrSlab<'T>
 let readZarrRandom<'T when 'T: equality> = StackIO.readZarrRandom<'T>
@@ -232,6 +240,7 @@ let histogram = StackObjects.histogram
 
 // //////////////////// StackAffineResampler
 let resampleAffineFromChunks = StackAffineResampler.resampleAffineFromChunks
+let resampleAffineChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = StackAffineResampler.resampleAffineChunk<'T>
 let resampleAffine = StackAffineResampler.resampleAffine
 
 // //////////////////// StackImageFunctions
@@ -345,8 +354,12 @@ let sumProjection<'T when 'T: equality> = StackImageFunctions.sumProjection<'T>
 let volume = StackImageFunctions.volume
 let fitBiasModel<'T when 'T: equality> = StackBias.fitBiasModel<'T>
 let fitBiasModelMasked<'T when 'T: equality> = StackBias.fitBiasModelMasked<'T>
+let fitBiasModelChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = StackBias.fitBiasModelChunk<'T>
+let fitBiasModelChunkMasked<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = StackBias.fitBiasModelChunkMasked<'T>
 let correctBias<'T when 'T: equality> = StackBias.correctBias<'T>
 let correctBiasMasked<'T when 'T: equality> = StackBias.correctBiasMasked<'T>
+let correctBiasChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = StackBias.correctBiasChunk<'T>
+let correctBiasChunkMasked<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = StackBias.correctBiasChunkMasked<'T>
 let serialIdentityManifest = StackSerialSections.serialIdentityManifest
 let serialPolynomialBiasCorrect<'T when 'T: equality> = StackSerialSections.serialPolynomialBiasCorrect<'T>
 let serialEstTrans<'T when 'T: equality> = StackSerialSections.serialEstTrans<'T>

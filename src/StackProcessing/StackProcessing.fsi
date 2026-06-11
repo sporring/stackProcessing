@@ -323,6 +323,52 @@ val readChunkSlices<'T
     when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
          'T :> System.ValueType
 
+val chunkPad<'T
+               when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+                    'T :> System.ValueType> :
+  (uint ->
+     uint ->
+     uint ->
+     uint ->
+     uint ->
+     uint -> 'T -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkCrop<'T
+                when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+                     'T :> System.ValueType> :
+  (uint ->
+     uint ->
+     uint ->
+     uint ->
+     uint -> uint -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkSqueeze<'T
+                   when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+                        'T :> System.ValueType> :
+  StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkConcatenateAlong<'T
+                            when 'T: equality and 'T: (new: unit -> 'T) and
+                                 'T: struct and 'T :> System.ValueType> :
+  (int32 ->
+     StackCore.Stage<(StackCore.Chunk<'T> * StackCore.Chunk<'T>),
+                     StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkPermuteAxes<'T
+                       when 'T: equality and 'T: (new: unit -> 'T) and
+                            'T: struct and 'T :> System.ValueType> :
+  (int seq -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
 val convolveNativeXParallelCollect<'T
                                      when 'T: equality and 'T: (new: unit -> 'T) and
                                           'T: struct and 'T :> System.ValueType> :
@@ -395,7 +441,8 @@ val boxFilterNativeParallelCollect<'T
 val boxFilterNativeParallelCollectXYZ<'T
                                         when 'T: equality and
                                              'T: (new: unit -> 'T) and
-                                             'T: struct and 'T :> System.ValueType> :
+                                             'T: struct and
+                                             'T :> System.ValueType> :
   (int ->
      int ->
      int -> int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
@@ -405,7 +452,8 @@ val boxFilterNativeParallelCollectXYZ<'T
 val gaussianFilterNativeParallelCollect<'T
                                           when 'T: equality and
                                                'T: (new: unit -> 'T) and
-                                               'T: struct and 'T :> System.ValueType> :
+                                               'T: struct and
+                                               'T :> System.ValueType> :
   (float ->
      int -> int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
     when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
@@ -414,7 +462,8 @@ val gaussianFilterNativeParallelCollect<'T
 val gaussianFilterNativeParallelCollectXYZ<'T
                                              when 'T: equality and
                                                   'T: (new: unit -> 'T) and
-                                                  'T: struct and 'T :> System.ValueType> :
+                                                  'T: struct and
+                                                  'T :> System.ValueType> :
   (float ->
      int ->
      float ->
@@ -442,6 +491,27 @@ val sobelZNativeParallelCollect<'T
                                   when 'T: equality and 'T: (new: unit -> 'T) and
                                        'T: struct and 'T :> System.ValueType> :
   (int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkAddNormalNoise<'T
+                          when 'T: equality and 'T: (new: unit -> 'T) and
+                               'T: struct and 'T :> System.ValueType> :
+  (float -> float -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkAddSaltAndPepperNoise<'T
+                                 when 'T: equality and 'T: (new: unit -> 'T) and
+                                      'T: struct and 'T :> System.ValueType> :
+  (float -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkAddShotNoise<'T
+                        when 'T: equality and 'T: (new: unit -> 'T) and
+                             'T: struct and 'T :> System.ValueType> :
+  (float -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
     when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
          'T :> System.ValueType
 
@@ -580,8 +650,9 @@ val writeChunkSlices<'T when 'T: equality> :
 val writeVolume<'T when 'T: equality> :
   (string -> StackCore.Stage<StackCore.Image<'T>,unit>) when 'T: equality
 
-val writeZarr:
-  (string ->
+val writeZarrWithCompression:
+  (ZarrNET.Core.ZarrCompression ->
+     string ->
      string ->
      uint ->
      uint ->
@@ -592,9 +663,8 @@ val writeZarr:
      float -> int -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
-val writeZarrWithCompression:
-  (ZarrNET.Core.ZarrCompression ->
-     string ->
+val writeZarr:
+  (string ->
      string ->
      uint ->
      uint ->
@@ -615,8 +685,7 @@ val writeZarrComplex64InterleavedFloat32:
      uint ->
      uint ->
      float ->
-     float ->
-     float -> int -> StackCore.Stage<StackCore.Chunk<float32>,unit>)
+     float -> float -> int -> StackCore.Stage<StackCore.Chunk<float32>,unit>)
 
 val fftZComplex64InterleavedZarrTiles:
   (string ->
@@ -626,24 +695,7 @@ val fftZComplex64InterleavedZarrTiles:
      uint ->
      uint ->
      uint ->
-     uint ->
-     uint ->
-     uint ->
-     uint ->
-     float ->
-     float ->
-     float -> int -> unit)
-
-val writeZarrSlab:
-  (string ->
-     uint ->
-     uint ->
-     float ->
-     float ->
-     float ->
-     int ->
-     SlimPipeline.Plan<'a,StackCore.Image<'b>> ->
-     SlimPipeline.Plan<'a,StackCore.Image<'b>>) when 'b: equality
+     uint -> uint -> uint -> uint -> float -> float -> float -> int -> unit)
 
 val writeZarrSlabWithCompression:
   (ZarrNET.Core.ZarrCompression ->
@@ -657,8 +709,9 @@ val writeZarrSlabWithCompression:
      SlimPipeline.Plan<'a,StackCore.Image<'b>> ->
      SlimPipeline.Plan<'a,StackCore.Image<'b>>) when 'b: equality
 
-val writeZarrSlabNamed:
-  (string ->
+val writeZarrSlabNamedWithCompression:
+  (ZarrNET.Core.ZarrCompression ->
+     string ->
      string ->
      uint ->
      uint ->
@@ -669,9 +722,19 @@ val writeZarrSlabNamed:
      SlimPipeline.Plan<'a,StackCore.Image<'b>> ->
      SlimPipeline.Plan<'a,StackCore.Image<'b>>) when 'b: equality
 
-val writeZarrSlabNamedWithCompression:
-  (ZarrNET.Core.ZarrCompression ->
-     string ->
+val writeZarrSlab:
+  (string ->
+     uint ->
+     uint ->
+     float ->
+     float ->
+     float ->
+     int ->
+     SlimPipeline.Plan<'a,StackCore.Image<'b>> ->
+     SlimPipeline.Plan<'a,StackCore.Image<'b>>) when 'b: equality
+
+val writeZarrSlabNamed:
+  (string ->
      string ->
      uint ->
      uint ->
@@ -975,6 +1038,17 @@ val resampleAffineFromChunks:
      TinyLinAlg.Affine -> 'a -> (int * StackAffineResampler.Image<'a>) seq)
     when 'a: equality
 
+val resampleAffineChunk<'T
+                          when 'T: equality and 'T: (new: unit -> 'T) and
+                               'T: struct and 'T :> System.ValueType> :
+  (('T -> 'T -> float32 -> 'T) ->
+     StackAffineResampler.ImageGeom ->
+     StackAffineResampler.ImageGeom ->
+     TinyLinAlg.Affine ->
+     'T -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
 val resampleAffine:
   (('a -> 'a -> float32 -> 'a) ->
      int option ->
@@ -982,8 +1056,8 @@ val resampleAffine:
      StackAffineResampler.ImageGeom ->
      TinyLinAlg.Affine ->
      'a ->
-     SlimPipeline.Stage<StackAffineResampler.Image<'a>,
-                        StackAffineResampler.Image<'a>>) when 'a: equality
+     StackCore.Stage<StackAffineResampler.Image<'a>,
+                     StackAffineResampler.Image<'a>>) when 'a: equality
 
 type ImageStats = ImageFunctions.ImageStats
 
@@ -1143,16 +1217,15 @@ val FFT:
     chunkZ: uint -> Stage<Image<'T>,Image<System.Numerics.Complex>>
     when 'T: equality
 
+val FFTFloat32:
+  chunkX: uint ->
+    chunkY: uint -> chunkZ: uint -> Stage<Image<'T>,Image<Image.ComplexFloat32>>
+    when 'T: equality
+
 val invFFT:
   chunkX: uint ->
     chunkY: uint ->
     chunkZ: uint -> Stage<Image<System.Numerics.Complex>,Image<float>>
-
-val FFTFloat32:
-  chunkX: uint ->
-    chunkY: uint ->
-    chunkZ: uint -> Stage<Image<'T>,Image<Image.ComplexFloat32>>
-    when 'T: equality
 
 val invFFTFloat32:
   chunkX: uint ->
@@ -1449,6 +1522,25 @@ val fitBiasModelMasked<'T when 'T: equality> :
      StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<uint8>),
                      StackBias.BiasPolynomialModel>) when 'T: equality
 
+val fitBiasModelChunk<'T
+                        when 'T: equality and 'T: (new: unit -> 'T) and
+                             'T: struct and 'T :> System.ValueType> :
+  (int ->
+     uint32 ->
+     StackCore.Stage<StackCore.Chunk<'T>,StackBias.BiasPolynomialModel>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val fitBiasModelChunkMasked<'T
+                              when 'T: equality and 'T: (new: unit -> 'T) and
+                                   'T: struct and 'T :> System.ValueType> :
+  (int ->
+     uint32 ->
+     StackCore.Stage<(StackCore.Chunk<'T> * StackCore.Chunk<uint8>),
+                     StackBias.BiasPolynomialModel>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
 val correctBias<'T when 'T: equality> :
   (StackBias.BiasPolynomialModel ->
      StackCore.Stage<StackCore.Image<'T>,StackCore.Image<float>>)
@@ -1458,6 +1550,23 @@ val correctBiasMasked<'T when 'T: equality> :
   (StackBias.BiasPolynomialModel ->
      StackCore.Stage<(StackCore.Image<'T> * StackCore.Image<uint8>),
                      StackCore.Image<float>>) when 'T: equality
+
+val correctBiasChunk<'T
+                       when 'T: equality and 'T: (new: unit -> 'T) and
+                            'T: struct and 'T :> System.ValueType> :
+  (StackBias.BiasPolynomialModel ->
+     StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<float>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val correctBiasChunkMasked<'T
+                             when 'T: equality and 'T: (new: unit -> 'T) and
+                                  'T: struct and 'T :> System.ValueType> :
+  (StackBias.BiasPolynomialModel ->
+     StackCore.Stage<(StackCore.Chunk<'T> * StackCore.Chunk<uint8>),
+                     StackCore.Chunk<float>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
 
 val serialIdentityManifest:
   (uint32 -> uint32 -> int -> StackSerialSections.SerialSliceManifest)
@@ -1829,3 +1938,4 @@ val permuteAxes:
   (uint * uint * uint ->
      uint -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
+

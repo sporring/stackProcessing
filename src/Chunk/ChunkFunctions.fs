@@ -31,6 +31,77 @@ module ChunkFunctions =
 
     let finiteDiffKernel = finiteDiffKernel1D
 
+    let inline private nextGaussian (rng: Random) mean stddev =
+        let u1 = max Double.Epsilon (rng.NextDouble())
+        let u2 = rng.NextDouble()
+        mean + stddev * sqrt (-2.0 * log u1) * cos (2.0 * Math.PI * u2)
+
+    let private nextPoisson (rng: Random) lambda =
+        if lambda <= 0.0 then
+            0.0
+        elif lambda < 30.0 then
+            let threshold = exp (-lambda)
+            let mutable k = 0
+            let mutable p = 1.0
+            while p > threshold do
+                k <- k + 1
+                p <- p * rng.NextDouble()
+            float (k - 1)
+        else
+            let sample = nextGaussian rng lambda (sqrt lambda)
+            max 0.0 (Math.Round sample)
+
+    let private checkedIntDimension name value =
+        if value > uint64 Int32.MaxValue then
+            invalidArg name $"Chunk dimension must fit in Int32 for managed indexing, got {value}."
+        int value
+
+    let private checkedUIntToInt name value =
+        if value > uint Int32.MaxValue then
+            invalidArg name $"Chunk extent must fit in Int32 for managed indexing, got {value}."
+        int value
+
+    let private axisSize axis (width, height, depth) =
+        match axis with
+        | 0 -> width
+        | 1 -> height
+        | 2 -> depth
+        | _ -> invalidArg "axis" $"Chunk axis must be 0, 1, or 2, got {axis}."
+
+    let private setAxisSize axis value (width, height, depth) =
+        match axis with
+        | 0 -> value, height, depth
+        | 1 -> width, value, depth
+        | 2 -> width, height, value
+        | _ -> invalidArg "axis" $"Chunk axis must be 0, 1, or 2, got {axis}."
+
+    let private validatePermutation (order: int[]) =
+        if isNull order then
+            nullArg "order"
+        if order.Length <> 3 then
+            invalidArg "order" $"Chunk axis permutation expects exactly three axes, got {order.Length}."
+        let seen = Array.zeroCreate<bool> 3
+        for axis in order do
+            if axis < 0 || axis > 2 then
+                invalidArg "order" $"Chunk axis permutation entries must be 0, 1, or 2, got {axis}."
+            if seen[axis] then
+                let orderText = String.Join(", ", order)
+                invalidArg "order" $"Chunk axis permutation must contain each axis exactly once, got [{orderText}]."
+            seen[axis] <- true
+
+    let private chunkDimensionsInt<'T when 'T: equality> (chunk: Chunk<'T>) =
+        let width, height, depth = chunk.Size
+        checkedIntDimension "width" width,
+        checkedIntDimension "height" height,
+        checkedIntDimension "depth" depth
+
+    let private createTypedLike<'T when 'T: equality> size =
+        Chunk.create<'T> size
+
+    let private fillSpan value (span: Span<'T>) =
+        for i in 0 .. span.Length - 1 do
+            span[i] <- value
+
     module NativeMedian =
         [<Literal>]
         let LibraryPath = "spnth"
@@ -205,6 +276,181 @@ module ChunkFunctions =
         let output = create<'T> chunk.Size
         try
             chunk.Bytes.AsSpan(0, chunk.ByteLength).CopyTo(output.Bytes.AsSpan(0, output.ByteLength))
+            output
+        with
+        | _ ->
+            decRef output
+            reraise()
+
+    let padChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        (lowerX: uint)
+        (upperX: uint)
+        (lowerY: uint)
+        (upperY: uint)
+        (lowerZ: uint)
+        (upperZ: uint)
+        (value: 'T)
+        (chunk: Chunk<'T>)
+        =
+        let width, height, depth = chunkDimensionsInt chunk
+        let lx = checkedUIntToInt "lowerX" lowerX
+        let ly = checkedUIntToInt "lowerY" lowerY
+        let lz = checkedUIntToInt "lowerZ" lowerZ
+        let ux = checkedUIntToInt "upperX" upperX
+        let uy = checkedUIntToInt "upperY" upperY
+        let uz = checkedUIntToInt "upperZ" upperZ
+        let outputWidth = width + lx + ux
+        let outputHeight = height + ly + uy
+        let outputDepth = depth + lz + uz
+        let output = create<'T> (uint64 outputWidth, uint64 outputHeight, uint64 outputDepth)
+        try
+            let inputPixels = span<'T> chunk
+            let outputPixels = span<'T> output
+            fillSpan value outputPixels
+
+            for z in 0 .. depth - 1 do
+                for y in 0 .. height - 1 do
+                    for x in 0 .. width - 1 do
+                        let inputIndex = Chunk.toIndex width height x y z
+                        let outputIndex = Chunk.toIndex outputWidth outputHeight (x + lx) (y + ly) (z + lz)
+                        outputPixels[outputIndex] <- inputPixels[inputIndex]
+
+            output
+        with
+        | _ ->
+            decRef output
+            reraise()
+
+    let cropChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        (lowerX: uint)
+        (upperX: uint)
+        (lowerY: uint)
+        (upperY: uint)
+        (lowerZ: uint)
+        (upperZ: uint)
+        (chunk: Chunk<'T>)
+        =
+        let width, height, depth = chunkDimensionsInt chunk
+        let lx = checkedUIntToInt "lowerX" lowerX
+        let ly = checkedUIntToInt "lowerY" lowerY
+        let lz = checkedUIntToInt "lowerZ" lowerZ
+        let ux = checkedUIntToInt "upperX" upperX
+        let uy = checkedUIntToInt "upperY" upperY
+        let uz = checkedUIntToInt "upperZ" upperZ
+        if lx + ux >= width then
+            invalidArg "lowerX/upperX" $"Chunk crop removes the full X axis: lower={lowerX}, upper={upperX}, width={width}."
+        if ly + uy >= height then
+            invalidArg "lowerY/upperY" $"Chunk crop removes the full Y axis: lower={lowerY}, upper={upperY}, height={height}."
+        if lz + uz >= depth then
+            invalidArg "lowerZ/upperZ" $"Chunk crop removes the full Z axis: lower={lowerZ}, upper={upperZ}, depth={depth}."
+
+        let outputWidth = width - lx - ux
+        let outputHeight = height - ly - uy
+        let outputDepth = depth - lz - uz
+        let output = create<'T> (uint64 outputWidth, uint64 outputHeight, uint64 outputDepth)
+        try
+            let inputPixels = span<'T> chunk
+            let outputPixels = span<'T> output
+
+            for z in 0 .. outputDepth - 1 do
+                for y in 0 .. outputHeight - 1 do
+                    for x in 0 .. outputWidth - 1 do
+                        let inputIndex = Chunk.toIndex width height (x + lx) (y + ly) (z + lz)
+                        let outputIndex = Chunk.toIndex outputWidth outputHeight x y z
+                        outputPixels[outputIndex] <- inputPixels[inputIndex]
+
+            output
+        with
+        | _ ->
+            decRef output
+            reraise()
+
+    let squeezeChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
+        let width, height, depth = chunk.Size
+        let compacted = ResizeArray<uint64>(3)
+        if width <> 1UL then compacted.Add width
+        if height <> 1UL then compacted.Add height
+        if depth <> 1UL then compacted.Add depth
+        while compacted.Count < 3 do
+            compacted.Add 1UL
+        let outputSize = compacted[0], compacted[1], compacted[2]
+        let output = create<'T> outputSize
+        try
+            chunk.Bytes.AsSpan(0, chunk.ByteLength).CopyTo(output.Bytes.AsSpan(0, output.ByteLength))
+            output
+        with
+        | _ ->
+            decRef output
+            reraise()
+
+    let concatenateChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        axis
+        (a: Chunk<'T>)
+        (b: Chunk<'T>)
+        =
+        let aWidth, aHeight, aDepth = chunkDimensionsInt a
+        let bWidth, bHeight, bDepth = chunkDimensionsInt b
+        let aSize = aWidth, aHeight, aDepth
+        let bSize = bWidth, bHeight, bDepth
+
+        for checkAxis in 0 .. 2 do
+            if checkAxis <> axis && axisSize checkAxis aSize <> axisSize checkAxis bSize then
+                invalidArg "b" $"Chunk concatenate along axis {axis} expects equal non-concatenated dimensions, got {a.Size} and {b.Size}."
+
+        let outputAxisSize = axisSize axis aSize + axisSize axis bSize
+        let outputWidth, outputHeight, outputDepth = setAxisSize axis outputAxisSize aSize
+        let output = create<'T> (uint64 outputWidth, uint64 outputHeight, uint64 outputDepth)
+        try
+            let aPixels = span<'T> a
+            let bPixels = span<'T> b
+            let outputPixels = span<'T> output
+            let aAxisSize = axisSize axis aSize
+
+            for z in 0 .. outputDepth - 1 do
+                for y in 0 .. outputHeight - 1 do
+                    for x in 0 .. outputWidth - 1 do
+                        let outputIndex = Chunk.toIndex outputWidth outputHeight x y z
+                        let coordinate = [| x; y; z |]
+                        if coordinate[axis] < aAxisSize then
+                            let inputIndex = Chunk.toIndex aWidth aHeight coordinate[0] coordinate[1] coordinate[2]
+                            outputPixels[outputIndex] <- aPixels[inputIndex]
+                        else
+                            coordinate[axis] <- coordinate[axis] - aAxisSize
+                            let inputIndex = Chunk.toIndex bWidth bHeight coordinate[0] coordinate[1] coordinate[2]
+                            outputPixels[outputIndex] <- bPixels[inputIndex]
+
+            output
+        with
+        | _ ->
+            decRef output
+            reraise()
+
+    let permuteAxesChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        (order: int[])
+        (chunk: Chunk<'T>)
+        =
+        validatePermutation order
+        let inputWidth, inputHeight, inputDepth = chunkDimensionsInt chunk
+        let inputSize = [| inputWidth; inputHeight; inputDepth |]
+        let outputWidth = inputSize[order[0]]
+        let outputHeight = inputSize[order[1]]
+        let outputDepth = inputSize[order[2]]
+        let output = create<'T> (uint64 outputWidth, uint64 outputHeight, uint64 outputDepth)
+        try
+            let inputPixels = span<'T> chunk
+            let outputPixels = span<'T> output
+
+            for z in 0 .. outputDepth - 1 do
+                for y in 0 .. outputHeight - 1 do
+                    for x in 0 .. outputWidth - 1 do
+                        let outputCoord = [| x; y; z |]
+                        let inputCoord = Array.zeroCreate<int> 3
+                        for outputAxis in 0 .. 2 do
+                            inputCoord[order[outputAxis]] <- outputCoord[outputAxis]
+                        let inputIndex = Chunk.toIndex inputWidth inputHeight inputCoord[0] inputCoord[1] inputCoord[2]
+                        let outputIndex = Chunk.toIndex outputWidth outputHeight x y z
+                        outputPixels[outputIndex] <- inputPixels[inputIndex]
+
             output
         with
         | _ ->
@@ -661,6 +907,163 @@ module ChunkFunctions =
         | _ ->
             Chunk.decRef output
             reraise()
+
+    let private writeFloatToTypedOutput<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        (output: Chunk<'T>)
+        index
+        value
+        =
+        let t = typeof<'T>
+        if t = typeof<float32> then
+            let outputPixels = MemoryMarshal.Cast<byte, float32>(output.Bytes.AsSpan(0, output.ByteLength))
+            outputPixels[index] <- value
+        elif t = typeof<uint8> then
+            output.Bytes[index] <- clampRoundToByte value
+        elif t = typeof<int8> then
+            let outputPixels = MemoryMarshal.Cast<byte, sbyte>(output.Bytes.AsSpan(0, output.ByteLength))
+            outputPixels[index] <- clampRoundToSByte value
+        elif t = typeof<uint16> then
+            let outputPixels = MemoryMarshal.Cast<byte, uint16>(output.Bytes.AsSpan(0, output.ByteLength))
+            outputPixels[index] <- clampRoundToUInt16 value
+        elif t = typeof<int16> then
+            let outputPixels = MemoryMarshal.Cast<byte, int16>(output.Bytes.AsSpan(0, output.ByteLength))
+            outputPixels[index] <- clampRoundToInt16 value
+        elif t = typeof<int32> then
+            let outputPixels = MemoryMarshal.Cast<byte, int32>(output.Bytes.AsSpan(0, output.ByteLength))
+            outputPixels[index] <- clampRoundToInt32 value
+        else
+            invalidArg "T" $"ChunkFunctions noise supports Int8, UInt8, Int16, UInt16, Int32, and Float32 chunks, got {t.Name}."
+
+    let private copyTypedValue<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        (input: Chunk<'T>)
+        (output: Chunk<'T>)
+        index
+        =
+        let t = typeof<'T>
+        if t = typeof<float32> then
+            let inputPixels = MemoryMarshal.Cast<byte, float32>(input.Bytes.AsSpan(0, input.ByteLength))
+            writeFloatToTypedOutput output index inputPixels[index]
+        elif t = typeof<uint8> then
+            output.Bytes[index] <- input.Bytes[index]
+        elif t = typeof<int8> then
+            let inputPixels = MemoryMarshal.Cast<byte, sbyte>(input.Bytes.AsSpan(0, input.ByteLength))
+            writeFloatToTypedOutput output index (float32 inputPixels[index])
+        elif t = typeof<uint16> then
+            let inputPixels = MemoryMarshal.Cast<byte, uint16>(input.Bytes.AsSpan(0, input.ByteLength))
+            writeFloatToTypedOutput output index (float32 inputPixels[index])
+        elif t = typeof<int16> then
+            let inputPixels = MemoryMarshal.Cast<byte, int16>(input.Bytes.AsSpan(0, input.ByteLength))
+            writeFloatToTypedOutput output index (float32 inputPixels[index])
+        elif t = typeof<int32> then
+            let inputPixels = MemoryMarshal.Cast<byte, int32>(input.Bytes.AsSpan(0, input.ByteLength))
+            writeFloatToTypedOutput output index (float32 inputPixels[index])
+        else
+            invalidArg "T" $"ChunkFunctions noise supports Int8, UInt8, Int16, UInt16, Int32, and Float32 chunks, got {t.Name}."
+
+    let private typedValueAsFloat<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        (chunk: Chunk<'T>)
+        index
+        =
+        let t = typeof<'T>
+        if t = typeof<float32> then
+            let pixels = MemoryMarshal.Cast<byte, float32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            pixels[index]
+        elif t = typeof<uint8> then
+            float32 chunk.Bytes[index]
+        elif t = typeof<int8> then
+            let pixels = MemoryMarshal.Cast<byte, sbyte>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            float32 pixels[index]
+        elif t = typeof<uint16> then
+            let pixels = MemoryMarshal.Cast<byte, uint16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            float32 pixels[index]
+        elif t = typeof<int16> then
+            let pixels = MemoryMarshal.Cast<byte, int16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            float32 pixels[index]
+        elif t = typeof<int32> then
+            let pixels = MemoryMarshal.Cast<byte, int32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            float32 pixels[index]
+        else
+            invalidArg "T" $"ChunkFunctions noise supports Int8, UInt8, Int16, UInt16, Int32, and Float32 chunks, got {t.Name}."
+
+    let private saltAndPepperValues<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+        let t = typeof<'T>
+        if t = typeof<float32> then 0.0f, 1.0f
+        elif t = typeof<uint8> then 0.0f, 255.0f
+        elif t = typeof<int8> then float32 SByte.MinValue, float32 SByte.MaxValue
+        elif t = typeof<uint16> then 0.0f, 65535.0f
+        elif t = typeof<int16> then float32 Int16.MinValue, float32 Int16.MaxValue
+        elif t = typeof<int32> then float32 Int32.MinValue, float32 Int32.MaxValue
+        else
+            invalidArg "T" $"ChunkFunctions salt-and-pepper noise supports Int8, UInt8, Int16, UInt16, Int32, and Float32 chunks, got {t.Name}."
+
+    let addNormalNoiseChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        mean
+        stddev
+        (chunk: Chunk<'T>)
+        =
+        if stddev <= 0.0 then
+            copyChunk chunk
+        else
+            let output = Chunk.create<'T> chunk.Size
+            try
+                let rng = Random.Shared
+                let count = chunk.ByteLength / Marshal.SizeOf<'T>()
+                for i in 0 .. count - 1 do
+                    let value = typedValueAsFloat chunk i + float32 (nextGaussian rng mean stddev)
+                    writeFloatToTypedOutput output i value
+                output
+            with
+            | _ ->
+                Chunk.decRef output
+                reraise()
+
+    let addSaltAndPepperNoiseChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        probability
+        (chunk: Chunk<'T>)
+        =
+        if probability <= 0.0 then
+            copyChunk chunk
+        else
+            let probability = min 1.0 probability
+            let pepper, salt = saltAndPepperValues<'T>
+            let output = Chunk.create<'T> chunk.Size
+            try
+                let rng = Random.Shared
+                let count = chunk.ByteLength / Marshal.SizeOf<'T>()
+                for i in 0 .. count - 1 do
+                    let sample = rng.NextDouble()
+                    if sample < probability then
+                        let value = if rng.NextDouble() < 0.5 then pepper else salt
+                        writeFloatToTypedOutput output i value
+                    else
+                        copyTypedValue chunk output i
+                output
+            with
+            | _ ->
+                Chunk.decRef output
+                reraise()
+
+    let addShotNoiseChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        scale
+        (chunk: Chunk<'T>)
+        =
+        if scale <= 0.0 then
+            copyChunk chunk
+        else
+            let output = Chunk.create<'T> chunk.Size
+            try
+                let rng = Random.Shared
+                let count = chunk.ByteLength / Marshal.SizeOf<'T>()
+                for i in 0 .. count - 1 do
+                    let value = typedValueAsFloat chunk i
+                    let lambda = max 0.0 (double value / scale)
+                    let noisy = float32 (nextPoisson rng lambda * scale)
+                    writeFloatToTypedOutput output i noisy
+                output
+            with
+            | _ ->
+                Chunk.decRef output
+                reraise()
 
     let private validateOddKernel name (kernel: float32[]) =
         if isNull kernel then

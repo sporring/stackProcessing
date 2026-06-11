@@ -6,6 +6,7 @@ open Expecto
 open FSharp.Control
 open SlimPipeline
 open StackCore
+open TinyLinAlg
 
 module ChunkKernel = ChunkCore.ChunkFunctions
 
@@ -68,6 +69,19 @@ let private chunkFromInt32Pixels width height (pixels: int32[]) =
         invalidArg "pixels" $"Expected {values.Length} pixels, got {pixels.Length}."
     pixels.CopyTo(values)
     chunk
+
+let private identity3 =
+    { m00 = 1.0; m01 = 0.0; m02 = 0.0
+      m10 = 0.0; m11 = 1.0; m12 = 0.0
+      m20 = 0.0; m21 = 0.0; m22 = 1.0 }
+
+let private imageGeom width height depth : StackAffineResampler.ImageGeom =
+    { W = width
+      H = height
+      D = depth
+      Origin = v3 0.0 0.0 0.0
+      Spacing = v3 1.0 1.0 1.0
+      Direction = identity3 }
 
 let private runNativeAxisTypedCase<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     name
@@ -223,6 +237,79 @@ let chunkSuite =
             finally
                 outputOpt |> Option.iter Chunk.decRef
                 Chunk.decRef input
+
+        testCase "Chunk structural transforms pad crop squeeze concatenate and permute axes" <| fun _ ->
+            let input = Chunk.create<int32> (2UL, 2UL, 2UL)
+            try
+                let inputValues = Chunk.span<int32> input
+                for i in 0 .. inputValues.Length - 1 do
+                    inputValues[i] <- int32 i
+
+                let padded = ChunkKernel.padChunk<int32> 1u 0u 0u 1u 1u 0u -1 input
+                try
+                    Expect.equal padded.Size (3UL, 3UL, 3UL) "Padding should expand all requested axes."
+                    let paddedValues = Chunk.span<int32> padded
+                    Expect.equal paddedValues[Chunk.toIndex 3 3 1 0 1] 0 "Padding should copy the original origin to the lower-offset position."
+                    Expect.equal paddedValues[Chunk.toIndex 3 3 0 0 0] -1 "Padding should fill outside values with the configured constant."
+                finally
+                    Chunk.decRef padded
+
+                let cropped = ChunkKernel.cropChunk<int32> 1u 0u 0u 1u 0u 0u input
+                try
+                    Expect.equal cropped.Size (1UL, 1UL, 2UL) "Cropping should shrink the requested sides."
+                    Expect.sequenceEqual ((Chunk.span<int32> cropped).ToArray()) [| 1; 5 |] "Cropping should preserve x-fastest layout."
+                finally
+                    Chunk.decRef cropped
+
+                let squeezedInput = Chunk.create<int32> (1UL, 2UL, 2UL)
+                try
+                    let squeezedInputValues = Chunk.span<int32> squeezedInput
+                    [| 10; 20; 30; 40 |].CopyTo(squeezedInputValues)
+                    let squeezed = ChunkKernel.squeezeChunk squeezedInput
+                    try
+                        Expect.equal squeezed.Size (2UL, 2UL, 1UL) "Squeeze should compact non-singleton axes leftward."
+                        Expect.sequenceEqual ((Chunk.span<int32> squeezed).ToArray()) [| 10; 20; 30; 40 |] "Squeeze should preserve flat storage order."
+                    finally
+                        Chunk.decRef squeezed
+                finally
+                    Chunk.decRef squeezedInput
+
+                let right = Chunk.create<int32> (2UL, 2UL, 2UL)
+                try
+                    let rightValues = Chunk.span<int32> right
+                    for i in 0 .. rightValues.Length - 1 do
+                        rightValues[i] <- 100 + i
+
+                    let concatenated = ChunkKernel.concatenateChunk<int32> 0 input right
+                    try
+                        Expect.equal concatenated.Size (4UL, 2UL, 2UL) "Concatenating along X should add widths."
+                        let values = Chunk.span<int32> concatenated
+                        Expect.equal values[Chunk.toIndex 4 2 0 0 0] 0 "Concatenate should keep the left chunk first."
+                        Expect.equal values[Chunk.toIndex 4 2 2 0 0] 100 "Concatenate should place the right chunk after the left chunk."
+                    finally
+                        Chunk.decRef concatenated
+                finally
+                    Chunk.decRef right
+
+                let permuted = ChunkKernel.permuteAxesChunk<int32> [| 2; 1; 0 |] input
+                try
+                    Expect.equal permuted.Size (2UL, 2UL, 2UL) "Permutation should reorder dimensions."
+                    let values = Chunk.span<int32> permuted
+                    Expect.equal values[Chunk.toIndex 2 2 1 0 0] inputValues[Chunk.toIndex 2 2 0 0 1] "Permutation should map output coordinates back through the requested order."
+                finally
+                    Chunk.decRef permuted
+            finally
+                Chunk.decRef input
+
+        testCase "Chunk structural transforms are exposed as Stack stages" <| fun _ ->
+            let input = chunkFromInt32Pixels 2 1 [| 7; 8 |]
+            let outputs = runStageList (ChunkFunctions.pad<int32> 1u 1u 0u 0u 0u 0u -1) [ input ]
+            try
+                Expect.equal outputs.Length 1 "Chunk pad stage should emit one chunk."
+                Expect.equal outputs[0].Size (4UL, 1UL, 1UL) "Chunk pad stage should expose the padded size."
+                Expect.sequenceEqual ((Chunk.span<int32> outputs[0]).ToArray()) [| -1; 7; 8; -1 |] "Chunk pad stage should preserve input values at the requested offset."
+            finally
+                outputs |> List.iter Chunk.decRef
 
         testCase "iter iteri fold and foldi traverse in span order" <| fun _ ->
             let chunk = Chunk.create<uint8> (4UL, 1UL, 1UL)
@@ -1017,6 +1104,100 @@ let chunkSuite =
             finally
                 direct |> List.iter Chunk.decRef
                 finiteDiff |> List.iter Chunk.decRef
+
+        testCase "Chunk noise adders preserve shape and deterministic no-op paths" <| fun _ ->
+            let pixels = [| 1.0f; 2.0f; 3.0f; 4.0f; 5.0f; 6.0f |]
+
+            let expectNoOp name (stage: Stage<Chunk<float32>, Chunk<float32>>) =
+                let input = chunkFromFloat32Pixels 3 2 pixels
+                let outputs = runStageList stage [ input ]
+                try
+                    Expect.equal outputs.Length 1 $"{name} should emit one output."
+                    Expect.equal outputs.[0].Size (3UL, 2UL, 1UL) $"{name} should preserve chunk size."
+                    Expect.sequenceEqual ((Chunk.span<float32> outputs.[0]).ToArray()) pixels $"{name} should preserve pixels in its deterministic no-op path."
+                finally
+                    outputs |> List.iter Chunk.decRef
+
+            expectNoOp "chunkAddNormalNoise" (ChunkFunctions.addNormalNoise<float32> 0.0 0.0)
+            expectNoOp "chunkAddSaltAndPepperNoise" (ChunkFunctions.addSaltAndPepperNoise<float32> 0.0)
+            expectNoOp "chunkAddShotNoise" (ChunkFunctions.addShotNoise<float32> 0.0)
+
+            let saltInput = chunkFromFloat32Pixels 3 2 pixels
+            let saltOutputs = runStageList (ChunkFunctions.addSaltAndPepperNoise<float32> 1.0) [ saltInput ]
+            try
+                let values = (Chunk.span<float32> saltOutputs.[0]).ToArray()
+                Expect.isTrue (values |> Array.forall (fun value -> value = 0.0f || value = 1.0f)) "Probability-one Float32 salt-and-pepper noise should emit only 0/1 values."
+            finally
+                saltOutputs |> List.iter Chunk.decRef
+
+        testCase "Chunk affine resampler samples a linear volume" <| fun _ ->
+            let width = 5
+            let height = 4
+            let depth = 4
+            let inputs =
+                [ for z in 0 .. depth - 1 ->
+                    [| for y in 0 .. height - 1 do
+                           for x in 0 .. width - 1 do
+                               float32 x + 10.0f * float32 y + 100.0f * float32 z |]
+                    |> chunkFromFloat32Pixels width height ]
+
+            let lerp (a: float32) (b: float32) (t: float32) =
+                a + (b - a) * t
+
+            let transform: Affine =
+                { A = identity3
+                  T = v3 0.5 1.0 0.0
+                  C = v3 0.0 0.0 0.0 }
+
+            let stage =
+                StackAffineResampler.resampleAffineChunk
+                    lerp
+                    (imageGeom width height depth)
+                    (imageGeom 3 2 3)
+                    transform
+                    -1.0f
+
+            let outputs = runStageList stage inputs
+            try
+                Expect.equal outputs.Length 3 "Chunk affine resampling should emit the requested output depth."
+                for z in 0 .. outputs.Length - 1 do
+                    Expect.equal outputs[z].Size (3UL, 2UL, 1UL) $"Output slice {z} should have the requested XY size."
+                    let values = Chunk.span<float32> outputs[z]
+                    for y in 0 .. 1 do
+                        for x in 0 .. 2 do
+                            let expected =
+                                float32 x + 0.5f
+                                + 10.0f * (float32 y + 1.0f)
+                                + 100.0f * float32 z
+
+                            Expect.floatClose Accuracy.medium (float values[3 * y + x]) (float expected) $"Chunk affine sampling should match the linear volume at ({x},{y},{z})."
+            finally
+                outputs |> List.iter Chunk.decRef
+
+        testCase "Chunk bias fit and correction removes a constant polynomial bias" <| fun _ ->
+            let width = 3
+            let height = 2
+            let depth = 2
+            let makeInputs () =
+                [ for _z in 0 .. depth - 1 ->
+                    Array.create (width * height) 5.0f
+                    |> chunkFromFloat32Pixels width height ]
+
+            let modelOutputs = runStageList (StackBias.fitBiasModelChunk<float32> 0 (uint depth)) (makeInputs ())
+            Expect.equal modelOutputs.Length 1 "Chunk bias fitting should emit one polynomial model."
+            Expect.equal modelOutputs[0].Order 0 "The fitted model should preserve the requested order."
+            Expect.floatClose Accuracy.medium modelOutputs[0].Coefficients[0] 5.0 "The constant coefficient should match the input bias."
+
+            let corrected = runStageList (StackBias.correctBiasChunk<float32> modelOutputs[0]) (makeInputs ())
+            try
+                Expect.equal corrected.Length depth "Chunk bias correction should preserve stack depth."
+                for z in 0 .. corrected.Length - 1 do
+                    Expect.equal corrected[z].Size (uint64 width, uint64 height, 1UL) $"Corrected slice {z} should preserve shape."
+                    let values = Chunk.span<float> corrected[z]
+                    for value in values do
+                        Expect.floatClose Accuracy.medium value 0.0 $"Corrected slice {z} should have the fitted constant bias removed."
+            finally
+                corrected |> List.iter Chunk.decRef
 
         testCase "ChunkFunctions rolling PH median matches dense PH median" <| fun _ ->
             let width = 5
