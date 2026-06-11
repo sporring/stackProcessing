@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <mutex>
+#include <type_traits>
 #include <vector>
 #include <fftw3.h>
 
@@ -857,6 +859,201 @@ static int fftwf_complex_z_inplace(float* interleaved, int width, int height, in
     return 0;
 }
 
+static constexpr float SP_DISTANCE_INF = 1.0e20f;
+
+static inline size_t volume_index(int width, int height, int x, int y, int z)
+{
+    return static_cast<size_t>((z * height + y) * width + x);
+}
+
+static void distance_transform_1d_inplace(float* values, int length)
+{
+    if (length <= 0) {
+        return;
+    }
+
+    std::vector<int> sites(static_cast<size_t>(length));
+    std::vector<double> boundaries(static_cast<size_t>(length) + 1);
+    std::vector<float> result(static_cast<size_t>(length));
+
+    int k = 0;
+    sites[0] = 0;
+    boundaries[0] = -std::numeric_limits<double>::infinity();
+    boundaries[1] = std::numeric_limits<double>::infinity();
+
+    for (int q = 1; q < length; ++q) {
+        double s = 0.0;
+
+        while (true) {
+            const int vk = sites[static_cast<size_t>(k)];
+            const double fq = static_cast<double>(values[q]);
+            const double fvk = static_cast<double>(values[vk]);
+
+            if (fq >= SP_DISTANCE_INF * 0.5 && fvk >= SP_DISTANCE_INF * 0.5) {
+                s = std::numeric_limits<double>::infinity();
+            } else if (fvk >= SP_DISTANCE_INF * 0.5) {
+                s = -std::numeric_limits<double>::infinity();
+            } else if (fq >= SP_DISTANCE_INF * 0.5) {
+                s = std::numeric_limits<double>::infinity();
+            } else {
+                s =
+                    ((fq + static_cast<double>(q) * static_cast<double>(q)) -
+                     (fvk + static_cast<double>(vk) * static_cast<double>(vk))) /
+                    (2.0 * static_cast<double>(q - vk));
+            }
+
+            if (s > boundaries[static_cast<size_t>(k)] || k == 0) {
+                break;
+            }
+            --k;
+        }
+
+        if (s <= boundaries[static_cast<size_t>(k)]) {
+            sites[0] = q;
+            boundaries[0] = -std::numeric_limits<double>::infinity();
+            boundaries[1] = std::numeric_limits<double>::infinity();
+            k = 0;
+        } else {
+            ++k;
+            sites[static_cast<size_t>(k)] = q;
+            boundaries[static_cast<size_t>(k)] = s;
+            boundaries[static_cast<size_t>(k + 1)] = std::numeric_limits<double>::infinity();
+        }
+    }
+
+    k = 0;
+    for (int q = 0; q < length; ++q) {
+        while (boundaries[static_cast<size_t>(k + 1)] < static_cast<double>(q)) {
+            ++k;
+        }
+
+        const int site = sites[static_cast<size_t>(k)];
+        const float base = values[site];
+        if (base >= SP_DISTANCE_INF * 0.5f) {
+            result[static_cast<size_t>(q)] = SP_DISTANCE_INF;
+        } else {
+            const int d = q - site;
+            result[static_cast<size_t>(q)] = base + static_cast<float>(d * d);
+        }
+    }
+
+    for (int i = 0; i < length; ++i) {
+        values[i] = result[static_cast<size_t>(i)];
+    }
+}
+
+static void exact_squared_distance_transform(
+    std::vector<float>& distances,
+    int width,
+    int height,
+    int depth)
+{
+    const int max_length = std::max(width, std::max(height, depth));
+    std::vector<float> line(static_cast<size_t>(max_length));
+
+    for (int z = 0; z < depth; ++z) {
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                line[static_cast<size_t>(x)] = distances[volume_index(width, height, x, y, z)];
+            }
+            distance_transform_1d_inplace(line.data(), width);
+            for (int x = 0; x < width; ++x) {
+                distances[volume_index(width, height, x, y, z)] = line[static_cast<size_t>(x)];
+            }
+        }
+    }
+
+    for (int z = 0; z < depth; ++z) {
+        for (int x = 0; x < width; ++x) {
+            for (int y = 0; y < height; ++y) {
+                line[static_cast<size_t>(y)] = distances[volume_index(width, height, x, y, z)];
+            }
+            distance_transform_1d_inplace(line.data(), height);
+            for (int y = 0; y < height; ++y) {
+                distances[volume_index(width, height, x, y, z)] = line[static_cast<size_t>(y)];
+            }
+        }
+    }
+
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            for (int z = 0; z < depth; ++z) {
+                line[static_cast<size_t>(z)] = distances[volume_index(width, height, x, y, z)];
+            }
+            distance_transform_1d_inplace(line.data(), depth);
+            for (int z = 0; z < depth; ++z) {
+                distances[volume_index(width, height, x, y, z)] = line[static_cast<size_t>(z)];
+            }
+        }
+    }
+}
+
+static int signed_distance_band_uint8_slices(
+    const uint8_t* const* slices,
+    float* const* outputs,
+    int width,
+    int height,
+    int window_length,
+    int output_start,
+    int output_count,
+    float band_radius)
+{
+    if (slices == nullptr || outputs == nullptr || width <= 0 || height <= 0 ||
+        window_length <= 0 || output_start < 0 || output_count < 0 ||
+        output_start + output_count > window_length || band_radius <= 0.0f) {
+        return 1;
+    }
+
+    const int plane = width * height;
+    const size_t voxel_count = static_cast<size_t>(plane) * static_cast<size_t>(window_length);
+    std::vector<float> to_foreground(voxel_count);
+    std::vector<float> to_background(voxel_count);
+
+    for (int z = 0; z < window_length; ++z) {
+        const uint8_t* slice = slices[z];
+        if (slice == nullptr) {
+            return 2;
+        }
+
+        for (int i = 0; i < plane; ++i) {
+            const bool foreground = slice[i] != 0;
+            const size_t index = static_cast<size_t>(z * plane + i);
+            to_foreground[index] = foreground ? 0.0f : SP_DISTANCE_INF;
+            to_background[index] = foreground ? SP_DISTANCE_INF : 0.0f;
+        }
+    }
+
+    exact_squared_distance_transform(to_foreground, width, height, window_length);
+    exact_squared_distance_transform(to_background, width, height, window_length);
+
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+
+    for (int out_z = 0; out_z < output_count; ++out_z) {
+        const int z = output_start + out_z;
+        float* output = outputs[out_z];
+        if (output == nullptr) {
+            return 3;
+        }
+
+        const uint8_t* source = slices[z];
+        for (int i = 0; i < plane; ++i) {
+            const size_t index = static_cast<size_t>(z * plane + i);
+            const bool foreground = source[i] != 0;
+            const float squared = foreground ? to_background[index] : to_foreground[index];
+
+            if (squared >= SP_DISTANCE_INF * 0.5f) {
+                output[i] = nan;
+            } else {
+                const float distance = std::sqrt(std::max(0.0f, squared));
+                const float signed_distance = foreground ? -distance : distance;
+                output[i] = (std::fabs(signed_distance) < band_radius) ? signed_distance : nan;
+            }
+        }
+    }
+
+    return 0;
+}
+
 extern "C" {
 
 SP_MEDIAN_API void sp_median_uint8_nth_slab(
@@ -995,6 +1192,27 @@ SP_MEDIAN_API void sp_convolve_float32_slices(
         kernel_depth,
         output_start,
         output_count);
+}
+
+SP_MEDIAN_API int sp_signed_distance_band_uint8_slices(
+    const uint8_t* const* slices,
+    float* const* outputs,
+    int width,
+    int height,
+    int window_length,
+    int output_start,
+    int output_count,
+    float band_radius)
+{
+    return signed_distance_band_uint8_slices(
+        slices,
+        outputs,
+        width,
+        height,
+        window_length,
+        output_start,
+        output_count,
+        band_radius);
 }
 
 SP_MEDIAN_API void sp_convolve_uint8_slices(
@@ -1140,6 +1358,246 @@ SP_CONVOLVE_AXIS_EXPORTS(int32_t, int32)
 SP_CONVOLVE_AXIS_EXPORTS(float, float32)
 
 #undef SP_CONVOLVE_AXIS_EXPORTS
+
+}
+
+enum SpPixelType {
+    SP_PIXEL_UINT8 = 1,
+    SP_PIXEL_INT8 = 2,
+    SP_PIXEL_UINT16 = 3,
+    SP_PIXEL_INT16 = 4,
+    SP_PIXEL_INT32 = 5,
+    SP_PIXEL_FLOAT32 = 6
+};
+
+enum SpInterpolation {
+    SP_INTERP_NEAREST = 0,
+    SP_INTERP_LINEAR = 1
+};
+
+template <typename T>
+static inline T clamp_round_value(double value)
+{
+    if constexpr (std::is_same_v<T, float>) {
+        return static_cast<float>(value);
+    } else {
+        if (std::isnan(value)) {
+            return static_cast<T>(0);
+        }
+        const double lo = static_cast<double>(std::numeric_limits<T>::min());
+        const double hi = static_cast<double>(std::numeric_limits<T>::max());
+        if (value <= lo) {
+            return std::numeric_limits<T>::min();
+        }
+        if (value >= hi) {
+            return std::numeric_limits<T>::max();
+        }
+        return static_cast<T>(std::nearbyint(value));
+    }
+}
+
+template <typename T>
+static inline T sample_nearest_2d(
+    const T* input,
+    int width,
+    int height,
+    double x,
+    double y)
+{
+    const int xi = static_cast<int>(std::floor(x + 0.5));
+    const int yi = static_cast<int>(std::floor(y + 0.5));
+    if (xi < 0 || yi < 0 || xi >= width || yi >= height) {
+        return static_cast<T>(0);
+    }
+    return input[yi * width + xi];
+}
+
+template <typename T>
+static inline T sample_linear_2d(
+    const T* input,
+    int width,
+    int height,
+    double x,
+    double y)
+{
+    if (x < 0.0 || y < 0.0 || x > static_cast<double>(width - 1) || y > static_cast<double>(height - 1)) {
+        return static_cast<T>(0);
+    }
+
+    const int x0 = static_cast<int>(std::floor(x));
+    const int y0 = static_cast<int>(std::floor(y));
+    const int x1 = std::min(x0 + 1, width - 1);
+    const int y1 = std::min(y0 + 1, height - 1);
+    const double fx = x - static_cast<double>(x0);
+    const double fy = y - static_cast<double>(y0);
+
+    const double c00 = static_cast<double>(input[y0 * width + x0]);
+    const double c10 = static_cast<double>(input[y0 * width + x1]);
+    const double c01 = static_cast<double>(input[y1 * width + x0]);
+    const double c11 = static_cast<double>(input[y1 * width + x1]);
+    const double c0 = c00 + (c10 - c00) * fx;
+    const double c1 = c01 + (c11 - c01) * fx;
+    return clamp_round_value<T>(c0 + (c1 - c0) * fy);
+}
+
+template <typename T>
+static inline T sample_2d(
+    const T* input,
+    int width,
+    int height,
+    double x,
+    double y,
+    int interpolation)
+{
+    if (interpolation == SP_INTERP_NEAREST) {
+        return sample_nearest_2d(input, width, height, x, y);
+    }
+    return sample_linear_2d(input, width, height, x, y);
+}
+
+template <typename T>
+static int resample_2d_typed(
+    const void* input_ptr,
+    void* output_ptr,
+    int input_width,
+    int input_height,
+    int output_width,
+    int output_height,
+    double spacing_x,
+    double spacing_y,
+    int interpolation)
+{
+    if (input_ptr == nullptr || output_ptr == nullptr || input_width <= 0 || input_height <= 0 || output_width <= 0 || output_height <= 0) {
+        return 1;
+    }
+    if (spacing_x <= 0.0 || spacing_y <= 0.0) {
+        return 2;
+    }
+
+    const T* input = static_cast<const T*>(input_ptr);
+    T* output = static_cast<T*>(output_ptr);
+
+    for (int y = 0; y < output_height; ++y) {
+        const double source_y = static_cast<double>(y) * spacing_y;
+        for (int x = 0; x < output_width; ++x) {
+            const double source_x = static_cast<double>(x) * spacing_x;
+            output[y * output_width + x] = sample_2d(input, input_width, input_height, source_x, source_y, interpolation);
+        }
+    }
+
+    return 0;
+}
+
+template <typename T>
+static int euler_2d_typed(
+    const void* input_ptr,
+    void* output_ptr,
+    int width,
+    int height,
+    double center_x,
+    double center_y,
+    double angle,
+    double dx,
+    double dy,
+    int inverse,
+    int interpolation)
+{
+    if (input_ptr == nullptr || output_ptr == nullptr || width <= 0 || height <= 0) {
+        return 1;
+    }
+
+    const T* input = static_cast<const T*>(input_ptr);
+    T* output = static_cast<T*>(output_ptr);
+    const double c = std::cos(angle);
+    const double s = std::sin(angle);
+
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            double source_x = 0.0;
+            double source_y = 0.0;
+
+            if (inverse != 0) {
+                const double qx = static_cast<double>(x) - center_x - dx;
+                const double qy = static_cast<double>(y) - center_y - dy;
+                source_x = c * qx + s * qy + center_x;
+                source_y = -s * qx + c * qy + center_y;
+            } else {
+                const double qx = static_cast<double>(x) - center_x;
+                const double qy = static_cast<double>(y) - center_y;
+                source_x = c * qx - s * qy + center_x + dx;
+                source_y = s * qx + c * qy + center_y + dy;
+            }
+
+            output[y * width + x] = sample_2d(input, width, height, source_x, source_y, interpolation);
+        }
+    }
+
+    return 0;
+}
+
+extern "C" {
+
+SP_MEDIAN_API int sp_resample_2d(
+    const void* input,
+    void* output,
+    int pixel_type,
+    int input_width,
+    int input_height,
+    int output_width,
+    int output_height,
+    double spacing_x,
+    double spacing_y,
+    int interpolation)
+{
+    switch (pixel_type) {
+        case SP_PIXEL_UINT8:
+            return resample_2d_typed<uint8_t>(input, output, input_width, input_height, output_width, output_height, spacing_x, spacing_y, interpolation);
+        case SP_PIXEL_INT8:
+            return resample_2d_typed<int8_t>(input, output, input_width, input_height, output_width, output_height, spacing_x, spacing_y, interpolation);
+        case SP_PIXEL_UINT16:
+            return resample_2d_typed<uint16_t>(input, output, input_width, input_height, output_width, output_height, spacing_x, spacing_y, interpolation);
+        case SP_PIXEL_INT16:
+            return resample_2d_typed<int16_t>(input, output, input_width, input_height, output_width, output_height, spacing_x, spacing_y, interpolation);
+        case SP_PIXEL_INT32:
+            return resample_2d_typed<int32_t>(input, output, input_width, input_height, output_width, output_height, spacing_x, spacing_y, interpolation);
+        case SP_PIXEL_FLOAT32:
+            return resample_2d_typed<float>(input, output, input_width, input_height, output_width, output_height, spacing_x, spacing_y, interpolation);
+        default:
+            return 100;
+    }
+}
+
+SP_MEDIAN_API int sp_euler_2d(
+    const void* input,
+    void* output,
+    int pixel_type,
+    int width,
+    int height,
+    double center_x,
+    double center_y,
+    double angle,
+    double dx,
+    double dy,
+    int inverse,
+    int interpolation)
+{
+    switch (pixel_type) {
+        case SP_PIXEL_UINT8:
+            return euler_2d_typed<uint8_t>(input, output, width, height, center_x, center_y, angle, dx, dy, inverse, interpolation);
+        case SP_PIXEL_INT8:
+            return euler_2d_typed<int8_t>(input, output, width, height, center_x, center_y, angle, dx, dy, inverse, interpolation);
+        case SP_PIXEL_UINT16:
+            return euler_2d_typed<uint16_t>(input, output, width, height, center_x, center_y, angle, dx, dy, inverse, interpolation);
+        case SP_PIXEL_INT16:
+            return euler_2d_typed<int16_t>(input, output, width, height, center_x, center_y, angle, dx, dy, inverse, interpolation);
+        case SP_PIXEL_INT32:
+            return euler_2d_typed<int32_t>(input, output, width, height, center_x, center_y, angle, dx, dy, inverse, interpolation);
+        case SP_PIXEL_FLOAT32:
+            return euler_2d_typed<float>(input, output, width, height, center_x, center_y, angle, dx, dy, inverse, interpolation);
+        default:
+            return 100;
+    }
+}
 
 SP_MEDIAN_API int sp_fftwf_complex_xy_inplace(
     float* interleaved,

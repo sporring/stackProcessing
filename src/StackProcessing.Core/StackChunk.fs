@@ -53,6 +53,25 @@ let releaseBinaryChunk name f memoryNeed : Stage<Chunk<'T> * Chunk<'U>, Chunk<'V
 
     Stage.map name mapper memoryNeed id
 
+let releaseUnaryVectorChunk name f memoryNeed : Stage<VectorChunk<'T>, Chunk<'U>> =
+    let mapper _debug (vector: VectorChunk<'T>) =
+        try
+            f vector
+        finally
+            Chunk.decRef vector.Chunk
+
+    Stage.map name mapper memoryNeed id
+
+let releaseBinaryVectorChunk name f memoryNeed : Stage<VectorChunk<'T> * VectorChunk<'T>, Chunk<'U>> =
+    let mapper _debug ((a, b): VectorChunk<'T> * VectorChunk<'T>) =
+        try
+            f a b
+        finally
+            Chunk.decRef a.Chunk
+            Chunk.decRef b.Chunk
+
+    Stage.map name mapper memoryNeed id
+
 let copy<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<'T>, Chunk<'T>> =
     releaseUnaryChunk $"chunkCopy.{typeof<'T>.Name}" ChunkKernel.copyChunk<'T> (fun n -> 2UL * chunkMemoryNeed<'T> n)
 
@@ -90,6 +109,87 @@ let permuteAxes<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct an
         (ChunkKernel.permuteAxesChunk<'T> (order |> Seq.toArray))
         (fun n -> 2UL * chunkMemoryNeed<'T> n)
 
+let resample2DNative<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    interpolationName
+    outputWidth
+    outputHeight
+    spacingX
+    spacingY
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    let interpolation = ChunkKernel.ResampleInterpolation.parse interpolationName
+    releaseUnaryChunk
+        $"chunkResample2DNative.{typeof<'T>.Name}"
+        (ChunkKernel.resample2DNativeChunk<'T> interpolation outputWidth outputHeight spacingX spacingY)
+        (fun n -> 3UL * chunkMemoryNeed<'T> n)
+
+let euler2DTransformNative<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    rotation
+    translation
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    releaseUnaryChunk
+        $"chunkEuler2DTransformNative.{typeof<'T>.Name}"
+        (ChunkKernel.euler2DTransformNativeChunk<'T> rotation translation)
+        (fun n -> 2UL * chunkMemoryNeed<'T> n)
+
+let euler2DRotateNative<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    center
+    angle
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    releaseUnaryChunk
+        $"chunkEuler2DRotateNative.{typeof<'T>.Name}"
+        (ChunkKernel.euler2DRotateNativeChunk<'T> center angle)
+        (fun n -> 2UL * chunkMemoryNeed<'T> n)
+
+let private zeroUInt8ChunkLike _index (source: Chunk<uint8>) =
+    let width, height, depth = source.Size
+    if depth <> 1UL then
+        invalidArg "source" $"Chunk signed distance band expects 2D slice chunks with depth 1, got {source.Size}."
+    let chunk = Chunk.create<uint8> (width, height, 1UL)
+    chunk.Bytes.AsSpan(0, chunk.ByteLength).Clear()
+    chunk
+
+let private releaseConsumedUInt8Window (window: Window<Chunk<uint8>>) =
+    let _emitStart, emitCount = window.EmitRange
+    if emitCount = 0u then
+        window.Items |> List.iter Chunk.decRef
+    else
+        window.Items
+        |> List.truncate (int window.ReleaseCount)
+        |> List.iter Chunk.decRef
+
+let signedDistanceBandNativeParallelCollect bandRadius stride workers : Stage<Chunk<uint8>, Chunk<float32>> =
+    if bandRadius = 0u then
+        invalidArg "bandRadius" "Chunk signed distance band requires a positive band radius."
+    if stride = 0u then
+        invalidArg "stride" "Chunk signed distance band requires a positive stride."
+    if workers < 1 then
+        invalidArg "workers" $"Chunk signed distance band expects at least one worker, got {workers}."
+    let winSz = stride + 2u * bandRadius
+    if winSz > uint Int32.MaxValue || stride > uint Int32.MaxValue || bandRadius > uint Int32.MaxValue then
+        invalidArg "bandRadius" $"Chunk signed distance band window parameters must fit in Int32, got bandRadius={bandRadius}, stride={stride}."
+
+    let mapper _debug (window: Window<Chunk<uint8>>) =
+        let items = window.Items |> List.toArray
+        let outputStart, outputCount = window.EmitRange
+        try
+            if outputCount = 0u then
+                []
+            else
+                ChunkKernel.signedDistanceBandNativeUInt8 bandRadius (int outputStart) (int outputCount) items
+        finally
+            releaseConsumedUInt8Window window
+
+    Stage.parallelCollect
+        $"chunkSignedDistanceBandNative.parallelCollect.UInt8.band{bandRadius}.stride{stride}.workers{workers}"
+        (int winSz)
+        workers
+        (int stride)
+        (int bandRadius)
+        zeroUInt8ChunkLike
+        mapper
+        (fun n -> uint64 winSz * n * uint64 (chunkElementBytes<uint8> + chunkElementBytes<float32>))
+        id
+
 let connectedComponentsSauf3DUInt8UInt32ArrayUf () = StackConnectedComponents.connectedComponentsSauf3DUInt8UInt32ArrayUf ()
 let connectedComponentsSauf3DUInt8UInt32 () = StackConnectedComponents.connectedComponentsSauf3DUInt8UInt32 ()
 let connectedComponentsSauf3DUInt8UInt32ParallelCollect windowSize workers = StackConnectedComponents.connectedComponentsSauf3DUInt8UInt32ParallelCollect windowSize workers
@@ -97,6 +197,147 @@ let connectedComponentsSauf3DUInt8 () = StackConnectedComponents.connectedCompon
 
 let fftXYFloat32ToComplex64Interleaved = StackFFT.fftXYFloat32ToComplex64Interleaved
 let fftXYFloat32ToComplex64InterleavedParallelCollect workers = StackFFT.fftXYFloat32ToComplex64InterleavedParallelCollect workers
+
+let vectorDotFloat32 : Stage<VectorChunk<float32> * VectorChunk<float32>, Chunk<float32>> =
+    releaseBinaryVectorChunk
+        "chunkVectorDotFloat32"
+        Chunk.vectorDotFloat32
+        (fun n -> 3UL * chunkMemoryNeed<float32> n)
+
+let vectorMagnitudeFloat32 : Stage<VectorChunk<float32>, Chunk<float32>> =
+    releaseUnaryVectorChunk
+        "chunkVectorMagnitudeFloat32"
+        Chunk.vectorMagnitudeFloat32
+        (fun n -> 2UL * chunkMemoryNeed<float32> n)
+
+let vectorAngleToFloat32 reference : Stage<VectorChunk<float32>, Chunk<float32>> =
+    releaseUnaryVectorChunk
+        "chunkVectorAngleToFloat32"
+        (Chunk.vectorAngleToFloat32 reference)
+        (fun n -> 2UL * chunkMemoryNeed<float32> n)
+
+let private zeroFloat32ChunkLike _index (source: Chunk<float32>) =
+    let width, height, depth = source.Size
+    if depth <> 1UL then
+        invalidArg "source" $"Chunk derivative stages expect 2D slice chunks with depth 1, got {source.Size}."
+    let chunk = Chunk.create<float32> (width, height, 1UL)
+    chunk.Bytes.AsSpan(0, chunk.ByteLength).Clear()
+    chunk
+
+let private releaseConsumedFloat32Window (window: Window<Chunk<float32>>) =
+    let _emitStart, emitCount = window.EmitRange
+    if emitCount = 0u then
+        window.Items |> List.iter Chunk.decRef
+    else
+        window.Items
+        |> List.truncate (int window.ReleaseCount)
+        |> List.iter Chunk.decRef
+
+let private derivativeVectorFromSmoothedWindow name components workers f : Stage<Chunk<float32>, VectorChunk<float32>> =
+    if workers < 1 then
+        invalidArg "workers" $"{name} expects at least one worker, got {workers}."
+
+    let mapper _debug (window: Window<Chunk<float32>>) =
+        let items = window.Items |> List.toArray
+        let _emitStart, emitCount = window.EmitRange
+        try
+            if emitCount = 0u then
+                []
+            else
+                [ f items ]
+        finally
+            releaseConsumedFloat32Window window
+
+    Stage.parallelCollect
+        $"{name}.parallelCollect.Float32.components{components}.workers{workers}"
+        3
+        workers
+        1
+        1
+        zeroFloat32ChunkLike
+        mapper
+        (fun n -> uint64 (3 + workers * components) * chunkMemoryNeed<float32> n)
+        id
+
+let private derivativeScalarFromSmoothedWindow name workers f : Stage<Chunk<float32>, Chunk<float32>> =
+    if workers < 1 then
+        invalidArg "workers" $"{name} expects at least one worker, got {workers}."
+
+    let mapper _debug (window: Window<Chunk<float32>>) =
+        let items = window.Items |> List.toArray
+        let _emitStart, emitCount = window.EmitRange
+        try
+            if emitCount = 0u then
+                []
+            else
+                [ f items ]
+        finally
+            releaseConsumedFloat32Window window
+
+    Stage.parallelCollect
+        $"{name}.parallelCollect.Float32.workers{workers}"
+        3
+        workers
+        1
+        1
+        zeroFloat32ChunkLike
+        mapper
+        (fun n -> uint64 (3 + workers) * chunkMemoryNeed<float32> n)
+        id
+
+let private gaussianSmoothFloat32XYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers =
+    StackConvolve.gaussianFilterNativeParallelCollectXYZ<float32> sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers
+
+let gradientVectorNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers : Stage<Chunk<float32>, VectorChunk<float32>> =
+    let smooth = gaussianSmoothFloat32XYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers
+    let derivatives =
+        derivativeVectorFromSmoothedWindow
+            "chunkGradientVectorNative"
+            3
+            workers
+            ChunkKernel.gradientVectorFromSmoothedNative
+    smooth --> derivatives
+
+let gradientVectorNativeParallelCollect sigma radius workers : Stage<Chunk<float32>, VectorChunk<float32>> =
+    gradientVectorNativeParallelCollectXYZ sigma radius sigma radius sigma radius workers
+
+let gradientMagnitudeNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers : Stage<Chunk<float32>, Chunk<float32>> =
+    gradientVectorNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers
+    --> vectorMagnitudeFloat32
+
+let gradientMagnitudeNativeParallelCollect sigma radius workers : Stage<Chunk<float32>, Chunk<float32>> =
+    gradientMagnitudeNativeParallelCollectXYZ sigma radius sigma radius sigma radius workers
+
+let hessianUpperNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers : Stage<Chunk<float32>, VectorChunk<float32>> =
+    let smooth = gaussianSmoothFloat32XYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers
+    let derivatives =
+        derivativeVectorFromSmoothedWindow
+            "chunkHessianUpperNative"
+            6
+            workers
+            ChunkKernel.hessianUpperFromSmoothedNative
+    smooth --> derivatives
+
+let hessianUpperNativeParallelCollect sigma radius workers : Stage<Chunk<float32>, VectorChunk<float32>> =
+    hessianUpperNativeParallelCollectXYZ sigma radius sigma radius sigma radius workers
+
+let laplacianNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers : Stage<Chunk<float32>, Chunk<float32>> =
+    let smooth = gaussianSmoothFloat32XYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers
+    let derivatives =
+        derivativeScalarFromSmoothedWindow
+            "chunkLaplacianNative"
+            workers
+            ChunkKernel.laplacianFromSmoothedNative
+    smooth --> derivatives
+
+let laplacianNativeParallelCollect sigma radius workers : Stage<Chunk<float32>, Chunk<float32>> =
+    laplacianNativeParallelCollectXYZ sigma radius sigma radius sigma radius workers
+
+let sobelMagnitudeNativeParallelCollect workers : Stage<Chunk<float32>, Chunk<float32>> =
+    derivativeScalarFromSmoothedWindow
+        "chunkSobelMagnitudeNative"
+        workers
+        ChunkKernel.sobelMagnitudeFromNativeFloat32
 
 let inline map<'T, 'U when 'T: equality and 'U: equality
                          and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType

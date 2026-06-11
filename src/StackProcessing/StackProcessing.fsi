@@ -26,6 +26,8 @@ type ChunkLayout = StackCore.ChunkLayout
 
 type Chunk<'T when 'T: equality> = StackCore.Chunk<'T>
 
+type VectorChunk<'T when 'T: equality> = StackCore.VectorChunk<'T>
+
 type Image<'S when 'S: equality> = Image.Image<'S>
 
 type ImageFacts = Image.ImageFacts
@@ -369,6 +371,48 @@ val chunkPermuteAxes<'T
     when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
          'T :> System.ValueType
 
+val chunkResample2DNative<'T
+                            when 'T: equality and 'T: (new: unit -> 'T) and
+                                 'T: struct and 'T :> System.ValueType> :
+  (string ->
+     uint32 ->
+     uint32 ->
+     float -> float -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkEuler2DTransformNative<'T
+                                  when 'T: equality and 'T: (new: unit -> 'T) and
+                                       'T: struct and 'T :> System.ValueType> :
+  (double * double * double ->
+     double * double -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkEuler2DRotateNative<'T
+                               when 'T: equality and 'T: (new: unit -> 'T) and
+                                    'T: struct and 'T :> System.ValueType> :
+  (double * double ->
+     double -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkSignedDistanceBandNativeParallelCollect:
+  (uint32 ->
+     uint32 ->
+     int -> StackCore.Stage<StackCore.Chunk<uint8>,StackCore.Chunk<float32>>)
+
+val chunkVectorDotFloat32:
+  StackCore.Stage<(StackCore.VectorChunk<float32> *
+                   StackCore.VectorChunk<float32>),StackCore.Chunk<float32>>
+
+val chunkVectorMagnitudeFloat32:
+  StackCore.Stage<StackCore.VectorChunk<float32>,StackCore.Chunk<float32>>
+
+val chunkVectorAngleToFloat32:
+  (float32 list ->
+     StackCore.Stage<StackCore.VectorChunk<float32>,StackCore.Chunk<float32>>)
+
 val convolveNativeXParallelCollect<'T
                                      when 'T: equality and 'T: (new: unit -> 'T) and
                                           'T: struct and 'T :> System.ValueType> :
@@ -472,6 +516,69 @@ val gaussianFilterNativeParallelCollectXYZ<'T
      int -> int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
     when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
          'T :> System.ValueType
+
+val gradientVectorNativeParallelCollect:
+  (float ->
+     int ->
+     int ->
+     StackCore.Stage<StackCore.Chunk<float32>,StackCore.VectorChunk<float32>>)
+
+val gradientVectorNativeParallelCollectXYZ:
+  (float ->
+     int ->
+     float ->
+     int ->
+     float ->
+     int ->
+     int ->
+     StackCore.Stage<StackCore.Chunk<float32>,StackCore.VectorChunk<float32>>)
+
+val gradientMagnitudeNativeParallelCollect:
+  (float ->
+     int ->
+     int -> StackCore.Stage<StackCore.Chunk<float32>,StackCore.Chunk<float32>>)
+
+val gradientMagnitudeNativeParallelCollectXYZ:
+  (float ->
+     int ->
+     float ->
+     int ->
+     float ->
+     int ->
+     int -> StackCore.Stage<StackCore.Chunk<float32>,StackCore.Chunk<float32>>)
+
+val hessianUpperNativeParallelCollect:
+  (float ->
+     int ->
+     int ->
+     StackCore.Stage<StackCore.Chunk<float32>,StackCore.VectorChunk<float32>>)
+
+val hessianUpperNativeParallelCollectXYZ:
+  (float ->
+     int ->
+     float ->
+     int ->
+     float ->
+     int ->
+     int ->
+     StackCore.Stage<StackCore.Chunk<float32>,StackCore.VectorChunk<float32>>)
+
+val laplacianNativeParallelCollect:
+  (float ->
+     int ->
+     int -> StackCore.Stage<StackCore.Chunk<float32>,StackCore.Chunk<float32>>)
+
+val laplacianNativeParallelCollectXYZ:
+  (float ->
+     int ->
+     float ->
+     int ->
+     float ->
+     int ->
+     int -> StackCore.Stage<StackCore.Chunk<float32>,StackCore.Chunk<float32>>)
+
+val sobelMagnitudeNativeParallelCollect:
+  (int -> StackCore.Stage<StackCore.Chunk<float32>,StackCore.Chunk<float32>>)
 
 val sobelXNativeParallelCollect<'T
                                   when 'T: equality and 'T: (new: unit -> 'T) and

@@ -18,6 +18,23 @@ module ChunkFunctions =
         { LeftEdges: float[]
           Counts: uint64[] }
 
+    type ResampleInterpolation =
+        | NearestNeighbor
+        | Linear
+
+    module ResampleInterpolation =
+        let parse (value: string) =
+            match value.Trim().ToLowerInvariant().Replace("_", "").Replace("-", "").Replace(" ", "") with
+            | "nearest"
+            | "nearestneighbor"
+            | "nn" -> NearestNeighbor
+            | "linear" -> Linear
+            | _ -> failwith $"Unknown chunk resampling interpolation '{value}'. Use NearestNeighbor or Linear."
+
+        let toNative = function
+            | NearestNeighbor -> 0
+            | Linear -> 1
+
     let finiteDiffKernel1D order =
         // Coefficients mirror ImageFunctions.finiteDiffFilter*.
         if order = 1u then [| 0.5f; 0.0f; -0.5f |]
@@ -263,6 +280,45 @@ module ChunkFunctions =
 
         [<DllImport(LibraryPath, EntryPoint = "sp_convolve_float32_z_slices")>]
         extern void convolveFloat32ZSlices(nativeint slices, nativeint outputs, nativeint kernel, int width, int height, int windowLength, int kernelLength, int outputStart, int outputCount)
+
+        [<DllImport(LibraryPath, EntryPoint = "sp_signed_distance_band_uint8_slices")>]
+        extern int signedDistanceBandUInt8Slices(
+            nativeint slices,
+            nativeint outputs,
+            int width,
+            int height,
+            int windowLength,
+            int outputStart,
+            int outputCount,
+            float32 bandRadius)
+
+        [<DllImport(LibraryPath, EntryPoint = "sp_resample_2d")>]
+        extern int resample2D(
+            nativeint input,
+            nativeint output,
+            int pixelType,
+            int inputWidth,
+            int inputHeight,
+            int outputWidth,
+            int outputHeight,
+            double spacingX,
+            double spacingY,
+            int interpolation)
+
+        [<DllImport(LibraryPath, EntryPoint = "sp_euler_2d")>]
+        extern int euler2D(
+            nativeint input,
+            nativeint output,
+            int pixelType,
+            int width,
+            int height,
+            double centerX,
+            double centerY,
+            double angle,
+            double dx,
+            double dy,
+            int inverse,
+            int interpolation)
 
         let ensureAvailable () =
             let mutable handle = nativeint 0
@@ -1065,6 +1121,108 @@ module ChunkFunctions =
                 Chunk.decRef output
                 reraise()
 
+    let private nativePixelType<'T> =
+        let t = typeof<'T>
+        if t = typeof<uint8> then 1
+        elif t = typeof<int8> then 2
+        elif t = typeof<uint16> then 3
+        elif t = typeof<int16> then 4
+        elif t = typeof<int32> then 5
+        elif t = typeof<float32> then 6
+        else
+            invalidArg "T" $"Chunk native 2D resampling supports UInt8, Int8, UInt16, Int16, Int32, and Float32 chunks, got {t.Name}."
+
+    let private validateNative2DSlice name (chunk: Chunk<'T>) =
+        let width64, height64, depth64 = chunk.Size
+        if depth64 <> 1UL then
+            invalidArg name $"Chunk native 2D resampling expects 2D slice chunks with depth 1, got {chunk.Size}."
+        if width64 > uint64 Int32.MaxValue || height64 > uint64 Int32.MaxValue then
+            invalidArg name $"Chunk native 2D resampling dimensions must fit Int32, got {chunk.Size}."
+        int width64, int height64
+
+    let private runNative2DUnary<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        name
+        outputSize
+        nativeCall
+        (chunk: Chunk<'T>)
+        =
+        NativeMedian.ensureAvailable ()
+        let output = Chunk.create<'T> outputSize
+        let mutable inputHandle = Unchecked.defaultof<GCHandle>
+        let mutable outputHandle = Unchecked.defaultof<GCHandle>
+        let mutable inputPinned = false
+        let mutable outputPinned = false
+        try
+            try
+                inputHandle <- GCHandle.Alloc(chunk.Bytes, GCHandleType.Pinned)
+                inputPinned <- true
+                outputHandle <- GCHandle.Alloc(output.Bytes, GCHandleType.Pinned)
+                outputPinned <- true
+                let status = nativeCall (inputHandle.AddrOfPinnedObject()) (outputHandle.AddrOfPinnedObject())
+                if status <> 0 then
+                    invalidOp $"{name} failed in native helper with status {status}."
+                output
+            finally
+                if outputPinned then outputHandle.Free()
+                if inputPinned then inputHandle.Free()
+        with
+        | _ ->
+            Chunk.decRef output
+            reraise()
+
+    let resample2DNativeChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        interpolation
+        outputWidth
+        outputHeight
+        spacingX
+        spacingY
+        (chunk: Chunk<'T>)
+        =
+        if outputWidth = 0u then invalidArg "outputWidth" "Chunk resample2D expects a positive output width."
+        if outputHeight = 0u then invalidArg "outputHeight" "Chunk resample2D expects a positive output height."
+        if spacingX <= 0.0 then invalidArg "spacingX" "Chunk resample2D expects positive X spacing."
+        if spacingY <= 0.0 then invalidArg "spacingY" "Chunk resample2D expects positive Y spacing."
+
+        let inputWidth, inputHeight = validateNative2DSlice "chunk" chunk
+        let outputWidthI = checkedUIntToInt "outputWidth" outputWidth
+        let outputHeightI = checkedUIntToInt "outputHeight" outputHeight
+        let pixelType = nativePixelType<'T>
+        let interpolation = ResampleInterpolation.toNative interpolation
+        runNative2DUnary
+            "sp_resample_2d"
+            (uint64 outputWidth, uint64 outputHeight, 1UL)
+            (fun input output ->
+                NativeMedian.resample2D(input, output, pixelType, inputWidth, inputHeight, outputWidthI, outputHeightI, spacingX, spacingY, interpolation))
+            chunk
+
+    let euler2DTransformNativeChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        (centerX, centerY, angle)
+        (dx, dy)
+        (chunk: Chunk<'T>)
+        =
+        let width, height = validateNative2DSlice "chunk" chunk
+        let pixelType = nativePixelType<'T>
+        runNative2DUnary
+            "sp_euler_2d.transform"
+            chunk.Size
+            (fun input output ->
+                NativeMedian.euler2D(input, output, pixelType, width, height, centerX, centerY, angle, dx, dy, 1, ResampleInterpolation.toNative Linear))
+            chunk
+
+    let euler2DRotateNativeChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        (centerX, centerY)
+        angle
+        (chunk: Chunk<'T>)
+        =
+        let width, height = validateNative2DSlice "chunk" chunk
+        let pixelType = nativePixelType<'T>
+        runNative2DUnary
+            "sp_euler_2d.rotate"
+            chunk.Size
+            (fun input output ->
+                NativeMedian.euler2D(input, output, pixelType, width, height, centerX, centerY, angle, 0.0, 0.0, 0, ResampleInterpolation.toNative Linear))
+            chunk
+
     let private validateOddKernel name (kernel: float32[]) =
         if isNull kernel then
             nullArg name
@@ -1395,6 +1553,260 @@ module ChunkFunctions =
 
     let convolveNativeZUInt8Specialized (kernel: float32[]) (window: Chunk<uint8>[]) =
         convolveNativeZ<uint8> kernel window
+
+    let signedDistanceBandNativeUInt8 (bandRadius: uint) outputStart outputCount (window: Chunk<uint8>[]) =
+        if bandRadius = 0u then
+            invalidArg "bandRadius" "Chunk signed distance band requires a positive band radius."
+        if isNull window || window.Length = 0 then
+            invalidArg "window" "Chunk signed distance band requires a non-empty window."
+        if outputStart < 0 || outputCount < 0 || outputStart + outputCount > window.Length then
+            invalidArg "outputStart" $"Chunk signed distance band emit range ({outputStart}, {outputCount}) exceeds window length {window.Length}."
+
+        let width, height, depth = window[0].Size
+        if depth <> 1UL then
+            invalidArg "window" $"Chunk signed distance band expects 2D slice chunks with depth 1, got {window[0].Size}."
+        let widthI = checkedIntDimension "width" width
+        let heightI = checkedIntDimension "height" height
+        for i in 1 .. window.Length - 1 do
+            if window[i].Size <> (width, height, 1UL) then
+                invalidArg "window" $"Chunk signed distance band expects all slices to have size {(width, height, 1UL)}, got {window[i].Size} at window index {i}."
+
+        NativeMedian.ensureAvailable ()
+
+        let outputs =
+            Array.init outputCount (fun _ -> create<float32> (width, height, 1UL))
+
+        let inputHandles = Array.zeroCreate<GCHandle> window.Length
+        let outputHandles = Array.zeroCreate<GCHandle> outputs.Length
+        let mutable retainedInputHandles = 0
+        let mutable retainedOutputHandles = 0
+        let mutable inputPointerHandle = Unchecked.defaultof<GCHandle>
+        let mutable inputPointersPinned = false
+        let mutable outputPointerHandle = Unchecked.defaultof<GCHandle>
+        let mutable outputPointersPinned = false
+
+        try
+            try
+                let inputPointers = Array.zeroCreate<nativeint> window.Length
+                for i in 0 .. window.Length - 1 do
+                    inputHandles[i] <- GCHandle.Alloc(window[i].Bytes, GCHandleType.Pinned)
+                    retainedInputHandles <- retainedInputHandles + 1
+                    inputPointers[i] <- inputHandles[i].AddrOfPinnedObject()
+
+                let outputPointers = Array.zeroCreate<nativeint> outputs.Length
+                for i in 0 .. outputs.Length - 1 do
+                    outputHandles[i] <- GCHandle.Alloc(outputs[i].Bytes, GCHandleType.Pinned)
+                    retainedOutputHandles <- retainedOutputHandles + 1
+                    outputPointers[i] <- outputHandles[i].AddrOfPinnedObject()
+
+                inputPointerHandle <- GCHandle.Alloc(inputPointers, GCHandleType.Pinned)
+                inputPointersPinned <- true
+                outputPointerHandle <- GCHandle.Alloc(outputPointers, GCHandleType.Pinned)
+                outputPointersPinned <- true
+
+                NativeSp.checkStatus
+                    "sp_signed_distance_band_uint8_slices"
+                    (NativeMedian.signedDistanceBandUInt8Slices(
+                        inputPointerHandle.AddrOfPinnedObject(),
+                        outputPointerHandle.AddrOfPinnedObject(),
+                        widthI,
+                        heightI,
+                        window.Length,
+                        outputStart,
+                        outputCount,
+                        float32 bandRadius))
+
+                outputs |> Array.toList
+            with
+            | _ ->
+                outputs |> Array.iter decRef
+                reraise()
+        finally
+            if outputPointersPinned then
+                outputPointerHandle.Free()
+            if inputPointersPinned then
+                inputPointerHandle.Free()
+            for i in 0 .. retainedOutputHandles - 1 do
+                outputHandles[i].Free()
+            for i in 0 .. retainedInputHandles - 1 do
+                inputHandles[i].Free()
+
+    let private validateDerivativeWindow name (window: Chunk<float32>[]) =
+        let firstOrder = finiteDiffKernel1D 1u
+        if window.Length <> firstOrder.Length then
+            invalidArg "window" $"{name} expects a smoothed 3-slice window, got {window.Length} slices."
+        let center = window[firstOrder.Length / 2]
+        for i in 0 .. window.Length - 1 do
+            if window[i].Size <> center.Size then
+                invalidArg "window" $"{name} expects all window chunks to have size {center.Size}, got {window[i].Size} at slice {i}."
+        center
+
+    let private sumFloat32Chunks3 name (a: Chunk<float32>) (b: Chunk<float32>) (c: Chunk<float32>) =
+        validateSameSize name a b
+        validateSameSize name a c
+        let output = create<float32> a.Size
+        try
+            let aPixels = span<float32> a
+            let bPixels = span<float32> b
+            let cPixels = span<float32> c
+            let outputPixels = span<float32> output
+            let mutable i = 0
+            while i < outputPixels.Length do
+                outputPixels[i] <- aPixels[i] + bPixels[i] + cPixels[i]
+                i <- i + 1
+            output
+        with
+        | _ ->
+            decRef output
+            reraise()
+
+    let private firstDerivativeX (chunk: Chunk<float32>) =
+        convolveNativeX<float32> (finiteDiffKernel1D 1u) chunk
+
+    let private firstDerivativeY (chunk: Chunk<float32>) =
+        convolveNativeY<float32> (finiteDiffKernel1D 1u) chunk
+
+    let private firstDerivativeZ (window: Chunk<float32>[]) =
+        convolveNativeZ<float32> (finiteDiffKernel1D 1u) window
+
+    let private secondDerivativeX (chunk: Chunk<float32>) =
+        convolveNativeX<float32> (finiteDiffKernel1D 2u) chunk
+
+    let private secondDerivativeY (chunk: Chunk<float32>) =
+        convolveNativeY<float32> (finiteDiffKernel1D 2u) chunk
+
+    let private secondDerivativeZ (window: Chunk<float32>[]) =
+        convolveNativeZ<float32> (finiteDiffKernel1D 2u) window
+
+    let private crossDerivativeXY (center: Chunk<float32>) =
+        let dx = firstDerivativeX center
+        try
+            firstDerivativeY dx
+        finally
+            decRef dx
+
+    let private crossDerivativeXZ (window: Chunk<float32>[]) =
+        let dxWindow = window |> Array.map firstDerivativeX
+        try
+            firstDerivativeZ dxWindow
+        finally
+            dxWindow |> Array.iter decRef
+
+    let private crossDerivativeYZ (window: Chunk<float32>[]) =
+        let dyWindow = window |> Array.map firstDerivativeY
+        try
+            firstDerivativeZ dyWindow
+        finally
+            dyWindow |> Array.iter decRef
+
+    let gradientVectorFromSmoothedNative (window: Chunk<float32>[]) =
+        let center = validateDerivativeWindow "gradientVectorFromSmoothedNative" window
+        let dx = firstDerivativeX center
+        let dy = firstDerivativeY center
+        let dz = firstDerivativeZ window
+        try
+            toVectorImage [ dx; dy; dz ]
+        finally
+            decRef dx
+            decRef dy
+            decRef dz
+
+    let hessianUpperFromSmoothedNative (window: Chunk<float32>[]) =
+        let center = validateDerivativeWindow "hessianUpperFromSmoothedNative" window
+        let dxx = secondDerivativeX center
+        let dxy = crossDerivativeXY center
+        let dxz = crossDerivativeXZ window
+        let dyy = secondDerivativeY center
+        let dyz = crossDerivativeYZ window
+        let dzz = secondDerivativeZ window
+        try
+            toVectorImage [ dxx; dxy; dxz; dyy; dyz; dzz ]
+        finally
+            decRef dxx
+            decRef dxy
+            decRef dxz
+            decRef dyy
+            decRef dyz
+            decRef dzz
+
+    let laplacianFromSmoothedNative (window: Chunk<float32>[]) =
+        let center = validateDerivativeWindow "laplacianFromSmoothedNative" window
+        let dxx = secondDerivativeX center
+        let dyy = secondDerivativeY center
+        let dzz = secondDerivativeZ window
+        try
+            sumFloat32Chunks3 "laplacianFromSmoothedNative" dxx dyy dzz
+        finally
+            decRef dxx
+            decRef dyy
+            decRef dzz
+
+    let private sobelDerivative = [| -1.0f; 0.0f; 1.0f |]
+    let private sobelSmooth = [| 0.25f; 0.5f; 0.25f |]
+
+    let private sobelX (window: Chunk<float32>[]) =
+        let zSmooth = convolveNativeZ<float32> sobelSmooth window
+        try
+            let ySmooth = convolveNativeY<float32> sobelSmooth zSmooth
+            try
+                convolveNativeX<float32> sobelDerivative ySmooth
+            finally
+                decRef ySmooth
+        finally
+            decRef zSmooth
+
+    let private sobelY (window: Chunk<float32>[]) =
+        let zSmooth = convolveNativeZ<float32> sobelSmooth window
+        try
+            let xSmooth = convolveNativeX<float32> sobelSmooth zSmooth
+            try
+                convolveNativeY<float32> sobelDerivative xSmooth
+            finally
+                decRef xSmooth
+        finally
+            decRef zSmooth
+
+    let private sobelZ (window: Chunk<float32>[]) =
+        let xySmooth =
+            window
+            |> Array.map (fun slice ->
+                let xSmooth = convolveNativeX<float32> sobelSmooth slice
+                try
+                    convolveNativeY<float32> sobelSmooth xSmooth
+                finally
+                    decRef xSmooth)
+        try
+            convolveNativeZ<float32> sobelDerivative xySmooth
+        finally
+            xySmooth |> Array.iter decRef
+
+    let sobelMagnitudeFromNativeFloat32 (window: Chunk<float32>[]) =
+        validateDerivativeWindow "sobelMagnitudeFromNativeFloat32" window |> ignore
+        let dx = sobelX window
+        let dy = sobelY window
+        let dz = sobelZ window
+        let output = create<float32> dx.Size
+        try
+            try
+                validateSameSize "sobelMagnitudeFromNativeFloat32" dx dy
+                validateSameSize "sobelMagnitudeFromNativeFloat32" dx dz
+                let dxPixels = span<float32> dx
+                let dyPixels = span<float32> dy
+                let dzPixels = span<float32> dz
+                let outputPixels = span<float32> output
+                let mutable i = 0
+                while i < outputPixels.Length do
+                    outputPixels[i] <- MathF.Sqrt(dxPixels[i] * dxPixels[i] + dyPixels[i] * dyPixels[i] + dzPixels[i] * dzPixels[i])
+                    i <- i + 1
+                output
+            with
+            | _ ->
+                decRef output
+                reraise()
+        finally
+            decRef dx
+            decRef dy
+            decRef dz
 
     let addCountsInto (target: uint64[]) (source: uint64[]) =
         if target.Length <> source.Length then

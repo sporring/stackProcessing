@@ -24,6 +24,7 @@ type Slab<'T when 'T: equality> =
 type ChunkLayout = ChunkPrimitive.ChunkLayout
 type ChunkIndex = ChunkPrimitive.ChunkIndex
 type Chunk<'T when 'T: equality> = ChunkPrimitive.Chunk<'T>
+type VectorChunk<'T when 'T: equality> = ChunkPrimitive.VectorChunk<'T>
 type DenseUInt32UnionFind = ChunkPrimitive.DenseUInt32UnionFind
 
 type HistogramBinning =
@@ -61,6 +62,20 @@ module Chunk =
         ChunkPrimitive.span<'T> chunk
     let incRef = ChunkPrimitive.incRef
     let decRef = ChunkPrimitive.decRef
+    let vectorSpan<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (vector: VectorChunk<'T>) =
+        ChunkPrimitive.vectorSpan<'T> vector
+    let toVectorImage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkPrimitive.toVectorImage<'T>
+    let vectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkPrimitive.vectorElement<'T>
+    let appendVectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkPrimitive.appendVectorElement<'T>
+    let mapVectorElements = ChunkPrimitive.mapVectorElements
+    let vectorDot = ChunkPrimitive.vectorDot
+    let vectorMagnitude = ChunkPrimitive.vectorMagnitude
+    let vectorCross3D = ChunkPrimitive.vectorCross3D
+    let vectorAngleTo = ChunkPrimitive.vectorAngleTo
+    let mapVectorElementsFloat32 = ChunkPrimitive.mapVectorElementsFloat32
+    let vectorDotFloat32 = ChunkPrimitive.vectorDotFloat32
+    let vectorMagnitudeFloat32 = ChunkPrimitive.vectorMagnitudeFloat32
+    let vectorAngleToFloat32 = ChunkPrimitive.vectorAngleToFloat32
     let inline toIndex width height x y z = ChunkPrimitive.toIndex width height x y z
     let inline ofIndex width height index = ChunkPrimitive.ofIndex width height index
     let iter f chunk = ChunkPrimitive.iter f chunk

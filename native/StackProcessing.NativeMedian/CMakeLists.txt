@@ -9,7 +9,7 @@ endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(FFTW3F REQUIRED IMPORTED_TARGET fftw3f)
 
-add_library(spnth SHARED MedianNthElement.cpp)
+add_library(spnth SHARED lowlevel.cpp)
 target_compile_features(spnth PRIVATE cxx_std_17)
 target_link_libraries(spnth PRIVATE PkgConfig::FFTW3F)
 

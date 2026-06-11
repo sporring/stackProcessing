@@ -30,6 +30,14 @@ implementation before Chunk can act as the regular StackProcessing backbone.
   - Normal, salt-and-pepper, and shot noise have simple Chunk-native stages.
   - Structural transforms: padding, crop, squeeze, concatenate along an axis,
     and axis permutation.
+  - Native-backed 2D resampling and Euler 2D transform/rotation stages for
+    Chunk slices.
+  - Vector Chunk basis storage and operations: `toVectorImage`,
+    `appendVectorElement`, `vectorElement`, `mapVectorElements`, `vectorDot`,
+    `vectorMagnitude`, `vectorCross3D`, and `vectorAngleTo`. `Float32` vector
+    chunks also have `mapVectorElementsFloat32`, `vectorDotFloat32`,
+    `vectorMagnitudeFloat32`, and `vectorAngleToFloat32` for native derivative
+    outputs.
 - Existing chunk-native analysis and neighbourhood stages:
   - `thresholdBinary`, `thresholdNative`, and `thresholdNativeParallelCollect`
   - `castToUInt8`, `castToFloat32`, `castFromFloat32`
@@ -45,11 +53,26 @@ implementation before Chunk can act as the regular StackProcessing backbone.
   - finite-difference 1D kernels copied from `ImageFunctions` as `float32[]`
     and exposed as `finiteDiffNativeX/Y/ZParallelCollect`
   - separable Sobel-axis response stages (`sobelX/Y/ZNativeParallelCollect`)
+  - derivative-family `Float32` Chunk stages built from separable Gaussian
+    smoothing plus native finite differences:
+    `gradientVectorNativeParallelCollect`,
+    `gradientVectorNativeParallelCollectXYZ`,
+    `hessianUpperNativeParallelCollect`,
+    `hessianUpperNativeParallelCollectXYZ`,
+    `laplacianNativeParallelCollect`, and
+    `laplacianNativeParallelCollectXYZ`. Gradient output is a 3-component
+    vector Chunk; Hessian output is the 6-component upper matrix
+    `[Dxx; Dxy; Dxz; Dyy; Dyz; Dzz]`; Laplacian is scalar `Dxx + Dyy + Dzz`.
+  - Convenience magnitude stages: `gradientMagnitudeNativeParallelCollect`,
+    `gradientMagnitudeNativeParallelCollectXYZ`, and
+    `sobelMagnitudeNativeParallelCollect`.
   - UInt8 Perreault-Hebert dense median baseline with y-band workers
   - native nth-element median stages for `UInt8`, `UInt16`, `Int32`, and
     `Float32`, including `ParallelCollect` variants
   - connected-components SAUF stages for `UInt8` input with `UInt32` labels,
     including a `ParallelCollect` variant
+  - native exact signed distance band for `UInt8` mask chunks, emitted as
+    `Float32` slices through `signedDistanceBandNativeParallelCollect`
   - XY FFT for `Float32` chunks to complex64-interleaved `Float32` chunks,
     including a `ParallelCollect` variant
     
@@ -61,22 +84,17 @@ implementation before Chunk can act as the regular StackProcessing backbone.
 - Slab bridges: `ofSlab` and `toSlab` need a Chunk-native shape. The current
   `Slab<'T>` record contains an `Image<'T>`, so either the record should become
   storage-polymorphic or a parallel `ChunkSlab<'T>` should be introduced.
-- Vector-valued image operations remain Image-only:
-  `toVectorImage`, `appendVectorElement`, `vectorElement`,
-  `mapVectorElements`, `vectorDot`, `vectorCross3D`, `vectorAngleTo`,
-  structure-tensor helpers, and vector color conversion.
-- Geometric and resampling operations remain Image/ITK paths:
-  `euler2DTransform`, `euler2DRotate`, `resample2D`, and other coordinate-space
-  operations. Affine resampling now has a first simple Chunk-slice stage, but it
-  still needs optimization before it should be considered final.
+- Higher-level vector-valued operations still need Chunk stages or kernels:
+  structure-tensor helpers and vector color conversion.
+- Some geometric and resampling operations remain Image/ITK paths for now.
+  Affine resampling has a first simple Chunk-slice stage, but it still needs
+  optimization before it should be considered final.
 - Full FFT workflows and complex-valued arithmetic remain Image/ITK paths.
   The Chunk path currently has native XY FFT for `Float32` chunks to
   complex64-interleaved `Float32` storage. Also, it needs speedup!
-- Signed distance band function needs a Chunk version.
 - Exact or ITK-backed neighbourhood filters still need either native Chunk
   versions or explicit bridge decisions:
-  bilateral, gradient magnitude, Sobel magnitude, Laplacian, Gaussian
-  derivatives, signed distance, label contour, and exact spherical morphology.
+  label contour and exact spherical morphology.
 - Stack/unstack still need a Chunk policy. The simple structural single-Chunk
   transforms now live in `ChunkFunctions`.
 
@@ -92,4 +110,4 @@ implementation before Chunk can act as the regular StackProcessing backbone.
   to vector lanes.
 - The bridge functions copy by design. They should be used at ITK or legacy
   Image boundaries, not inside hot chunk pipelines.
-- We are for the moment not porting recursive gaussian filter, speckle noise
+- We are for the moment not porting recursive gaussian filter, speckle noise, bilateral filters

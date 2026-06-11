@@ -62,6 +62,14 @@ let private chunkFromFloat32Pixels width height (pixels: float32[]) =
     pixels.CopyTo(values)
     chunk
 
+let private chunkFromFloat64Pixels width height (pixels: float[]) =
+    let chunk = Chunk.create<float> (uint64 width, uint64 height, 1UL)
+    let values = Chunk.span<float> chunk
+    if values.Length <> pixels.Length then
+        invalidArg "pixels" $"Expected {values.Length} pixels, got {pixels.Length}."
+    pixels.CopyTo(values)
+    chunk
+
 let private chunkFromInt32Pixels width height (pixels: int32[]) =
     let chunk = Chunk.create<int32> (uint64 width, uint64 height, 1UL)
     let values = Chunk.span<int32> chunk
@@ -310,6 +318,221 @@ let chunkSuite =
                 Expect.sequenceEqual ((Chunk.span<int32> outputs[0]).ToArray()) [| -1; 7; 8; -1 |] "Chunk pad stage should preserve input values at the requested offset."
             finally
                 outputs |> List.iter Chunk.decRef
+
+        testCase "Chunk native 2D resample and Euler identity transforms preserve pixels" <| fun _ ->
+            let pixels = [| 1.0f; 2.0f; 3.0f; 4.0f; 5.0f; 6.0f |]
+
+            let expectSame name (output: Chunk<float32>) =
+                try
+                    Expect.equal output.Size (3UL, 2UL, 1UL) $"{name} should preserve or request the expected size."
+                    Expect.sequenceEqual ((Chunk.span<float32> output).ToArray()) pixels $"{name} should preserve identity pixels."
+                finally
+                    Chunk.decRef output
+
+            let resampleInput = chunkFromFloat32Pixels 3 2 pixels
+            ChunkKernel.resample2DNativeChunk ChunkKernel.ResampleInterpolation.NearestNeighbor 3u 2u 1.0 1.0 resampleInput
+            |> expectSame "native resample2D"
+            Chunk.decRef resampleInput
+
+            let transformInput = chunkFromFloat32Pixels 3 2 pixels
+            ChunkKernel.euler2DTransformNativeChunk (1.0, 0.5, 0.0) (0.0, 0.0) transformInput
+            |> expectSame "native euler2DTransform"
+            Chunk.decRef transformInput
+
+            let rotateInput = chunkFromFloat32Pixels 3 2 pixels
+            ChunkKernel.euler2DRotateNativeChunk (1.0, 0.5) 0.0 rotateInput
+            |> expectSame "native euler2DRotate"
+            Chunk.decRef rotateInput
+
+        testCase "Chunk native 2D resample is exposed as a Stack stage" <| fun _ ->
+            let input = chunkFromPixels 2 2 [| 1uy; 2uy; 3uy; 4uy |]
+            let outputs = runStageList (ChunkFunctions.resample2DNative<uint8> "NearestNeighbor" 2u 2u 1.0 1.0) [ input ]
+            try
+                Expect.equal outputs.Length 1 "Chunk native resample stage should emit one chunk."
+                Expect.equal outputs[0].Size (2UL, 2UL, 1UL) "Chunk native resample stage should preserve requested shape."
+                Expect.sequenceEqual ((Chunk.span<uint8> outputs[0]).ToArray()) [| 1uy; 2uy; 3uy; 4uy |] "Chunk native resample stage should preserve identity pixels."
+            finally
+                outputs |> List.iter Chunk.decRef
+
+        testCase "Chunk native signed distance band computes finite values only inside the requested band" <| fun _ ->
+            let makeSlices () =
+                [ for z in 0 .. 4 ->
+                    if z = 2 then
+                        chunkFromPixels 5 1 [| 0uy; 0uy; 1uy; 0uy; 0uy |]
+                    else
+                        chunkFromPixels 5 1 [| 0uy; 0uy; 0uy; 0uy; 0uy |] ]
+
+            let window = makeSlices () |> List.toArray
+            try
+                let outputs = ChunkKernel.signedDistanceBandNativeUInt8 2u 2 1 window
+                try
+                    Expect.equal outputs.Length 1 "Native signed distance should emit one requested slice."
+                    let values = (Chunk.span<float32> outputs[0]).ToArray()
+                    Expect.isTrue (Single.IsNaN values[0]) "Distance equal to the band radius should be NaN."
+                    Expect.equal values[1] 1.0f "Outside voxel one step from the object should be positive."
+                    Expect.equal values[2] -1.0f "Foreground voxel should be negative inside the object."
+                    Expect.equal values[3] 1.0f "Outside voxel one step from the object should be positive."
+                    Expect.isTrue (Single.IsNaN values[4]) "Distance equal to the band radius should be NaN."
+                finally
+                    outputs |> List.iter Chunk.decRef
+            finally
+                window |> Array.iter Chunk.decRef
+
+        testCase "Chunk native signed distance band is exposed as a Stack stage" <| fun _ ->
+            let inputs =
+                [ for z in 0 .. 4 ->
+                    if z = 2 then
+                        chunkFromPixels 5 1 [| 0uy; 0uy; 1uy; 0uy; 0uy |]
+                    else
+                        chunkFromPixels 5 1 [| 0uy; 0uy; 0uy; 0uy; 0uy |] ]
+
+            let outputs = runStageList (ChunkFunctions.signedDistanceBandNativeParallelCollect 2u 1u 2) inputs
+            try
+                Expect.equal outputs.Length 5 "Signed distance band stage should preserve slice count."
+                let values = (Chunk.span<float32> outputs[2]).ToArray()
+                Expect.isTrue (Single.IsNaN values[0]) "Stage output should apply the same strict band cutoff."
+                Expect.equal values[1] 1.0f "Stage output should preserve positive outside distance."
+                Expect.equal values[2] -1.0f "Stage output should preserve negative inside distance."
+                Expect.equal values[3] 1.0f "Stage output should preserve positive outside distance."
+                Expect.isTrue (Single.IsNaN values[4]) "Stage output should apply the same strict band cutoff."
+            finally
+                outputs |> List.iter Chunk.decRef
+
+        testCase "Vector chunks compose extract and append typed components" <| fun _ ->
+            let x = chunkFromFloat32Pixels 2 2 [| 1.0f; 2.0f; 3.0f; 4.0f |]
+            let y = chunkFromFloat32Pixels 2 2 [| 10.0f; 20.0f; 30.0f; 40.0f |]
+            let z = chunkFromFloat32Pixels 2 2 [| 100.0f; 200.0f; 300.0f; 400.0f |]
+            try
+                let vector2 = Chunk.toVectorImage [ x; y ]
+                try
+                    Expect.equal vector2.SpatialSize (2UL, 2UL, 1UL) "Vector chunk should preserve spatial size."
+                    Expect.equal vector2.Components 2u "Vector chunk should record component count."
+                    Expect.equal vector2.Chunk.Size (4UL, 2UL, 1UL) "Vector chunk storage should widen X by the component count."
+                    Expect.sequenceEqual ((Chunk.vectorSpan vector2).ToArray()) [| 1.0f; 10.0f; 2.0f; 20.0f; 3.0f; 30.0f; 4.0f; 40.0f |] "Vector storage should be component-fastest."
+
+                    let second = Chunk.vectorElement 1 vector2
+                    try
+                        Expect.sequenceEqual ((Chunk.span<float32> second).ToArray()) [| 10.0f; 20.0f; 30.0f; 40.0f |] "vectorElement should extract the requested component."
+                    finally
+                        Chunk.decRef second
+
+                    let vector3 = Chunk.appendVectorElement vector2 z
+                    try
+                        Expect.equal vector3.Components 3u "appendVectorElement should add one component."
+                        Expect.sequenceEqual ((Chunk.vectorSpan vector3).ToArray()) [| 1.0f; 10.0f; 100.0f; 2.0f; 20.0f; 200.0f; 3.0f; 30.0f; 300.0f; 4.0f; 40.0f; 400.0f |] "appendVectorElement should append the scalar component last."
+                    finally
+                        Chunk.decRef vector3.Chunk
+                finally
+                    Chunk.decRef vector2.Chunk
+            finally
+                Chunk.decRef x
+                Chunk.decRef y
+                Chunk.decRef z
+
+        testCase "Float vector chunks map dot cross and angle" <| fun _ ->
+            let ax = chunkFromFloat64Pixels 2 1 [| 1.0; 0.0 |]
+            let ay = chunkFromFloat64Pixels 2 1 [| 0.0; 1.0 |]
+            let az = chunkFromFloat64Pixels 2 1 [| 0.0; 0.0 |]
+            let bx = chunkFromFloat64Pixels 2 1 [| 0.0; 1.0 |]
+            let by = chunkFromFloat64Pixels 2 1 [| 1.0; 0.0 |]
+            let bz = chunkFromFloat64Pixels 2 1 [| 0.0; 0.0 |]
+            try
+                let a = Chunk.toVectorImage [ ax; ay; az ]
+                let b = Chunk.toVectorImage [ bx; by; bz ]
+                try
+                    let mapped = Chunk.mapVectorElements (fun value -> value + 1.0) a
+                    try
+                        Expect.sequenceEqual ((Chunk.vectorSpan mapped).ToArray()) [| 2.0; 1.0; 1.0; 1.0; 2.0; 1.0 |] "mapVectorElements should transform every scalar component."
+                    finally
+                        Chunk.decRef mapped.Chunk
+
+                    let dot = Chunk.vectorDot a b
+                    try
+                        Expect.sequenceEqual ((Chunk.span<float> dot).ToArray()) [| 0.0; 0.0 |] "vectorDot should compute per-voxel dot products."
+                    finally
+                        Chunk.decRef dot
+
+                    let cross = Chunk.vectorCross3D a b
+                    try
+                        Expect.sequenceEqual ((Chunk.vectorSpan cross).ToArray()) [| 0.0; 0.0; 1.0; 0.0; 0.0; -1.0 |] "vectorCross3D should compute per-voxel cross products."
+                    finally
+                        Chunk.decRef cross.Chunk
+
+                    let angle = Chunk.vectorAngleTo [ 1.0; 0.0; 0.0 ] a
+                    try
+                        let values = (Chunk.span<float> angle).ToArray()
+                        Expect.floatClose Accuracy.high values[0] 0.0 "vectorAngleTo should return zero for aligned vectors."
+                        Expect.floatClose Accuracy.high values[1] (Math.PI / 2.0) "vectorAngleTo should return pi/2 for orthogonal vectors."
+                    finally
+                        Chunk.decRef angle
+                finally
+                    Chunk.decRef a.Chunk
+                    Chunk.decRef b.Chunk
+            finally
+                [ ax; ay; az; bx; by; bz ] |> List.iter Chunk.decRef
+
+        testCase "Float32 vector chunks compute dot magnitude and angle" <| fun _ ->
+            let ax = chunkFromFloat32Pixels 2 1 [| 3.0f; 0.0f |]
+            let ay = chunkFromFloat32Pixels 2 1 [| 4.0f; 1.0f |]
+            let bx = chunkFromFloat32Pixels 2 1 [| 2.0f; 1.0f |]
+            let by = chunkFromFloat32Pixels 2 1 [| 1.0f; 0.0f |]
+            try
+                let a = Chunk.toVectorImage [ ax; ay ]
+                let b = Chunk.toVectorImage [ bx; by ]
+                try
+                    let dot = Chunk.vectorDotFloat32 a b
+                    try
+                        Expect.sequenceEqual ((Chunk.span<float32> dot).ToArray()) [| 10.0f; 0.0f |] "vectorDotFloat32 should compute per-voxel dot products."
+                    finally
+                        Chunk.decRef dot
+
+                    let magnitude = Chunk.vectorMagnitudeFloat32 a
+                    try
+                        Expect.sequenceEqual ((Chunk.span<float32> magnitude).ToArray()) [| 5.0f; 1.0f |] "vectorMagnitudeFloat32 should compute Euclidean norms."
+                    finally
+                        Chunk.decRef magnitude
+
+                    let angle = Chunk.vectorAngleToFloat32 [ 1.0f; 0.0f ] a
+                    try
+                        let values = (Chunk.span<float32> angle).ToArray()
+                        Expect.floatClose Accuracy.medium (float values[0]) (acos 0.6) "vectorAngleToFloat32 should compute the angle to the reference vector."
+                        Expect.floatClose Accuracy.medium (float values[1]) (Math.PI / 2.0) "vectorAngleToFloat32 should return pi/2 for orthogonal vectors."
+                    finally
+                        Chunk.decRef angle
+                finally
+                    Chunk.decRef a.Chunk
+                    Chunk.decRef b.Chunk
+            finally
+                [ ax; ay; bx; by ] |> List.iter Chunk.decRef
+
+        testCase "Float32 vector Chunk operations are exposed as Stack stages" <| fun _ ->
+            let ax = chunkFromFloat32Pixels 2 1 [| 3.0f; 0.0f |]
+            let ay = chunkFromFloat32Pixels 2 1 [| 4.0f; 1.0f |]
+            let bx = chunkFromFloat32Pixels 2 1 [| 2.0f; 1.0f |]
+            let by = chunkFromFloat32Pixels 2 1 [| 1.0f; 0.0f |]
+            let a = Chunk.toVectorImage [ ax; ay ]
+            let b = Chunk.toVectorImage [ bx; by ]
+            Chunk.decRef ax
+            Chunk.decRef ay
+            Chunk.decRef bx
+            Chunk.decRef by
+
+            let dot = runStageList ChunkFunctions.vectorDotFloat32 [ a, b ]
+            let magnitudeInputX = chunkFromFloat32Pixels 2 1 [| 3.0f; 0.0f |]
+            let magnitudeInputY = chunkFromFloat32Pixels 2 1 [| 4.0f; 1.0f |]
+            let magnitudeInput = Chunk.toVectorImage [ magnitudeInputX; magnitudeInputY ]
+            Chunk.decRef magnitudeInputX
+            Chunk.decRef magnitudeInputY
+            let magnitude = runStageList ChunkFunctions.vectorMagnitudeFloat32 [ magnitudeInput ]
+
+            try
+                Expect.equal dot.Length 1 "vectorDotFloat32 stage should emit one scalar chunk."
+                Expect.sequenceEqual ((Chunk.span<float32> dot.[0]).ToArray()) [| 10.0f; 0.0f |] "vectorDotFloat32 stage should compute per-voxel dot products."
+                Expect.equal magnitude.Length 1 "vectorMagnitudeFloat32 stage should emit one scalar chunk."
+                Expect.sequenceEqual ((Chunk.span<float32> magnitude.[0]).ToArray()) [| 5.0f; 1.0f |] "vectorMagnitudeFloat32 stage should compute Euclidean norms."
+            finally
+                dot |> List.iter Chunk.decRef
+                magnitude |> List.iter Chunk.decRef
 
         testCase "iter iteri fold and foldi traverse in span order" <| fun _ ->
             let chunk = Chunk.create<uint8> (4UL, 1UL, 1UL)
@@ -1104,6 +1327,97 @@ let chunkSuite =
             finally
                 direct |> List.iter Chunk.decRef
                 finiteDiff |> List.iter Chunk.decRef
+
+        testCase "Chunk derivative stages pack gradient Hessian and Laplacian outputs" <| fun _ ->
+            let width = 4
+            let height = 3
+            let makeSlices () =
+                [ for z in 0 .. 2 ->
+                    [| for i in 0 .. width * height - 1 -> float32 (z * 100 + i * i - 3 * i) |]
+                    |> chunkFromFloat32Pixels width height ]
+
+            let stageSlices = makeSlices ()
+            let expectedSlices = makeSlices () |> List.toArray
+
+            let gradient =
+                runStageList
+                    (ChunkFunctions.gradientVectorNativeParallelCollect 1.0 0 2)
+                    stageSlices
+
+            let hessian =
+                runStageList
+                    (ChunkFunctions.hessianUpperNativeParallelCollect 1.0 0 2)
+                    (makeSlices ())
+
+            let laplacian =
+                runStageList
+                    (ChunkFunctions.laplacianNativeParallelCollect 1.0 0 2)
+                    (makeSlices ())
+
+            let gradientMagnitude =
+                runStageList
+                    (ChunkFunctions.gradientMagnitudeNativeParallelCollect 1.0 0 2)
+                    (makeSlices ())
+
+            let sobelMagnitude =
+                runStageList
+                    (ChunkFunctions.sobelMagnitudeNativeParallelCollect 2)
+                    (makeSlices ())
+
+            let expectedGradient = ChunkKernel.gradientVectorFromSmoothedNative expectedSlices
+            let expectedHessian = ChunkKernel.hessianUpperFromSmoothedNative expectedSlices
+            let expectedLaplacian = ChunkKernel.laplacianFromSmoothedNative expectedSlices
+            let expectedGradientMagnitude = Chunk.vectorMagnitudeFloat32 expectedGradient
+            let expectedSobelMagnitude = ChunkKernel.sobelMagnitudeFromNativeFloat32 expectedSlices
+
+            try
+                Expect.equal gradient.Length 3 "Gradient stage should emit one vector chunk per input slice."
+                Expect.equal hessian.Length 3 "Hessian stage should emit one vector chunk per input slice."
+                Expect.equal laplacian.Length 3 "Laplacian stage should emit one scalar chunk per input slice."
+                Expect.equal gradientMagnitude.Length 3 "Gradient magnitude stage should emit one scalar chunk per input slice."
+                Expect.equal sobelMagnitude.Length 3 "Sobel magnitude stage should emit one scalar chunk per input slice."
+
+                Expect.equal gradient.[1].Components 3u "Gradient should contain Dx, Dy, Dz."
+                Expect.equal hessian.[1].Components 6u "Hessian should contain Dxx, Dxy, Dxz, Dyy, Dyz, Dzz."
+                Expect.equal gradient.[1].SpatialSize (uint64 width, uint64 height, 1UL) "Gradient should preserve spatial slice size."
+                Expect.equal hessian.[1].SpatialSize (uint64 width, uint64 height, 1UL) "Hessian should preserve spatial slice size."
+
+                Expect.sequenceEqual
+                    ((Chunk.vectorSpan gradient.[1]).ToArray())
+                    ((Chunk.vectorSpan expectedGradient).ToArray())
+                    "Gradient stage center slice should match the pure Chunk derivative helper."
+
+                Expect.sequenceEqual
+                    ((Chunk.vectorSpan hessian.[1]).ToArray())
+                    ((Chunk.vectorSpan expectedHessian).ToArray())
+                    "Hessian stage center slice should match the pure Chunk derivative helper."
+
+                Expect.sequenceEqual
+                    ((Chunk.span<float32> laplacian.[1]).ToArray())
+                    ((Chunk.span<float32> expectedLaplacian).ToArray())
+                    "Laplacian stage center slice should match the pure Chunk derivative helper."
+
+                Expect.sequenceEqual
+                    ((Chunk.span<float32> gradientMagnitude.[1]).ToArray())
+                    ((Chunk.span<float32> expectedGradientMagnitude).ToArray())
+                    "Gradient magnitude stage center slice should match vector magnitude of the gradient helper."
+
+                Expect.sequenceEqual
+                    ((Chunk.span<float32> sobelMagnitude.[1]).ToArray())
+                    ((Chunk.span<float32> expectedSobelMagnitude).ToArray())
+                    "Sobel magnitude stage center slice should match the pure Chunk Sobel helper."
+            finally
+                gradient |> List.iter (fun vector -> Chunk.decRef vector.Chunk)
+                hessian |> List.iter (fun vector -> Chunk.decRef vector.Chunk)
+                laplacian |> List.iter Chunk.decRef
+                gradientMagnitude |> List.iter Chunk.decRef
+                sobelMagnitude |> List.iter Chunk.decRef
+                Chunk.decRef expectedGradient.Chunk
+                Chunk.decRef expectedHessian.Chunk
+                Chunk.decRef expectedLaplacian
+                Chunk.decRef expectedGradientMagnitude
+                Chunk.decRef expectedSobelMagnitude
+                expectedSlices |> Array.iter Chunk.decRef
 
         testCase "Chunk noise adders preserve shape and deterministic no-op paths" <| fun _ ->
             let pixels = [| 1.0f; 2.0f; 3.0f; 4.0f; 5.0f; 6.0f |]
