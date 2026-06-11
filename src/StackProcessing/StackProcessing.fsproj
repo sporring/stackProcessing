@@ -49,6 +49,7 @@
     </ItemGroup>
     
     <ItemGroup>
+        <ProjectReference Include="../Chunk/Chunk.Core.fsproj" />
         <ProjectReference Include="../Image/Image.fsproj" />
         <ProjectReference Include="../SlimPipeline/SlimPipeline.fsproj" />
         <ProjectReference Include="../StackProcessing.Core/StackProcessing.Core.fsproj" />

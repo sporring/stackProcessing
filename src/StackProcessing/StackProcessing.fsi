@@ -323,6 +323,128 @@ val readChunkSlices<'T
     when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
          'T :> System.ValueType
 
+val convolveNativeXParallelCollect<'T
+                                     when 'T: equality and 'T: (new: unit -> 'T) and
+                                          'T: struct and 'T :> System.ValueType> :
+  (float32 array ->
+     int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val convolveNativeYParallelCollect<'T
+                                     when 'T: equality and 'T: (new: unit -> 'T) and
+                                          'T: struct and 'T :> System.ValueType> :
+  (float32 array ->
+     int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val convolveNativeZParallelCollect<'T
+                                     when 'T: equality and 'T: (new: unit -> 'T) and
+                                          'T: struct and 'T :> System.ValueType> :
+  (float32 array ->
+     int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val finiteDiffKernel1D: (uint32 -> float32 array)
+
+val finiteDiffNativeXParallelCollect<'T
+                                       when 'T: equality and
+                                            'T: (new: unit -> 'T) and 'T: struct and
+                                            'T :> System.ValueType> :
+  (uint32 -> int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val finiteDiffNativeYParallelCollect<'T
+                                       when 'T: equality and
+                                            'T: (new: unit -> 'T) and 'T: struct and
+                                            'T :> System.ValueType> :
+  (uint32 -> int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val finiteDiffNativeZParallelCollect<'T
+                                       when 'T: equality and
+                                            'T: (new: unit -> 'T) and 'T: struct and
+                                            'T :> System.ValueType> :
+  (uint32 -> int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val separableConvolveNativeParallelCollect<'T
+                                             when 'T: equality and
+                                                  'T: (new: unit -> 'T) and
+                                                  'T: struct and
+                                                  'T :> System.ValueType> :
+  (float32 array ->
+     float32 array ->
+     float32 array ->
+     int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val boxFilterNativeParallelCollect<'T
+                                     when 'T: equality and 'T: (new: unit -> 'T) and
+                                          'T: struct and 'T :> System.ValueType> :
+  (int -> int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val boxFilterNativeParallelCollectXYZ<'T
+                                        when 'T: equality and
+                                             'T: (new: unit -> 'T) and
+                                             'T: struct and 'T :> System.ValueType> :
+  (int ->
+     int ->
+     int -> int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val gaussianFilterNativeParallelCollect<'T
+                                          when 'T: equality and
+                                               'T: (new: unit -> 'T) and
+                                               'T: struct and 'T :> System.ValueType> :
+  (float ->
+     int -> int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val gaussianFilterNativeParallelCollectXYZ<'T
+                                             when 'T: equality and
+                                                  'T: (new: unit -> 'T) and
+                                                  'T: struct and 'T :> System.ValueType> :
+  (float ->
+     int ->
+     float ->
+     int ->
+     float ->
+     int -> int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val sobelXNativeParallelCollect<'T
+                                  when 'T: equality and 'T: (new: unit -> 'T) and
+                                       'T: struct and 'T :> System.ValueType> :
+  (int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val sobelYNativeParallelCollect<'T
+                                  when 'T: equality and 'T: (new: unit -> 'T) and
+                                       'T: struct and 'T :> System.ValueType> :
+  (int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val sobelZNativeParallelCollect<'T
+                                  when 'T: equality and 'T: (new: unit -> 'T) and
+                                       'T: struct and 'T :> System.ValueType> :
+  (int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
 val readZarrSlabStacked<'T when 'T: equality> :
   (string ->
      int ->

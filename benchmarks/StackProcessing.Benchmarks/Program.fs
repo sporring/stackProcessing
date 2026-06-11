@@ -31,6 +31,15 @@ type ChunkConvolvePixelType =
     | ChunkInt16
     | ChunkFloat32
 
+type ChunkAxisConvolveAxis =
+    | AxisX
+    | AxisY
+    | AxisZ
+
+type ChunkAxisConvolveVariant =
+    | AxisNativeGeneric
+    | AxisNative1D
+
 type Shape =
     { Width: uint
       Height: uint
@@ -80,6 +89,7 @@ ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-connected-components --input DIR [--output DIR] [--threshold X] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-dilate --input DIR --output DIR [--radius N] [--threshold X] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-convolve --pixel-type UInt8|Int8|UInt16|Int16|Float32 --input DIR --output DIR [--kernel-size N] [--workers N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-axis-convolve-kernel --shape WxHxD [--kernel-size N] [--iterations N] [--axis x|y|z|all] [--variant native-generic|native-1d|all]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-threshold-kernel --pixel-type UInt8|UInt16|Float32 --shape WxHxD --output-type mask|intype [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-raw-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
@@ -144,6 +154,21 @@ let private parseChunkConvolvePixelType value =
     | "Int16" | "int16" -> ChunkInt16
     | "Float32" | "float32" -> ChunkFloat32
     | _ -> failwith $"unsupported chunk convolve pixel type '{value}'"
+
+let private parseChunkAxisConvolveAxis value =
+    match value with
+    | "x" | "X" -> [ AxisX ]
+    | "y" | "Y" -> [ AxisY ]
+    | "z" | "Z" -> [ AxisZ ]
+    | "all" | "All" | "ALL" -> [ AxisX; AxisY; AxisZ ]
+    | _ -> failwith $"unsupported chunk axis convolution axis '{value}'"
+
+let private parseChunkAxisConvolveVariant value =
+    match value with
+    | "native-generic" | "NativeGeneric" | "generic" | "native" | "Native" -> [ AxisNativeGeneric ]
+    | "native-1d" | "Native1D" | "specialized" | "specialised" -> [ AxisNative1D ]
+    | "all" | "All" | "ALL" -> [ AxisNativeGeneric; AxisNative1D ]
+    | _ -> failwith $"unsupported chunk axis convolution variant '{value}'"
 
 let private parseZarrCompression value =
     match value with
@@ -3354,6 +3379,133 @@ let private runTimedHotLoop iterations (action: unit -> unit) (checksum: unit ->
     printfn "totalSeconds=%s perIterationSeconds=%s checksum=%d" (stopwatch.Elapsed.TotalSeconds.ToString("F9", invariant)) ((stopwatch.Elapsed.TotalSeconds / float iterations).ToString("F9", invariant)) checksumValue
     0
 
+let private fillAxisConvolveChunk z width height =
+    let chunk = StackCore.Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
+    let values = StackCore.Chunk.span<uint8> chunk
+    let mutable i = 0
+    for y in 0 .. height - 1 do
+        for x in 0 .. width - 1 do
+            values[i] <- uint8 ((z * 43 + y * 17 + x * 9 + x * y) &&& 0xFF)
+            i <- i + 1
+    chunk
+
+let private makeBoxKernel kernelSize =
+    if kernelSize < 1 || kernelSize % 2 = 0 then
+        failwith $"kernel-size must be a positive odd integer, got {kernelSize}"
+    Array.create kernelSize (1.0f / float32 kernelSize)
+
+let private updateUInt8Checksum (checksum: byref<int>) (chunk: StackCore.Chunk<uint8>) =
+    let values = StackCore.Chunk.span<uint8> chunk
+    let stride = max 1 (values.Length / 4096)
+    let mutable i = 0
+    while i < values.Length do
+        checksum <- (checksum * 16777619) ^^^ int values[i]
+        i <- i + stride
+    checksum <- (checksum * 16777619) ^^^ values.Length
+
+let private chunkAxisName axis =
+    match axis with
+    | AxisX -> "x"
+    | AxisY -> "y"
+    | AxisZ -> "z"
+
+let private chunkAxisVariantName variant =
+    match variant with
+    | AxisNativeGeneric -> "native-generic"
+    | AxisNative1D -> "native-1d"
+
+let private runChunkAxisConvolveKernel opts =
+    let shape = require "shape" opts |> parseShape
+    let kernelSize = optional "kernel-size" "9" opts |> int
+    let iterations = optional "iterations" "100" opts |> int
+    if iterations < 1 then
+        failwith $"iterations must be positive, got {iterations}"
+
+    let axes = optional "axis" "all" opts |> parseChunkAxisConvolveAxis
+    let variants = optional "variant" "all" opts |> parseChunkAxisConvolveVariant
+    let kernel = makeBoxKernel kernelSize
+    let width = int shape.Width
+    let height = int shape.Height
+
+    if width < 1 || height < 1 then
+        failwith $"shape must have positive width and height, got {shape.Width}x{shape.Height}x{shape.Depth}"
+    let depth = int shape.Depth
+    if depth < 1 then
+        failwith $"shape must have positive depth, got {shape.Width}x{shape.Height}x{shape.Depth}"
+
+    let chunks = Array.init depth (fun z -> fillAxisConvolveChunk z width height)
+    let zeroChunk = StackCore.Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
+
+    try
+        for axis in axes do
+            for variant in variants do
+                let mutable checksum = 2166136261u |> int
+                let action () =
+                    match axis with
+                    | AxisX ->
+                        for z in 0 .. depth - 1 do
+                            let output =
+                                match variant with
+                                | AxisNativeGeneric -> ChunkCore.ChunkFunctions.convolveNativeXUInt8 kernel chunks[z]
+                                | AxisNative1D -> ChunkCore.ChunkFunctions.convolveNativeXUInt8Specialized kernel chunks[z]
+                            try
+                                updateUInt8Checksum &checksum output
+                            finally
+                                StackCore.Chunk.decRef output
+                    | AxisY ->
+                        for z in 0 .. depth - 1 do
+                            let output =
+                                match variant with
+                                | AxisNativeGeneric -> ChunkCore.ChunkFunctions.convolveNativeYUInt8 kernel chunks[z]
+                                | AxisNative1D -> ChunkCore.ChunkFunctions.convolveNativeYUInt8Specialized kernel chunks[z]
+                            try
+                                updateUInt8Checksum &checksum output
+                            finally
+                                StackCore.Chunk.decRef output
+                    | AxisZ ->
+                        let radius = kernel.Length / 2
+                        let window = Array.zeroCreate<StackCore.Chunk<uint8>> kernel.Length
+                        for z in 0 .. depth - 1 do
+                            for k in 0 .. kernel.Length - 1 do
+                                let sourceZ = z + k - radius
+                                window[k] <- if sourceZ >= 0 && sourceZ < depth then chunks[sourceZ] else zeroChunk
+                            let output =
+                                match variant with
+                                | AxisNativeGeneric -> ChunkCore.ChunkFunctions.convolveNativeZUInt8 kernel window
+                                | AxisNative1D -> ChunkCore.ChunkFunctions.convolveNativeZUInt8Specialized kernel window
+                            try
+                                updateUInt8Checksum &checksum output
+                            finally
+                                StackCore.Chunk.decRef output
+
+                action()
+                GC.Collect()
+                GC.WaitForPendingFinalizers()
+                GC.Collect()
+
+                let stopwatch = Stopwatch.StartNew()
+                for _ in 1 .. iterations do
+                    action()
+                stopwatch.Stop()
+
+                writeInternalSeconds stopwatch.Elapsed
+                printfn
+                    "variant=%s axis=%s shape=%ux%ux%u kernelSize=%d iterations=%d totalSeconds=%s perIterationSeconds=%s checksum=%d"
+                    (chunkAxisVariantName variant)
+                    (chunkAxisName axis)
+                    shape.Width
+                    shape.Height
+                    shape.Depth
+                    kernelSize
+                    iterations
+                    (stopwatch.Elapsed.TotalSeconds.ToString("F9", invariant))
+                    ((stopwatch.Elapsed.TotalSeconds / float iterations).ToString("F9", invariant))
+                    checksum
+        0
+    finally
+        StackCore.Chunk.decRef zeroChunk
+        chunks |> Array.iter StackCore.Chunk.decRef
+
 let private runLibTiffDirectThresholdHotLoop opts =
     let pixelType = require "pixel-type" opts |> parsePixelType
     let input = require "input" opts
@@ -4076,6 +4228,7 @@ let main args =
         | _ when args[0] = "run-chunk-connected-components" -> args[1..] |> parseArgs |> runChunkConnectedComponentsCommand
         | _ when args[0] = "run-chunk-dilate" -> args[1..] |> parseArgs |> runChunkDilate
         | _ when args[0] = "run-chunk-convolve" -> args[1..] |> parseArgs |> runChunkConvolve
+        | _ when args[0] = "run-chunk-axis-convolve-kernel" -> args[1..] |> parseArgs |> runChunkAxisConvolveKernel
         | _ when args[0] = "run-threshold-kernel" -> args[1..] |> parseArgs |> runThresholdKernel
         | _ when args[0] = "run-libtiff-strip-copy" -> args[1..] |> parseArgs |> runLibTiffStripCopy
         | _ when args[0] = "run-libtiff-raw-strip-copy" -> args[1..] |> parseArgs |> runLibTiffRawStripCopy

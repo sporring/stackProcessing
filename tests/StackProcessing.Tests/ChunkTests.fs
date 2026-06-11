@@ -7,7 +7,9 @@ open FSharp.Control
 open SlimPipeline
 open StackCore
 
-let private manualChunk size bytes byteLength release =
+module ChunkKernel = ChunkCore.ChunkFunctions
+
+let private manualChunk<'T when 'T: equality> size bytes byteLength release : Chunk<'T> =
     { Size = size
       Bytes = bytes
       ByteLength = byteLength
@@ -66,6 +68,64 @@ let private chunkFromInt32Pixels width height (pixels: int32[]) =
         invalidArg "pixels" $"Expected {values.Length} pixels, got {pixels.Length}."
     pixels.CopyTo(values)
     chunk
+
+let private runNativeAxisTypedCase<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    name
+    width
+    height
+    (kernel: float32[])
+    (makeChunk: int -> int -> 'T[] -> Chunk<'T>)
+    (toFloat: 'T -> float32)
+    (fromFloat: float32 -> 'T)
+    (pixels: 'T[])
+    (zPixels: 'T[][])
+    =
+    let radius = kernel.Length / 2
+
+    let expectedX =
+        [| for y in 0 .. height - 1 do
+               for x in 0 .. width - 1 do
+                   let mutable acc = 0.0f
+                   for k in 0 .. kernel.Length - 1 do
+                       let sx = x + k - radius
+                       if sx >= 0 && sx < width then
+                           acc <- acc + toFloat pixels[y * width + sx] * kernel[k]
+                   fromFloat acc |]
+
+    let expectedY =
+        [| for y in 0 .. height - 1 do
+               for x in 0 .. width - 1 do
+                   let mutable acc = 0.0f
+                   for k in 0 .. kernel.Length - 1 do
+                       let sy = y + k - radius
+                       if sy >= 0 && sy < height then
+                           acc <- acc + toFloat pixels[sy * width + x] * kernel[k]
+                   fromFloat acc |]
+
+    let expectedZ =
+        [| for y in 0 .. height - 1 do
+               for x in 0 .. width - 1 do
+                   let mutable acc = 0.0f
+                   for k in 0 .. kernel.Length - 1 do
+                       acc <- acc + toFloat zPixels.[k].[y * width + x] * kernel[k]
+                   fromFloat acc |]
+
+    let input = makeChunk width height pixels
+    let zChunks = zPixels |> Array.map (makeChunk width height)
+    let xOutput = ChunkKernel.convolveNativeX<'T> kernel input
+    let yOutput = ChunkKernel.convolveNativeY<'T> kernel input
+    let zOutput = ChunkKernel.convolveNativeZ<'T> kernel zChunks
+
+    try
+        Expect.sequenceEqual ((Chunk.span<'T> xOutput).ToArray()) expectedX $"{name} native X convolution should match scalar reference."
+        Expect.sequenceEqual ((Chunk.span<'T> yOutput).ToArray()) expectedY $"{name} native Y convolution should match scalar reference."
+        Expect.sequenceEqual ((Chunk.span<'T> zOutput).ToArray()) expectedZ $"{name} native Z convolution should match scalar reference."
+    finally
+        Chunk.decRef zOutput
+        Chunk.decRef yOutput
+        Chunk.decRef xOutput
+        zChunks |> Array.iter Chunk.decRef
+        Chunk.decRef input
 
 let chunkSuite =
     testList "Chunk" [
@@ -506,18 +566,18 @@ let chunkSuite =
             Expect.equal (ChunkFunctions.histogramDenseBytes<int16> bytes bytes.Length) expected "Dense histograms should expose original signed bin values, not shifted storage indices."
 
         testCase "ChunkFunctions.addDenseInto adds compatible dense count arrays" <| fun _ ->
-            let target = ChunkFunctions.UInt8Counts [| 1UL; 2UL; 3UL |]
-            let source = ChunkFunctions.UInt8Counts [| 10UL; 20UL; 30UL |]
+            let target = ChunkKernel.UInt8Counts [| 1UL; 2UL; 3UL |]
+            let source = ChunkKernel.UInt8Counts [| 10UL; 20UL; 30UL |]
 
             ChunkFunctions.addDenseInto target source
 
             match target with
-            | ChunkFunctions.UInt8Counts counts ->
+            | ChunkKernel.UInt8Counts counts ->
                 Expect.sequenceEqual counts [| 11UL; 22UL; 33UL |] "Dense add should mutate the target counts."
             | _ ->
                 failtest "Expected UInt8 dense counts."
 
-            Expect.throws (fun () -> ChunkFunctions.addDenseInto target (ChunkFunctions.Int8Counts [| 1UL; 2UL; 3UL |])) "Dense add should reject incompatible integer domains."
+            Expect.throws (fun () -> ChunkFunctions.addDenseInto target (ChunkKernel.Int8Counts [| 1UL; 2UL; 3UL |])) "Dense add should reject incompatible integer domains."
 
         testCase "ChunkFunctions.histogramDenseCounts returns implicit-abscissa dense counts" <| fun _ ->
             let chunk = Chunk.create<int8> (4UL, 1UL, 1UL)
@@ -529,7 +589,7 @@ let chunkSuite =
                 values[3] <- SByte.MaxValue
 
                 match ChunkFunctions.histogramDenseCounts chunk with
-                | ChunkFunctions.Int8Counts counts ->
+                | ChunkKernel.Int8Counts counts ->
                     Expect.equal counts[0] 1UL "Int8.MinValue should live at dense index 0."
                     Expect.equal counts[127] 2UL "-1 should live at dense index 127."
                     Expect.equal counts[128] 0UL "Zero should not have been observed."
@@ -553,19 +613,19 @@ let chunkSuite =
             Expect.equal (ChunkFunctions.histogramLeftEdgesBytes<float32> [ 0.0; 10.0; 20.0 ] bytes bytes.Length) expected "Left-edge histograms should keep all edge abscissae, including zero-count bins."
 
         testCase "ChunkFunctions.addLeftEdgesInto adds only compatible left-edge histograms" <| fun _ ->
-            let target: ChunkFunctions.LeftEdgeHistogram =
-                { ChunkFunctions.LeftEdges = [| 0.0; 10.0; 20.0 |]
+            let target: ChunkKernel.LeftEdgeHistogram =
+                { ChunkKernel.LeftEdges = [| 0.0; 10.0; 20.0 |]
                   Counts = [| 1UL; 2UL; 3UL |] }
 
-            let source: ChunkFunctions.LeftEdgeHistogram =
-                { ChunkFunctions.LeftEdges = [| 0.0; 10.0; 20.0 |]
+            let source: ChunkKernel.LeftEdgeHistogram =
+                { ChunkKernel.LeftEdges = [| 0.0; 10.0; 20.0 |]
                   Counts = [| 10UL; 20UL; 30UL |] }
 
             ChunkFunctions.addLeftEdgesInto target source
             Expect.sequenceEqual target.Counts [| 11UL; 22UL; 33UL |] "Left-edge add should mutate the target counts when edges match exactly."
 
-            let incompatible: ChunkFunctions.LeftEdgeHistogram =
-                { ChunkFunctions.LeftEdges = [| 0.0; 5.0; 20.0 |]
+            let incompatible: ChunkKernel.LeftEdgeHistogram =
+                { ChunkKernel.LeftEdges = [| 0.0; 5.0; 20.0 |]
                   Counts = [| 1UL; 1UL; 1UL |] }
 
             Expect.throws (fun () -> ChunkFunctions.addLeftEdgesInto target incompatible) "Left-edge add should reject incompatible edge arrays."
@@ -797,6 +857,166 @@ let chunkSuite =
             finally
                 nativeOutputs |> List.iter Chunk.decRef
                 managedOutputs |> List.iter Chunk.decRef
+
+        testCase "ChunkCore native specialized axis UInt8 convolution matches generic native and scalar reference" <| fun _ ->
+            let width = 37
+            let height = 5
+            let kernel = [| 0.25f; 0.5f; -0.125f; 0.375f; 0.25f |]
+            let radius = kernel.Length / 2
+
+            let clampRoundToByte value =
+                if Single.IsNaN value || value <= 0.0f then
+                    0uy
+                elif value >= 255.0f then
+                    255uy
+                else
+                    uint8 (MathF.Round value)
+
+            let inputPixels =
+                [| for y in 0 .. height - 1 do
+                       for x in 0 .. width - 1 do
+                           uint8 ((y * 31 + x * 7 + x * y) % 256) |]
+
+            let xExpected =
+                [| for y in 0 .. height - 1 do
+                       for x in 0 .. width - 1 do
+                           let mutable acc = 0.0f
+                           for k in 0 .. kernel.Length - 1 do
+                               let sx = x + k - radius
+                               if sx >= 0 && sx < width then
+                                   acc <- acc + float32 inputPixels[y * width + sx] * kernel[k]
+                           clampRoundToByte acc |]
+
+            let yExpected =
+                [| for y in 0 .. height - 1 do
+                       for x in 0 .. width - 1 do
+                           let mutable acc = 0.0f
+                           for k in 0 .. kernel.Length - 1 do
+                               let sy = y + k - radius
+                               if sy >= 0 && sy < height then
+                                   acc <- acc + float32 inputPixels[sy * width + x] * kernel[k]
+                           clampRoundToByte acc |]
+
+            let zInputs =
+                [| for z in 0 .. kernel.Length - 1 ->
+                    [| for y in 0 .. height - 1 do
+                           for x in 0 .. width - 1 do
+                               uint8 ((z * 43 + y * 11 + x * 5 + x * y) % 256) |] |]
+
+            let zExpected =
+                [| for y in 0 .. height - 1 do
+                       for x in 0 .. width - 1 do
+                           let mutable acc = 0.0f
+                           for k in 0 .. kernel.Length - 1 do
+                               acc <- acc + float32 zInputs.[k].[y * width + x] * kernel.[k]
+                           clampRoundToByte acc |]
+
+            let input = chunkFromPixels width height inputPixels
+            let zChunks = zInputs |> Array.map (chunkFromPixels width height)
+            let xGenericOutput = ChunkKernel.convolveNativeXUInt8 kernel input
+            let yGenericOutput = ChunkKernel.convolveNativeYUInt8 kernel input
+            let zGenericOutput = ChunkKernel.convolveNativeZUInt8 kernel zChunks
+            let xSpecializedOutput = ChunkKernel.convolveNativeXUInt8Specialized kernel input
+            let ySpecializedOutput = ChunkKernel.convolveNativeYUInt8Specialized kernel input
+            let zSpecializedOutput = ChunkKernel.convolveNativeZUInt8Specialized kernel zChunks
+
+            try
+                let xGeneric = (Chunk.span<uint8> xGenericOutput).ToArray()
+                let yGeneric = (Chunk.span<uint8> yGenericOutput).ToArray()
+                let zGeneric = (Chunk.span<uint8> zGenericOutput).ToArray()
+                let xSpecialized = (Chunk.span<uint8> xSpecializedOutput).ToArray()
+                let ySpecialized = (Chunk.span<uint8> ySpecializedOutput).ToArray()
+                let zSpecialized = (Chunk.span<uint8> zSpecializedOutput).ToArray()
+
+                Expect.sequenceEqual xGeneric xExpected "Generic native X axis UInt8 convolution should match scalar reference."
+                Expect.sequenceEqual yGeneric yExpected "Generic native Y axis UInt8 convolution should match scalar reference."
+                Expect.sequenceEqual zGeneric zExpected "Generic native Z axis UInt8 convolution should match scalar reference."
+                Expect.sequenceEqual xSpecialized xGeneric "Specialized native X axis UInt8 convolution should match generic native."
+                Expect.sequenceEqual ySpecialized yGeneric "Specialized native Y axis UInt8 convolution should match generic native."
+                Expect.sequenceEqual zSpecialized zGeneric "Specialized native Z axis UInt8 convolution should match generic native."
+            finally
+                Chunk.decRef zSpecializedOutput
+                Chunk.decRef ySpecializedOutput
+                Chunk.decRef xSpecializedOutput
+                Chunk.decRef zGenericOutput
+                Chunk.decRef yGenericOutput
+                Chunk.decRef xGenericOutput
+                zChunks |> Array.iter Chunk.decRef
+                Chunk.decRef input
+
+        testCase "ChunkCore native axis convolution supports Int8 UInt16 Int32 and Float32 chunks" <| fun _ ->
+            let width = 7
+            let height = 4
+            let kernel = [| 0.25f; -0.5f; 1.25f |]
+
+            let round value = MathF.Round(value)
+            let clamp lo hi value = max lo (min hi value)
+
+            runNativeAxisTypedCase<int8>
+                "Int8"
+                width
+                height
+                kernel
+                chunkFromInt8Pixels
+                float32
+                (fun value -> int8 (clamp -128.0f 127.0f (round value)))
+                [| for i in 0 .. width * height - 1 -> int8 ((i * 7) % 101 - 50) |]
+                [| for z in 0 .. 2 -> [| for i in 0 .. width * height - 1 -> int8 ((z * 17 + i * 5) % 91 - 45) |] |]
+
+            runNativeAxisTypedCase<uint16>
+                "UInt16"
+                width
+                height
+                kernel
+                chunkFromUInt16Pixels
+                float32
+                (fun value -> uint16 (clamp 0.0f 65535.0f (round value)))
+                [| for i in 0 .. width * height - 1 -> uint16 (100 + i * 13) |]
+                [| for z in 0 .. 2 -> [| for i in 0 .. width * height - 1 -> uint16 (z * 50 + i * 11) |] |]
+
+            runNativeAxisTypedCase<int32>
+                "Int32"
+                width
+                height
+                kernel
+                chunkFromInt32Pixels
+                float32
+                (fun value -> int32 (round value))
+                [| for i in 0 .. width * height - 1 -> i * 31 - 400 |]
+                [| for z in 0 .. 2 -> [| for i in 0 .. width * height - 1 -> z * 200 + i * 19 - 250 |] |]
+
+            runNativeAxisTypedCase<float32>
+                "Float32"
+                width
+                height
+                kernel
+                chunkFromFloat32Pixels
+                id
+                id
+                [| for i in 0 .. width * height - 1 -> float32 i * 0.75f - 4.0f |]
+                [| for z in 0 .. 2 -> [| for i in 0 .. width * height - 1 -> float32 (z * 10 + i) * 0.5f - 3.0f |] |]
+
+        testCase "Chunk finite difference kernels mirror ImageFunctions stencils and feed native axis stages" <| fun _ ->
+            Expect.sequenceEqual (ChunkKernel.finiteDiffKernel1D 1u) [| 0.5f; 0.0f; -0.5f |] "Order 1 finite-difference kernel should match ImageFunctions."
+            Expect.sequenceEqual (ChunkKernel.finiteDiffKernel1D 2u) [| 1.0f; -2.0f; 1.0f |] "Order 2 finite-difference kernel should match ImageFunctions."
+            Expect.sequenceEqual (ChunkKernel.finiteDiffKernel1D 6u) [| 1.0f; -6.0f; 15.0f; -20.0f; 15.0f; -6.0f; 1.0f |] "Order 6 finite-difference kernel should match ImageFunctions."
+            Expect.throws (fun () -> ChunkKernel.finiteDiffKernel1D 0u |> ignore) "Unsupported finite-difference orders should fail."
+
+            let width = 6
+            let height = 3
+            let pixels = [| for i in 0 .. width * height - 1 -> float32 i |]
+            let makeInput () = chunkFromFloat32Pixels width height pixels
+
+            let direct = runStageList (ChunkFunctions.convolveNativeXParallelCollect<float32> (ChunkKernel.finiteDiffKernel1D 1u) 2) [ makeInput () ]
+            let finiteDiff = runStageList (ChunkFunctions.finiteDiffNativeXParallelCollect<float32> 1u 2) [ makeInput () ]
+
+            try
+                Expect.equal direct.Length 1 "Direct X convolution should emit one slice."
+                Expect.equal finiteDiff.Length 1 "Finite-difference X stage should emit one slice."
+                Expect.sequenceEqual ((Chunk.span<float32> finiteDiff.[0]).ToArray()) ((Chunk.span<float32> direct.[0]).ToArray()) "Finite-difference X stage should be the axis convolution with the finite-difference kernel."
+            finally
+                direct |> List.iter Chunk.decRef
+                finiteDiff |> List.iter Chunk.decRef
 
         testCase "ChunkFunctions rolling PH median matches dense PH median" <| fun _ ->
             let width = 5

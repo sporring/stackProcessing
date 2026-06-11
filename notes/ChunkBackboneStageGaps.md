@@ -33,7 +33,22 @@ implementation before Chunk can act as the regular StackProcessing backbone.
   - sparse, dense, and left-edge histograms plus serial and parallel reducers
   - zonohedral binary dilation, erosion, opening, and closing
   - fixed-kernel convolution and window-parallel convolution
+  - native single-axis convolution with `float32` kernels for `UInt8`, `Int8`,
+    `UInt16`, `Int32`, and `Float32` chunks
+  - separable convolution stages composed from native `convolveX`,
+    `convolveY`, and `convolveZ`
+  - separable Box and Gaussian filters, including separate per-axis radii and
+    Gaussian sigma/radius parameters
+  - finite-difference 1D kernels copied from `ImageFunctions` as `float32[]`
+    and exposed as `finiteDiffNativeX/Y/ZParallelCollect`
+  - separable Sobel-axis response stages (`sobelX/Y/ZNativeParallelCollect`)
   - UInt8 Perreault-Hebert dense median baseline with y-band workers
+  - native nth-element median stages for `UInt8`, `UInt16`, `Int32`, and
+    `Float32`, including `ParallelCollect` variants
+  - connected-components SAUF stages for `UInt8` input with `UInt32` labels,
+    including a `ParallelCollect` variant
+  - XY FFT for `Float32` chunks to complex64-interleaved `Float32` chunks,
+    including a `ParallelCollect` variant
 
 ## Still Needing Chunk Versions
 
@@ -49,12 +64,13 @@ implementation before Chunk can act as the regular StackProcessing backbone.
 - Geometric and resampling operations remain Image/ITK paths:
   `euler2DTransform`, `euler2DRotate`, `resample2D`, affine resampling, and
   other coordinate-space operations.
-- FFT and complex-valued operations remain Image/ITK paths.
+- Full FFT workflows and complex-valued arithmetic remain Image/ITK paths.
+  The Chunk path currently has native XY FFT for `Float32` chunks to
+  complex64-interleaved `Float32` storage.
 - Exact or ITK-backed neighbourhood filters still need either native Chunk
   versions or explicit bridge decisions:
-  bilateral, gradient magnitude, Sobel, Laplacian, recursive Gaussian,
-  Gaussian derivatives, connected components, signed distance, label contour,
-  and exact spherical morphology.
+  bilateral, gradient magnitude, Sobel magnitude, Laplacian, Gaussian
+  derivatives, signed distance, label contour, and exact spherical morphology.
 - Noise generators are not yet Chunk-native:
   normal, salt-and-pepper, shot, and speckle noise.
 - Padding, crop, squeeze, concatenate, stack/unstack, and axis permutation need

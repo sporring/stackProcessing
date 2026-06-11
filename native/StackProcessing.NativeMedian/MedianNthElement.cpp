@@ -389,6 +389,393 @@ static void convolve_uint8_slice_outputs(
     }
 }
 
+static void convolve_uint8_x_slice_outputs(
+    const uint8_t* const* slices,
+    uint8_t* const* outputs,
+    const float* kernel,
+    int width,
+    int height,
+    int window_length,
+    int kernel_length,
+    int output_start,
+    int output_count)
+{
+    const int pad = kernel_length / 2;
+
+    for (int out_z = 0; out_z < output_count; ++out_z) {
+        const int center_z = output_start + out_z;
+        uint8_t* output_slice = outputs[out_z];
+
+        if (center_z < 0 || center_z >= window_length) {
+            std::fill(output_slice, output_slice + width * height, 0);
+            continue;
+        }
+
+        const uint8_t* input_slice = slices[center_z];
+        const int x_begin = pad;
+        const int x_end = width - pad;
+
+        for (int y = 0; y < height; ++y) {
+            const int row = y * width;
+
+            for (int x = 0; x < x_begin && x < width; ++x) {
+                float acc = 0.0f;
+                for (int k = 0; k < kernel_length; ++k) {
+                    const int xx = x + k - pad;
+                    if (0 <= xx && xx < width) {
+                        acc += static_cast<float>(input_slice[row + xx]) * kernel[k];
+                    }
+                }
+                output_slice[row + x] = clamp_round_uint8(acc);
+            }
+
+            for (int x = x_begin; x < x_end; ++x) {
+                float acc = 0.0f;
+                const int source = row + x - pad;
+                for (int k = 0; k < kernel_length; ++k) {
+                    acc += static_cast<float>(input_slice[source + k]) * kernel[k];
+                }
+                output_slice[row + x] = clamp_round_uint8(acc);
+            }
+
+            for (int x = std::max(x_begin, x_end); x < width; ++x) {
+                float acc = 0.0f;
+                for (int k = 0; k < kernel_length; ++k) {
+                    const int xx = x + k - pad;
+                    if (0 <= xx && xx < width) {
+                        acc += static_cast<float>(input_slice[row + xx]) * kernel[k];
+                    }
+                }
+                output_slice[row + x] = clamp_round_uint8(acc);
+            }
+        }
+    }
+}
+
+static void convolve_uint8_y_slice_outputs(
+    const uint8_t* const* slices,
+    uint8_t* const* outputs,
+    const float* kernel,
+    int width,
+    int height,
+    int window_length,
+    int kernel_length,
+    int output_start,
+    int output_count)
+{
+    const int pad = kernel_length / 2;
+
+    for (int out_z = 0; out_z < output_count; ++out_z) {
+        const int center_z = output_start + out_z;
+        uint8_t* output_slice = outputs[out_z];
+
+        if (center_z < 0 || center_z >= window_length) {
+            std::fill(output_slice, output_slice + width * height, 0);
+            continue;
+        }
+
+        const uint8_t* input_slice = slices[center_z];
+        const int y_begin = pad;
+        const int y_end = height - pad;
+
+        for (int y = 0; y < y_begin && y < height; ++y) {
+            const int row = y * width;
+            for (int x = 0; x < width; ++x) {
+                float acc = 0.0f;
+                for (int k = 0; k < kernel_length; ++k) {
+                    const int yy = y + k - pad;
+                    if (0 <= yy && yy < height) {
+                        acc += static_cast<float>(input_slice[yy * width + x]) * kernel[k];
+                    }
+                }
+                output_slice[row + x] = clamp_round_uint8(acc);
+            }
+        }
+
+        for (int y = y_begin; y < y_end; ++y) {
+            const int row = y * width;
+            const int source = (y - pad) * width;
+            for (int x = 0; x < width; ++x) {
+                float acc = 0.0f;
+                for (int k = 0; k < kernel_length; ++k) {
+                    acc += static_cast<float>(input_slice[source + k * width + x]) * kernel[k];
+                }
+                output_slice[row + x] = clamp_round_uint8(acc);
+            }
+        }
+
+        for (int y = std::max(y_begin, y_end); y < height; ++y) {
+            const int row = y * width;
+            for (int x = 0; x < width; ++x) {
+                float acc = 0.0f;
+                for (int k = 0; k < kernel_length; ++k) {
+                    const int yy = y + k - pad;
+                    if (0 <= yy && yy < height) {
+                        acc += static_cast<float>(input_slice[yy * width + x]) * kernel[k];
+                    }
+                }
+                output_slice[row + x] = clamp_round_uint8(acc);
+            }
+        }
+    }
+}
+
+static void convolve_uint8_z_slice_outputs(
+    const uint8_t* const* slices,
+    uint8_t* const* outputs,
+    const float* kernel,
+    int width,
+    int height,
+    int window_length,
+    int kernel_length,
+    int output_start,
+    int output_count)
+{
+    const int pad = kernel_length / 2;
+    const int plane = width * height;
+
+    for (int out_z = 0; out_z < output_count; ++out_z) {
+        const int center_z = output_start + out_z;
+        uint8_t* output_slice = outputs[out_z];
+
+        for (int i = 0; i < plane; ++i) {
+            float acc = 0.0f;
+            for (int k = 0; k < kernel_length; ++k) {
+                const int zz = center_z + k - pad;
+                if (0 <= zz && zz < window_length) {
+                    acc += static_cast<float>(slices[zz][i]) * kernel[k];
+                }
+            }
+            output_slice[i] = clamp_round_uint8(acc);
+        }
+    }
+}
+
+template <typename T>
+static inline T clamp_round_scalar(float value)
+{
+    return static_cast<T>(std::nearbyint(value));
+}
+
+template <>
+inline int8_t clamp_round_scalar<int8_t>(float value)
+{
+    if (std::isnan(value)) {
+        return 0;
+    }
+    if (value <= -128.0f) {
+        return static_cast<int8_t>(-128);
+    }
+    if (value >= 127.0f) {
+        return static_cast<int8_t>(127);
+    }
+    return static_cast<int8_t>(std::nearbyint(value));
+}
+
+template <>
+inline uint8_t clamp_round_scalar<uint8_t>(float value)
+{
+    return clamp_round_uint8(value);
+}
+
+template <>
+inline uint16_t clamp_round_scalar<uint16_t>(float value)
+{
+    if (std::isnan(value) || value <= 0.0f) {
+        return 0;
+    }
+    if (value >= 65535.0f) {
+        return 65535;
+    }
+    return static_cast<uint16_t>(std::nearbyint(value));
+}
+
+template <>
+inline int32_t clamp_round_scalar<int32_t>(float value)
+{
+    if (std::isnan(value)) {
+        return 0;
+    }
+    if (value <= static_cast<float>(INT32_MIN)) {
+        return INT32_MIN;
+    }
+    if (value >= static_cast<float>(INT32_MAX)) {
+        return INT32_MAX;
+    }
+    return static_cast<int32_t>(std::nearbyint(value));
+}
+
+template <>
+inline float clamp_round_scalar<float>(float value)
+{
+    return value;
+}
+
+template <typename T>
+static void convolve_axis_x_slice_outputs(
+    const T* const* slices,
+    T* const* outputs,
+    const float* kernel,
+    int width,
+    int height,
+    int window_length,
+    int kernel_length,
+    int output_start,
+    int output_count)
+{
+    const int pad = kernel_length / 2;
+
+    for (int out_z = 0; out_z < output_count; ++out_z) {
+        const int center_z = output_start + out_z;
+        T* output_slice = outputs[out_z];
+
+        if (center_z < 0 || center_z >= window_length) {
+            std::fill(output_slice, output_slice + width * height, static_cast<T>(0));
+            continue;
+        }
+
+        const T* input_slice = slices[center_z];
+        const int x_begin = pad;
+        const int x_end = width - pad;
+
+        for (int y = 0; y < height; ++y) {
+            const int row = y * width;
+
+            for (int x = 0; x < x_begin && x < width; ++x) {
+                float acc = 0.0f;
+                for (int k = 0; k < kernel_length; ++k) {
+                    const int xx = x + k - pad;
+                    if (0 <= xx && xx < width) {
+                        acc += static_cast<float>(input_slice[row + xx]) * kernel[k];
+                    }
+                }
+                output_slice[row + x] = clamp_round_scalar<T>(acc);
+            }
+
+            for (int x = x_begin; x < x_end; ++x) {
+                float acc = 0.0f;
+                const int source = row + x - pad;
+                for (int k = 0; k < kernel_length; ++k) {
+                    acc += static_cast<float>(input_slice[source + k]) * kernel[k];
+                }
+                output_slice[row + x] = clamp_round_scalar<T>(acc);
+            }
+
+            for (int x = std::max(x_begin, x_end); x < width; ++x) {
+                float acc = 0.0f;
+                for (int k = 0; k < kernel_length; ++k) {
+                    const int xx = x + k - pad;
+                    if (0 <= xx && xx < width) {
+                        acc += static_cast<float>(input_slice[row + xx]) * kernel[k];
+                    }
+                }
+                output_slice[row + x] = clamp_round_scalar<T>(acc);
+            }
+        }
+    }
+}
+
+template <typename T>
+static void convolve_axis_y_slice_outputs(
+    const T* const* slices,
+    T* const* outputs,
+    const float* kernel,
+    int width,
+    int height,
+    int window_length,
+    int kernel_length,
+    int output_start,
+    int output_count)
+{
+    const int pad = kernel_length / 2;
+
+    for (int out_z = 0; out_z < output_count; ++out_z) {
+        const int center_z = output_start + out_z;
+        T* output_slice = outputs[out_z];
+
+        if (center_z < 0 || center_z >= window_length) {
+            std::fill(output_slice, output_slice + width * height, static_cast<T>(0));
+            continue;
+        }
+
+        const T* input_slice = slices[center_z];
+        const int y_begin = pad;
+        const int y_end = height - pad;
+
+        for (int y = 0; y < y_begin && y < height; ++y) {
+            const int row = y * width;
+            for (int x = 0; x < width; ++x) {
+                float acc = 0.0f;
+                for (int k = 0; k < kernel_length; ++k) {
+                    const int yy = y + k - pad;
+                    if (0 <= yy && yy < height) {
+                        acc += static_cast<float>(input_slice[yy * width + x]) * kernel[k];
+                    }
+                }
+                output_slice[row + x] = clamp_round_scalar<T>(acc);
+            }
+        }
+
+        for (int y = y_begin; y < y_end; ++y) {
+            const int row = y * width;
+            const int source = (y - pad) * width;
+            for (int x = 0; x < width; ++x) {
+                float acc = 0.0f;
+                for (int k = 0; k < kernel_length; ++k) {
+                    acc += static_cast<float>(input_slice[source + k * width + x]) * kernel[k];
+                }
+                output_slice[row + x] = clamp_round_scalar<T>(acc);
+            }
+        }
+
+        for (int y = std::max(y_begin, y_end); y < height; ++y) {
+            const int row = y * width;
+            for (int x = 0; x < width; ++x) {
+                float acc = 0.0f;
+                for (int k = 0; k < kernel_length; ++k) {
+                    const int yy = y + k - pad;
+                    if (0 <= yy && yy < height) {
+                        acc += static_cast<float>(input_slice[yy * width + x]) * kernel[k];
+                    }
+                }
+                output_slice[row + x] = clamp_round_scalar<T>(acc);
+            }
+        }
+    }
+}
+
+template <typename T>
+static void convolve_axis_z_slice_outputs(
+    const T* const* slices,
+    T* const* outputs,
+    const float* kernel,
+    int width,
+    int height,
+    int window_length,
+    int kernel_length,
+    int output_start,
+    int output_count)
+{
+    const int pad = kernel_length / 2;
+    const int plane = width * height;
+
+    for (int out_z = 0; out_z < output_count; ++out_z) {
+        const int center_z = output_start + out_z;
+        T* output_slice = outputs[out_z];
+
+        for (int i = 0; i < plane; ++i) {
+            float acc = 0.0f;
+            for (int k = 0; k < kernel_length; ++k) {
+                const int zz = center_z + k - pad;
+                if (0 <= zz && zz < window_length) {
+                    acc += static_cast<float>(slices[zz][i]) * kernel[k];
+                }
+            }
+            output_slice[i] = clamp_round_scalar<T>(acc);
+        }
+    }
+}
+
 static void scale_complex_buffer(float* interleaved, int complex_count, float scale)
 {
     const int value_count = 2 * complex_count;
@@ -636,6 +1023,123 @@ SP_MEDIAN_API void sp_convolve_uint8_slices(
         output_start,
         output_count);
 }
+
+SP_MEDIAN_API void sp_convolve_uint8_x_slices(
+    const uint8_t* const* slices,
+    uint8_t* const* outputs,
+    const float* kernel,
+    int width,
+    int height,
+    int window_length,
+    int kernel_length,
+    int output_start,
+    int output_count)
+{
+    convolve_uint8_x_slice_outputs(
+        slices,
+        outputs,
+        kernel,
+        width,
+        height,
+        window_length,
+        kernel_length,
+        output_start,
+        output_count);
+}
+
+SP_MEDIAN_API void sp_convolve_uint8_y_slices(
+    const uint8_t* const* slices,
+    uint8_t* const* outputs,
+    const float* kernel,
+    int width,
+    int height,
+    int window_length,
+    int kernel_length,
+    int output_start,
+    int output_count)
+{
+    convolve_uint8_y_slice_outputs(
+        slices,
+        outputs,
+        kernel,
+        width,
+        height,
+        window_length,
+        kernel_length,
+        output_start,
+        output_count);
+}
+
+SP_MEDIAN_API void sp_convolve_uint8_z_slices(
+    const uint8_t* const* slices,
+    uint8_t* const* outputs,
+    const float* kernel,
+    int width,
+    int height,
+    int window_length,
+    int kernel_length,
+    int output_start,
+    int output_count)
+{
+    convolve_uint8_z_slice_outputs(
+        slices,
+        outputs,
+        kernel,
+        width,
+        height,
+        window_length,
+        kernel_length,
+        output_start,
+        output_count);
+}
+
+#define SP_CONVOLVE_AXIS_EXPORTS(TYPE, NAME) \
+SP_MEDIAN_API void sp_convolve_##NAME##_x_slices( \
+    const TYPE* const* slices, \
+    TYPE* const* outputs, \
+    const float* kernel, \
+    int width, \
+    int height, \
+    int window_length, \
+    int kernel_length, \
+    int output_start, \
+    int output_count) \
+{ \
+    convolve_axis_x_slice_outputs<TYPE>(slices, outputs, kernel, width, height, window_length, kernel_length, output_start, output_count); \
+} \
+SP_MEDIAN_API void sp_convolve_##NAME##_y_slices( \
+    const TYPE* const* slices, \
+    TYPE* const* outputs, \
+    const float* kernel, \
+    int width, \
+    int height, \
+    int window_length, \
+    int kernel_length, \
+    int output_start, \
+    int output_count) \
+{ \
+    convolve_axis_y_slice_outputs<TYPE>(slices, outputs, kernel, width, height, window_length, kernel_length, output_start, output_count); \
+} \
+SP_MEDIAN_API void sp_convolve_##NAME##_z_slices( \
+    const TYPE* const* slices, \
+    TYPE* const* outputs, \
+    const float* kernel, \
+    int width, \
+    int height, \
+    int window_length, \
+    int kernel_length, \
+    int output_start, \
+    int output_count) \
+{ \
+    convolve_axis_z_slice_outputs<TYPE>(slices, outputs, kernel, width, height, window_length, kernel_length, output_start, output_count); \
+}
+
+SP_CONVOLVE_AXIS_EXPORTS(int8_t, int8)
+SP_CONVOLVE_AXIS_EXPORTS(uint16_t, uint16)
+SP_CONVOLVE_AXIS_EXPORTS(int32_t, int32)
+SP_CONVOLVE_AXIS_EXPORTS(float, float32)
+
+#undef SP_CONVOLVE_AXIS_EXPORTS
 
 SP_MEDIAN_API int sp_fftwf_complex_xy_inplace(
     float* interleaved,

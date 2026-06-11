@@ -38,6 +38,7 @@
         <PackageReference Include="PureHDF" Version="2.1.1" />
         <ProjectReference Include="../../../Zarr.NET/Zarr.NET.csproj" />
         <ProjectReference Include="../../../SharpFFTW/SharpFFTW/SharpFFTW.csproj" />
+        <ProjectReference Include="../Chunk/Chunk.Core.fsproj" />
         <ProjectReference Include="../TinyLinAlg/TinyLinAlg.fsproj" />
         <ProjectReference Include="../Image/Image.fsproj" />
         <ProjectReference Include="../SlimPipeline/SlimPipeline.fsproj" />
@@ -46,7 +47,12 @@
 
     <ItemGroup>
         <Compile Include="StackCore.fs" />
-        <Compile Include="ChunkFunctions.fs" />
+        <Compile Include="StackMedian.fs" />
+        <Compile Include="StackBinaryMorphology.fs" />
+        <Compile Include="StackConvolve.fs" />
+        <Compile Include="StackFFT.fs" />
+        <Compile Include="StackConnectedComponents.fs" />
+        <Compile Include="StackChunk.fs" />
         <Compile Include="StackOptimizer.fs" />
         <Compile Include="StackCharts.fs" />
         <Compile Include="StackIO.fs" />

@@ -1379,10 +1379,10 @@ let volume xUnit yUnit zUnit : Stage<Image<uint8>, float> =
 let quantiles (quantileValues: float list) (histogram: Histogram<'T>) =
     ImageFunctions.quantilesFromHistogram quantileValues histogram.Counts
 
-let otsuThresholdFromHistogram histogram =
+let otsuThresholdFromHistogram (histogram: Histogram<'T>) =
     ImageFunctions.otsuThresholdFromHistogram histogram.Counts
 
-let momentsThresholdFromHistogram histogram =
+let momentsThresholdFromHistogram (histogram: Histogram<'T>) =
     ImageFunctions.momentsThresholdFromHistogram histogram.Counts
 
 let inline histogram2pairs< ^T when ^T: comparison and ^T: (static member op_Explicit: ^T -> float) > =
