@@ -281,6 +281,20 @@ module ChunkFunctions =
         [<DllImport(LibraryPath, EntryPoint = "sp_convolve_float32_z_slices")>]
         extern void convolveFloat32ZSlices(nativeint slices, nativeint outputs, nativeint kernel, int width, int height, int windowLength, int kernelLength, int outputStart, int outputCount)
 
+        [<DllImport(LibraryPath, EntryPoint = "sp_convolve_float32_vector_components_slices")>]
+        extern int convolveFloat32VectorComponentsSlices(
+            nativeint slices,
+            nativeint outputs,
+            nativeint kernel,
+            int width,
+            int height,
+            int components,
+            int windowLength,
+            int kernelLength,
+            int outputStart,
+            int outputCount,
+            int axis)
+
         [<DllImport(LibraryPath, EntryPoint = "sp_signed_distance_band_uint8_slices")>]
         extern int signedDistanceBandUInt8Slices(
             nativeint slices,
@@ -303,6 +317,21 @@ module ChunkFunctions =
             int outputHeight,
             double spacingX,
             double spacingY,
+            int interpolation)
+
+        [<DllImport(LibraryPath, EntryPoint = "sp_resize_3d_pair_slice")>]
+        extern int resize3DPairSlice(
+            nativeint lower,
+            nativeint upper,
+            nativeint output,
+            int pixelType,
+            int inputWidth,
+            int inputHeight,
+            int outputWidth,
+            int outputHeight,
+            double spacingX,
+            double spacingY,
+            double zFraction,
             int interpolation)
 
         [<DllImport(LibraryPath, EntryPoint = "sp_euler_2d")>]
@@ -546,6 +575,86 @@ module ChunkFunctions =
             finally
                 if outputPinned then
                     outputHandle.Free()
+
+            output
+        with
+        | _ ->
+            decRef output
+            reraise()
+
+    let invFftXYComplex64InterleavedToFloat32Chunk (input: Chunk<float32>) =
+        let width64, height64, depth64 = input.Size
+        if depth64 <> 1UL then
+            invalidArg "input" $"Chunk inverse FFT XY expects 2D complex64-interleaved chunks with depth 1, got {input.Size}."
+        if width64 % 2UL <> 0UL then
+            invalidArg "input" $"Chunk inverse FFT XY expects even interleaved width, got {input.Size}."
+        if width64 > uint64 Int32.MaxValue || height64 > uint64 Int32.MaxValue then
+            invalidArg "input" $"Chunk inverse FFT XY slice dimensions must fit Int32, got {input.Size}."
+
+        let logicalWidth64 = width64 / 2UL
+        let logicalWidth = int logicalWidth64
+        let height = int height64
+        let scratch = create<float32> input.Size
+        let output = create<float32> (logicalWidth64, height64, 1UL)
+
+        try
+            try
+                input.Bytes.AsSpan(0, input.ByteLength).CopyTo(scratch.Bytes.AsSpan(0, scratch.ByteLength))
+
+                NativeSp.ensureAvailable ()
+                let mutable scratchHandle = Unchecked.defaultof<GCHandle>
+                let mutable scratchPinned = false
+                try
+                    scratchHandle <- GCHandle.Alloc(scratch.Bytes, GCHandleType.Pinned)
+                    scratchPinned <- true
+                    NativeSp.invFftwfComplexXYInplace(scratchHandle.AddrOfPinnedObject(), logicalWidth, height)
+                    |> NativeSp.checkStatus "inverse fftwf xy complex"
+                finally
+                    if scratchPinned then
+                        scratchHandle.Free()
+
+                let scratchSpan = span<float32> scratch
+                let outputSpan = span<float32> output
+                let mutable j = 0
+                for i in 0 .. outputSpan.Length - 1 do
+                    outputSpan[i] <- scratchSpan[j]
+                    j <- j + 2
+
+                output
+            with
+            | _ ->
+                decRef output
+                reraise()
+        finally
+            decRef scratch
+
+    let fftShiftXYComplex64InterleavedChunk (input: Chunk<float32>) =
+        let interleavedWidth64, height64, depth64 = input.Size
+        if depth64 <> 1UL then
+            invalidArg "input" $"Chunk FFT shift XY expects 2D complex64-interleaved chunks with depth 1, got {input.Size}."
+        if interleavedWidth64 % 2UL <> 0UL then
+            invalidArg "input" $"Chunk FFT shift XY expects even interleaved width, got {input.Size}."
+        if interleavedWidth64 > uint64 Int32.MaxValue || height64 > uint64 Int32.MaxValue then
+            invalidArg "input" $"Chunk FFT shift XY slice dimensions must fit Int32, got {input.Size}."
+
+        let logicalWidth = int (interleavedWidth64 / 2UL)
+        let height = int height64
+        let shiftX = logicalWidth / 2
+        let shiftY = height / 2
+        let output = create<float32> input.Size
+
+        try
+            let inputPixels = span<float32> input
+            let outputPixels = span<float32> output
+
+            for y in 0 .. height - 1 do
+                let sourceY = (y - shiftY + height) % height
+                for x in 0 .. logicalWidth - 1 do
+                    let sourceX = (x - shiftX + logicalWidth) % logicalWidth
+                    let source = 2 * (sourceY * logicalWidth + sourceX)
+                    let target = 2 * (y * logicalWidth + x)
+                    outputPixels[target] <- inputPixels[source]
+                    outputPixels[target + 1] <- inputPixels[source + 1]
 
             output
         with
@@ -1274,6 +1383,74 @@ module ChunkFunctions =
                 NativeMedian.resample2D(input, output, pixelType, inputWidth, inputHeight, outputWidthI, outputHeightI, spacingX, spacingY, interpolation))
             chunk
 
+    let resize3DPairSliceNativeChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        interpolation
+        outputWidth
+        outputHeight
+        spacingX
+        spacingY
+        zFraction
+        (lower: Chunk<'T>)
+        (upper: Chunk<'T>)
+        =
+        let inputWidth, inputHeight = validateNative2DSlice "lower" lower
+        let upperWidth, upperHeight = validateNative2DSlice "upper" upper
+        if inputWidth <> upperWidth || inputHeight <> upperHeight then
+            invalidArg "upper" $"Chunk resize3D expects matching source slice sizes, got lower={lower.Size}, upper={upper.Size}."
+        if outputWidth = 0u then invalidArg "outputWidth" "Chunk resize3D expects a positive output width."
+        if outputHeight = 0u then invalidArg "outputHeight" "Chunk resize3D expects a positive output height."
+        if spacingX <= 0.0 then invalidArg "spacingX" "Chunk resize3D expects positive X spacing."
+        if spacingY <= 0.0 then invalidArg "spacingY" "Chunk resize3D expects positive Y spacing."
+        if zFraction < 0.0 || zFraction > 1.0 then
+            invalidArg "zFraction" $"Chunk resize3D expects zFraction in [0, 1], got {zFraction}."
+
+        let outputWidthI = checkedUIntToInt "outputWidth" outputWidth
+        let outputHeightI = checkedUIntToInt "outputHeight" outputHeight
+        let pixelType = nativePixelType<'T>
+        let interpolation = ResampleInterpolation.toNative interpolation
+        NativeMedian.ensureAvailable ()
+        let output = Chunk.create<'T> (uint64 outputWidth, uint64 outputHeight, 1UL)
+        let mutable lowerHandle = Unchecked.defaultof<GCHandle>
+        let mutable upperHandle = Unchecked.defaultof<GCHandle>
+        let mutable outputHandle = Unchecked.defaultof<GCHandle>
+        let mutable lowerPinned = false
+        let mutable upperPinned = false
+        let mutable outputPinned = false
+
+        try
+            try
+                lowerHandle <- GCHandle.Alloc(lower.Bytes, GCHandleType.Pinned)
+                lowerPinned <- true
+                upperHandle <- GCHandle.Alloc(upper.Bytes, GCHandleType.Pinned)
+                upperPinned <- true
+                outputHandle <- GCHandle.Alloc(output.Bytes, GCHandleType.Pinned)
+                outputPinned <- true
+
+                NativeMedian.resize3DPairSlice(
+                    lowerHandle.AddrOfPinnedObject(),
+                    upperHandle.AddrOfPinnedObject(),
+                    outputHandle.AddrOfPinnedObject(),
+                    pixelType,
+                    inputWidth,
+                    inputHeight,
+                    outputWidthI,
+                    outputHeightI,
+                    spacingX,
+                    spacingY,
+                    zFraction,
+                    interpolation)
+                |> NativeSp.checkStatus "sp_resize_3d_pair_slice"
+
+                output
+            finally
+                if outputPinned then outputHandle.Free()
+                if upperPinned then upperHandle.Free()
+                if lowerPinned then lowerHandle.Free()
+        with
+        | _ ->
+            Chunk.decRef output
+            reraise()
+
     let euler2DTransformNativeChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
         (centerX, centerY, angle)
         (dx, dy)
@@ -1632,6 +1809,151 @@ module ChunkFunctions =
 
     let convolveNativeZUInt8Specialized (kernel: float32[]) (window: Chunk<uint8>[]) =
         convolveNativeZ<uint8> kernel window
+
+    let private validateVectorSliceFloat32 name (vector: VectorChunk<float32>) =
+        if vector.Components = 0u then
+            invalidArg name "Native vector-component convolution expects at least one vector component."
+        if vector.Components > uint32 Int32.MaxValue then
+            invalidArg name $"Native vector-component convolution component count must fit Int32, got {vector.Components}."
+        let width, height, depth = vector.SpatialSize
+        if depth <> 1UL then
+            invalidArg name $"Native vector-component convolution expects 2D vector slices with depth 1, got {vector.SpatialSize}."
+        if width > uint64 Int32.MaxValue || height > uint64 Int32.MaxValue then
+            invalidArg name $"Native vector-component convolution dimensions must fit Int32, got {vector.SpatialSize}."
+        let expectedChunkSize = (width * uint64 vector.Components, height, 1UL)
+        if vector.Chunk.Size <> expectedChunkSize then
+            invalidArg name $"Native vector-component convolution expects interleaved storage size {expectedChunkSize}, got {vector.Chunk.Size}."
+        int width, int height, int vector.Components
+
+    let private validateVectorWindowFloat32 name (window: VectorChunk<float32>[]) =
+        if isNull window then
+            nullArg name
+        if window.Length = 0 then
+            invalidArg name "Native vector-component convolution expects at least one input slice."
+
+        let width, height, components = validateVectorSliceFloat32 $"{name}[0]" window[0]
+        let spatialSize = window[0].SpatialSize
+        let componentCount = window[0].Components
+        for i in 1 .. window.Length - 1 do
+            let otherWidth, otherHeight, otherComponents = validateVectorSliceFloat32 $"{name}[{i}]" window[i]
+            if otherWidth <> width || otherHeight <> height || otherComponents <> components ||
+               window[i].SpatialSize <> spatialSize || window[i].Components <> componentCount then
+                invalidArg name $"Native vector-component convolution expects matching vector slice sizes and component counts, got {window[i].SpatialSize} with {window[i].Components} components at index {i}."
+        width, height, components
+
+    let private convolveVectorComponentsNativeAxisFloat32
+        axis
+        (kernel: float32[])
+        outputStart
+        outputCount
+        (window: VectorChunk<float32>[])
+        =
+        validateOddKernel "kernel" kernel |> ignore
+        if outputStart < 0 then
+            invalidArg "outputStart" $"Native vector-component convolution expects non-negative outputStart, got {outputStart}."
+        if outputCount < 1 then
+            invalidArg "outputCount" $"Native vector-component convolution expects positive outputCount, got {outputCount}."
+        if axis < 0 || axis > 2 then
+            invalidArg "axis" $"Native vector-component convolution axis must be 0, 1, or 2, got {axis}."
+
+        let width, height, components = validateVectorWindowFloat32 "window" window
+        let spatialSize = window[0].SpatialSize
+        let componentCount = window[0].Components
+        NativeMedian.ensureAvailable ()
+
+        let outputs =
+            Array.init outputCount (fun _ ->
+                let chunk = create<float32> (uint64 width * uint64 components, uint64 height, 1UL)
+                { SpatialSize = spatialSize
+                  Components = componentCount
+                  Chunk = chunk })
+
+        let inputHandles = Array.zeroCreate<GCHandle> window.Length
+        let outputHandles = Array.zeroCreate<GCHandle> outputs.Length
+        let mutable retainedInputHandles = 0
+        let mutable retainedOutputHandles = 0
+        let mutable inputPointerHandle = Unchecked.defaultof<GCHandle>
+        let mutable inputPointersPinned = false
+        let mutable outputPointerHandle = Unchecked.defaultof<GCHandle>
+        let mutable outputPointersPinned = false
+        let mutable kernelHandle = Unchecked.defaultof<GCHandle>
+        let mutable kernelPinned = false
+
+        try
+            try
+                let inputPointers = Array.zeroCreate<nativeint> window.Length
+                for i in 0 .. window.Length - 1 do
+                    inputHandles[i] <- GCHandle.Alloc(window[i].Chunk.Bytes, GCHandleType.Pinned)
+                    retainedInputHandles <- retainedInputHandles + 1
+                    inputPointers[i] <- inputHandles[i].AddrOfPinnedObject()
+
+                let outputPointers = Array.zeroCreate<nativeint> outputs.Length
+                for i in 0 .. outputs.Length - 1 do
+                    outputHandles[i] <- GCHandle.Alloc(outputs[i].Chunk.Bytes, GCHandleType.Pinned)
+                    retainedOutputHandles <- retainedOutputHandles + 1
+                    outputPointers[i] <- outputHandles[i].AddrOfPinnedObject()
+
+                inputPointerHandle <- GCHandle.Alloc(inputPointers, GCHandleType.Pinned)
+                inputPointersPinned <- true
+                outputPointerHandle <- GCHandle.Alloc(outputPointers, GCHandleType.Pinned)
+                outputPointersPinned <- true
+                kernelHandle <- GCHandle.Alloc(kernel, GCHandleType.Pinned)
+                kernelPinned <- true
+
+                NativeMedian.convolveFloat32VectorComponentsSlices(
+                    inputPointerHandle.AddrOfPinnedObject(),
+                    outputPointerHandle.AddrOfPinnedObject(),
+                    kernelHandle.AddrOfPinnedObject(),
+                    width,
+                    height,
+                    components,
+                    window.Length,
+                    kernel.Length,
+                    outputStart,
+                    outputCount,
+                    axis)
+                |> NativeSp.checkStatus "sp_convolve_float32_vector_components_slices"
+
+                outputs |> Array.toList
+            with
+            | _ ->
+                outputs |> Array.iter (fun vector -> decRef vector.Chunk)
+                reraise()
+        finally
+            if kernelPinned then
+                kernelHandle.Free()
+            if outputPointersPinned then
+                outputPointerHandle.Free()
+            if inputPointersPinned then
+                inputPointerHandle.Free()
+            for i in 0 .. retainedOutputHandles - 1 do
+                outputHandles[i].Free()
+            for i in 0 .. retainedInputHandles - 1 do
+                inputHandles[i].Free()
+
+    let convolveVectorComponentsNativeXFloat32 (kernel: float32[]) (vector: VectorChunk<float32>) =
+        match convolveVectorComponentsNativeAxisFloat32 0 kernel 0 1 [| vector |] with
+        | [ output ] -> output
+        | outputs ->
+            outputs |> List.iter (fun vector -> decRef vector.Chunk)
+            invalidOp $"Native vector-component X convolution unexpectedly returned {outputs.Length} outputs."
+
+    let convolveVectorComponentsNativeYFloat32 (kernel: float32[]) (vector: VectorChunk<float32>) =
+        match convolveVectorComponentsNativeAxisFloat32 1 kernel 0 1 [| vector |] with
+        | [ output ] -> output
+        | outputs ->
+            outputs |> List.iter (fun vector -> decRef vector.Chunk)
+            invalidOp $"Native vector-component Y convolution unexpectedly returned {outputs.Length} outputs."
+
+    let convolveVectorComponentsNativeZFloat32 (kernel: float32[]) (window: VectorChunk<float32>[]) =
+        let radius = validateOddKernel "kernel" kernel
+        if window.Length <> kernel.Length then
+            invalidArg "window" $"Native vector-component Z convolution expects one window slice per kernel tap, got {window.Length} slices and {kernel.Length} taps."
+        match convolveVectorComponentsNativeAxisFloat32 2 kernel radius 1 window with
+        | [ output ] -> output
+        | outputs ->
+            outputs |> List.iter (fun vector -> decRef vector.Chunk)
+            invalidOp $"Native vector-component Z convolution unexpectedly returned {outputs.Length} outputs."
 
     let signedDistanceBandNativeUInt8 (bandRadius: uint) outputStart outputCount (window: Chunk<uint8>[]) =
         if bandRadius = 0u then

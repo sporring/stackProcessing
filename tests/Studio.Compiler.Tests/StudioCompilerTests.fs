@@ -1621,7 +1621,7 @@ let generatorSuite =
 
             Expect.equal (code.Split("|> readVolume<float32>").Length - 1) 1 "The shared readVolume source should be generated once."
             Expect.stringContains code ">=>> (identity" "The direct branch should use the public identity stage in shared fan-out."
-            Expect.stringContains code "serialPolynomialBiasCorrect<float32> 2" "The corrected branch should still include the bias correction stage."
+            Expect.stringContains code "chunkSerialPolynomialBiasCorrect<float32> 2" "The corrected branch should include the Chunk serial bias correction stage."
             Expect.stringContains code ">>=> subPair" "The two branches should be combined by the pair operation."
 
         testCase "unary image function lowers selected function to stage" <| fun _ ->
@@ -1808,7 +1808,7 @@ let generatorSuite =
             let colorCode =
                 graph
                     [ read "source" "source"
-                      node "tensor" "StructureTensor" [ p "sigma" "1.0" false; p "rho" "2.0" false ]
+                      node "tensor" "StructureTensor" [ p "sigma" "1.0" false; p "radius" "7" false; p "rho" "2.0" false; p "rhoRadius" "7" false; p "workers" "4" false ]
                       node "range" "VectorRange" [ p "firstComponent" "3" false; p "componentCount" "3" false ]
                       node "color" "Vector3ToColor" [ p "inputMinimum" "-1.0" false; p "inputMaximum" "1.0" false ]
                       node "vector" "ColorToVector3" [ p "outputMinimum" "-1.0" false; p "outputMaximum" "1.0" false ]
@@ -1820,8 +1820,8 @@ let generatorSuite =
                       edge "vector" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains colorCode ">=> vectorRange<float> 3u 3u" "VectorRange should lower with start and count."
-            Expect.stringContains colorCode ">=> vector3ToColor -1.0 1.0" "Vector3ToColor should lower with its input range."
+            Expect.stringContains colorCode ">=> chunkVectorRange<float32> 3u 3u" "VectorRange should lower with start, count, and the inferred Float32 vector type."
+            Expect.stringContains colorCode ">=> chunkVector3ToColorFloat32 (float32 (-1.0)) (float32 (1.0))" "Vector3ToColor should lower with its input range and the inferred Float32 vector type."
             Expect.stringContains colorCode ">=> colorToVector3 -1.0 1.0" "ColorToVector3 should lower with its output range."
 
             let gradientCode =
@@ -1854,13 +1854,13 @@ let generatorSuite =
             let structureTensorCode =
                 graph
                     [ read "source" "source"
-                      node "tensor" "StructureTensor" [ p "sigma" "1.0" false; p "rho" "2.0" false ]
+                      node "tensor" "StructureTensor" [ p "sigma" "1.0" false; p "radius" "7" false; p "rho" "2.0" false; p "rhoRadius" "7" false; p "workers" "4" false ]
                       write ]
                     [ edge "source" "output" 0 "tensor" "input" 0
                       edge "tensor" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains structureTensorCode ">=> structureTensor 1.0 2.0" "StructureTensor should lower with sigma and rho."
+            Expect.stringContains structureTensorCode ">=> chunkStructureTensorNativeParallelCollect 1.0 7 2.0 7 4" "StructureTensor should lower to the Chunk-native parallel collect stage."
             Expect.isFalse (structureTensorCode.Contains("selectGroupedOutput 4u")) "StructureTensor now emits one vectorized eigensystem stream."
 
             let pcaCode =
@@ -2057,7 +2057,7 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code ">=> grayscaleErode<float> 2u (Some 5u)" "Grayscale morphology should lower with type, radius, and window size."
-            Expect.stringContains code ">=> binaryContour true (Some 3u)" "Binary contour should lower with connectivity and window size."
+            Expect.stringContains code ">=> chunkBinaryContourZonohedralParallel true 3" "Binary contour should lower to the Chunk zonohedral contour stage."
             Expect.stringContains code ">=> removeSmallObjects 11UL ObjectConnectivity.TwentySix" "removeSmallObjects should lower with maximum volume and connectivity."
             Expect.stringContains code ">=> fillSmallHoles 13UL ObjectConnectivity.Six" "fillSmallHoles should lower with maximum volume and connectivity."
 

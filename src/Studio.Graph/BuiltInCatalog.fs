@@ -14,6 +14,8 @@ module BuiltInCatalog =
   let imageFloat32 = PortType.Image NumericType.Float32
   let imageFloat64 = PortType.Image NumericType.Float64
   let imageComplex = PortType.Image NumericType.Complex
+  let imageComplex64 = PortType.Image NumericType.Complex64
+  let vectorImageFloat32 = PortType.Custom "VectorImageFloat32"
   let vectorImageFloat64 = PortType.Custom "VectorImageFloat64"
   let colorImage = PortType.Custom "ColorImage"
   let translationTable = PortType.Custom "TranslationTable"
@@ -894,10 +896,10 @@ module BuiltInCatalog =
           DisplayName = "serialPolynomialBiasCorrect"
           Category = "Serial Sections"
           Summary = "Fit and subtract a 2D polynomial bias field independently per slice."
-          Description = serialSectionsDescription
+          Description = "Fits a 2D polynomial bias field independently on each Chunk slice, subtracts it, and emits the corrected Chunk slice."
           Aliases = [ "serial"; "slice"; "slicewise"; "bias"; "polynomial"; "section"; "illumination" ]
           Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Float64" imageFloat64 ]
+          Outputs = [ makePort "Number" imageAny ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "order" "Order" "2" (BasicType.Numeric Int32) ] }
@@ -1324,30 +1326,30 @@ module BuiltInCatalog =
         { Id = "ComplexFromReIm"
           DisplayName = "toComplex"
           Category = "Complex Images"
-          Summary = "Compose real and imaginary Float64 image streams into a native complex image stream."
-          Description = "Combines synchronized Float64 real and imaginary images into one native ComplexFloat64 image stream."
+          Summary = "Compose real and imaginary Float64 image streams into a complex64 Chunk stream."
+          Description = "Combines synchronized Float64 real and imaginary images into a compact complex64-interleaved Float32 Chunk stream."
           Aliases = [ "complex"; "real"; "imaginary"; "compose"; "toComplex"; "fourier" ]
           Inputs = [ makePort "Re: Float64" imageFloat64; makePort "Im: Float64" imageFloat64 ]
-          Outputs = [ makePort "Complex" imageComplex ]
+          Outputs = [ makePort "Complex64" imageComplex64 ]
           Parameters = [] }
 
         { Id = "ComplexPolar"
           DisplayName = "polarToComplex"
           Category = "Complex Images"
-          Summary = "Compose modulus and argument Float64 image streams into a native complex image stream."
-          Description = "Combines synchronized modulus and angle images into one native ComplexFloat64 image stream using polar coordinates."
+          Summary = "Compose modulus and argument Float64 image streams into a complex64 Chunk stream."
+          Description = "Combines synchronized modulus and angle images into one compact complex64-interleaved Float32 Chunk stream using polar coordinates."
           Aliases = [ "complex"; "polar"; "modulus"; "argument"; "phase"; "angle"; "fourier" ]
           Inputs = [ makePort "Modulus: Float64" imageFloat64; makePort "Arg: Float64" imageFloat64 ]
-          Outputs = [ makePort "Complex" imageComplex ]
+          Outputs = [ makePort "Complex64" imageComplex64 ]
           Parameters = [] }
 
         { Id = "ComplexRe"
           DisplayName = "Re"
           Category = "Complex Images"
           Summary = "Extract the real part of a complex image stream."
-          Description = "Extracts the real component from each native complex pixel and emits a Float64 image stream."
+          Description = "Extracts the real component from each complex64-interleaved Chunk pixel and emits a Float64 image stream."
           Aliases = [ "complex"; "real"; "re"; "fourier" ]
-          Inputs = [ makePort "Complex" imageComplex ]
+          Inputs = [ makePort "Complex64" imageComplex64 ]
           Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters = [] }
 
@@ -1355,9 +1357,9 @@ module BuiltInCatalog =
           DisplayName = "Im"
           Category = "Complex Images"
           Summary = "Extract the imaginary part of a complex image stream."
-          Description = "Extracts the imaginary component from each native complex pixel and emits a Float64 image stream."
+          Description = "Extracts the imaginary component from each complex64-interleaved Chunk pixel and emits a Float64 image stream."
           Aliases = [ "complex"; "imaginary"; "im"; "fourier" ]
-          Inputs = [ makePort "Complex" imageComplex ]
+          Inputs = [ makePort "Complex64" imageComplex64 ]
           Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters = [] }
 
@@ -1367,7 +1369,7 @@ module BuiltInCatalog =
           Summary = "Compute the modulus of a complex image stream."
           Description = "Computes the complex modulus at each pixel and emits a Float64 image stream."
           Aliases = [ "complex"; "abs"; "absolute"; "magnitude"; "modulus"; "fourier" ]
-          Inputs = [ makePort "Complex" imageComplex ]
+          Inputs = [ makePort "Complex64" imageComplex64 ]
           Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters = [] }
 
@@ -1377,7 +1379,7 @@ module BuiltInCatalog =
           Summary = "Compute the argument angle of a complex image stream."
           Description = "Computes the complex phase angle at each pixel and emits a Float64 image stream."
           Aliases = [ "complex"; "arg"; "argument"; "phase"; "angle"; "fourier" ]
-          Inputs = [ makePort "Complex" imageComplex ]
+          Inputs = [ makePort "Complex64" imageComplex64 ]
           Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters = [] }
 
@@ -1385,22 +1387,22 @@ module BuiltInCatalog =
           DisplayName = "conjugate"
           Category = "Complex Images"
           Summary = "Compute the complex conjugate of a complex image stream."
-          Description = "Keeps the real part and negates the imaginary part of each native complex pixel."
+          Description = "Keeps the real part and negates the imaginary part of each complex64-interleaved Chunk pixel."
           Aliases = [ "complex"; "conjugate"; "fourier" ]
-          Inputs = [ makePort "Complex" imageComplex ]
-          Outputs = [ makePort "Complex" imageComplex ]
+          Inputs = [ makePort "Complex64" imageComplex64 ]
+          Outputs = [ makePort "Complex64" imageComplex64 ]
           Parameters = [] }
 
         { Id = "FFT"
           DisplayName = "FFT"
           Category = "Fourier"
-          Summary = "Compute a chunk-backed 3D FFT from a scalar image stack."
-          Description = "Streams scalar slices into a temporary chunk workspace, computes slice-wise XY FFT followed by a z-direction FFT, and emits native complex frequency-domain slices."
-          Aliases = [ "fft"; "fourier"; "frequency"; "3d"; "chunk"; "spectrum" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Complex" imageComplex ]
+          Summary = "Compute a native Chunk XY FFT from a Float32 image stack."
+          Description = "Applies the current native FFTW-backed XY FFT to each Float32 Chunk slice and emits compact complex64-interleaved Float32 Chunk slices. Chunk-size parameters are retained for graph compatibility while the current XY backend ignores them."
+          Aliases = [ "fft"; "fourier"; "frequency"; "xy"; "chunk"; "spectrum" ]
+          Inputs = [ makePort "Float32" imageFloat32 ]
+          Outputs = [ makePort "Complex64" imageComplex64 ]
           Parameters =
-            [ makeParameter "type" "Type" "Float64" BasicType.String
+            [ makeParameter "type" "Type" "Float32" BasicType.String
               makeParameter "chunkX" "Chunk X" "64" (BasicType.Numeric UInt32)
               makeParameter "chunkY" "Chunk Y" "64" (BasicType.Numeric UInt32)
               makeParameter "chunkZ" "Chunk Z" "16" (BasicType.Numeric UInt32) ] }
@@ -1408,11 +1410,11 @@ module BuiltInCatalog =
         { Id = "InvFFT"
           DisplayName = "invFFT"
           Category = "Fourier"
-          Summary = "Compute the inverse chunk-backed 3D FFT."
-          Description = "Streams complex frequency-domain slices through a temporary chunk workspace, applies the inverse z transform and inverse XY transforms, and emits real Float64 slices."
-          Aliases = [ "ifft"; "inverse"; "fourier"; "frequency"; "3d"; "chunk" ]
-          Inputs = [ makePort "Complex" imageComplex ]
-          Outputs = [ makePort "Float64" imageFloat64 ]
+          Summary = "Compute the inverse native Chunk XY FFT."
+          Description = "Applies the native FFTW-backed inverse XY FFT to compact complex64-interleaved Float32 Chunk slices and emits real Float32 slices. Chunk-size parameters are retained for graph compatibility while the current XY backend ignores them."
+          Aliases = [ "ifft"; "inverse"; "fourier"; "frequency"; "xy"; "chunk" ]
+          Inputs = [ makePort "Complex64" imageComplex64 ]
+          Outputs = [ makePort "Float32" imageFloat32 ]
           Parameters =
             [ makeParameter "chunkX" "Chunk X" "64" (BasicType.Numeric UInt32)
               makeParameter "chunkY" "Chunk Y" "64" (BasicType.Numeric UInt32)
@@ -1421,11 +1423,11 @@ module BuiltInCatalog =
         { Id = "ShiftFFT"
           DisplayName = "shiftFFT"
           Category = "Fourier"
-          Summary = "Shift the zero-frequency component to the center of a complex spectrum."
-          Description = "Streams complex frequency-domain slices through a temporary chunk workspace and circularly shifts each axis by half its size."
-          Aliases = [ "fftshift"; "shift"; "fourier"; "frequency"; "center"; "spectrum" ]
-          Inputs = [ makePort "Complex" imageComplex ]
-          Outputs = [ makePort "Complex" imageComplex ]
+          Summary = "Shift the zero-frequency component to the center of a complex64 Chunk spectrum."
+          Description = "Circularly shifts x and y inside each complex64-interleaved Float32 Chunk slice, then performs the z shift by spilling slice chunks to temporary files and emitting them in rotated order. Chunk-size parameters are retained for graph compatibility."
+          Aliases = [ "fftshift"; "shift"; "fourier"; "frequency"; "center"; "spectrum"; "chunk" ]
+          Inputs = [ makePort "Complex64" imageComplex64 ]
+          Outputs = [ makePort "Complex64" imageComplex64 ]
           Parameters =
             [ makeParameter "chunkX" "Chunk X" "64" (BasicType.Numeric UInt32)
               makeParameter "chunkY" "Chunk Y" "64" (BasicType.Numeric UInt32)
@@ -1543,44 +1545,48 @@ module BuiltInCatalog =
         { Id = "Gradient"
           DisplayName = "gradient"
           Category = "Vector Images"
-          Summary = "Compute a 3-component finite-difference gradient field."
-          Description = "Computes finite-difference derivatives along x, y, and z and emits them as three-component vector-valued pixels ordered as dx, dy, dz."
-          Aliases = [ "gradient"; "derivative"; "finite"; "difference"; "vector"; "field" ]
-          Inputs = [ makePort "Float64" imageFloat64 ]
-          Outputs = [ makePort "Vector Float64" vectorImageFloat64 ]
+          Summary = "Compute a smoothed 3-component Chunk gradient field."
+          Description = "Smooths Float32 scalar chunks with a separable Gaussian, computes finite-difference derivatives along x, y, and z, and emits three-component Float32 vector chunks ordered as dx, dy, dz."
+          Aliases = [ "gradient"; "derivative"; "finite"; "difference"; "vector"; "field"; "chunk" ]
+          Inputs = [ makePort "Float32" imageFloat32 ]
+          Outputs = [ makePort "Vector Float32" vectorImageFloat32 ]
           Parameters =
-            [ makeParameter "order" "Order" "1" (BasicType.Numeric UInt32)
-              makeParameter "windowSize" "Window size" "None" BasicType.String ] }
+            [ makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
+              makeParameter "radius" "Radius" "7" (BasicType.Numeric Int32)
+              makeParameter "workers" "Workers" "4" (BasicType.Numeric Int32) ] }
 
         { Id = "StructureTensor"
           DisplayName = "structureTensor"
           Category = "Vector Images"
           Summary = "Compute the structure-tensor eigensystem as a vectorized 3x4 matrix."
-          Description = "Pre-smooths the scalar image with sigma, computes the finite-difference gradient, forms the six unique components of the symmetric exterior product, smooths those tensor components with rho, and emits one 12-component vector image per slice. The 12 components encode a 3x4 eigensystem matrix: components 0..2 are the sorted eigenvalues; components 3..5 are eigenvector 0; components 6..8 are eigenvector 1; components 9..11 are eigenvector 2. Use vectorRange to extract a 3-component eigenvector stream before colorizing or writing a scalar component."
+          Description = "Pre-smooths Float32 scalar chunks with sigma, computes the finite-difference gradient, forms the six unique components of the symmetric exterior product, smooths those tensor components with rho, and emits one 12-component Float32 vector chunk per slice. The 12 components encode a 3x4 eigensystem matrix: components 0..2 are the sorted eigenvalues; components 3..5 are eigenvector 0; components 6..8 are eigenvector 1; components 9..11 are eigenvector 2. Use vectorRange to extract a 3-component eigenvector stream before colorizing or writing a scalar component."
           Aliases = [ "structure"; "tensor"; "eigen"; "orientation"; "gradient"; "matrix" ]
-          Inputs = [ makePort "Float64" imageFloat64 ]
-          Outputs = [ makePort "Eigensystem 3x4" vectorImageFloat64 ]
+          Inputs = [ makePort "Float32" imageFloat32 ]
+          Outputs = [ makePort "Eigensystem 3x4 Float32" vectorImageFloat32 ]
           Parameters =
             [ makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
-              makeParameter "rho" "Rho" "2.0" (BasicType.Numeric Float64) ] }
+              makeParameter "radius" "Sigma radius" "7" (BasicType.Numeric Int32)
+              makeParameter "rho" "Rho" "2.0" (BasicType.Numeric Float64)
+              makeParameter "rhoRadius" "Rho radius" "7" (BasicType.Numeric Int32)
+              makeParameter "workers" "Workers" "4" (BasicType.Numeric Int32) ] }
 
         { Id = "PCA"
           DisplayName = "PCA"
           Category = "Vector Images"
           Summary = "Reduce vector images to a principal-component eigensystem."
-          Description = "Computes principal component analysis over all vector pixels in the input stream. Components selects the vector dimensionality, from 2 to 8 in Studio. The reducer emits singleton vector streams: eigenvalues followed by one eigenvector stream per component, sorted by descending eigenvalue."
+          Description = "Computes principal component analysis over all Float32 vector pixels in the input stream. Components selects the vector dimensionality, from 2 to 8 in Studio. The reducer emits singleton Float32 vector streams: eigenvalues followed by one eigenvector stream per component, sorted by descending eigenvalue."
           Aliases = [ "pca"; "principal"; "component"; "covariance"; "eigen"; "vector"; "reducer" ]
-          Inputs = [ makePort "Vector Float64" vectorImageFloat64 ]
+          Inputs = [ makePort "Vector Float32" vectorImageFloat32 ]
           Outputs =
-            [ makePort "Eigenvalues" vectorImageFloat64
-              makePort "Eigenvector 0" vectorImageFloat64
-              makePort "Eigenvector 1" vectorImageFloat64
-              makePort "Eigenvector 2" vectorImageFloat64
-              makePort "Eigenvector 3" vectorImageFloat64
-              makePort "Eigenvector 4" vectorImageFloat64
-              makePort "Eigenvector 5" vectorImageFloat64
-              makePort "Eigenvector 6" vectorImageFloat64
-              makePort "Eigenvector 7" vectorImageFloat64 ]
+            [ makePort "Eigenvalues" vectorImageFloat32
+              makePort "Eigenvector 0" vectorImageFloat32
+              makePort "Eigenvector 1" vectorImageFloat32
+              makePort "Eigenvector 2" vectorImageFloat32
+              makePort "Eigenvector 3" vectorImageFloat32
+              makePort "Eigenvector 4" vectorImageFloat32
+              makePort "Eigenvector 5" vectorImageFloat32
+              makePort "Eigenvector 6" vectorImageFloat32
+              makePort "Eigenvector 7" vectorImageFloat32 ]
           Parameters = [ makeParameter "components" "Components" "3" (BasicType.Numeric UInt32) ] }
 
         { Id = "SmoothWGauss"
@@ -1897,9 +1903,9 @@ module BuiltInCatalog =
         { Id = "BinaryContour"
           DisplayName = "binaryContour"
           Category = "Binary Morphology"
-          Summary = "Extract the contour of a binary UInt8 mask."
-          Description = binaryMorphologyDescription
-          Aliases = [ "morphology"; "binary"; "contour"; "edge"; "mask" ]
+          Summary = "Extract the inner contour of a binary UInt8 mask."
+          Description = "Binary contour computes mask minus a radius-1 zonohedral erosion. It expects UInt8 0/1 masks and preserves UInt8 output."
+          Aliases = [ "morphology"; "binary"; "contour"; "edge"; "mask"; "zonohedral" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters =
@@ -2428,8 +2434,8 @@ module BuiltInCatalog =
         { Id = "ResampleAffine"
           DisplayName = "resampleAffine"
           Category = "Geometry"
-          Summary = "Reslice an image stack with affine trilinear interpolation."
-          Description = "Streams the input stack into an internal chunk workspace, reads the chunks in the requested output slicing direction, and emits resampled slices. Geometry, affine transform, interpolation, and background are raw F# expressions."
+          Summary = "Reslice a Chunk stack with affine trilinear interpolation."
+          Description = "Resamples Chunk slices with trilinear interpolation and emits Chunk slices in the requested output geometry. Geometry, affine transform, interpolation, and background are raw F# expressions."
           Aliases = [ "resample"; "affine"; "trilinear"; "chunks"; "geometry"; "transform" ]
           Inputs = [ makePort "Image" imageAny ]
           Outputs = [ makePort "Image" imageAny ]

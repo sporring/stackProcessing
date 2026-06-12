@@ -55,6 +55,12 @@ module NativeSp =
         int height,
         int inverse)
 
+    [<DllImport(LibraryPath, EntryPoint = "sp_inv_fftwf_complex_xy_inplace")>]
+    extern int invFftwfComplexXYInplace(
+        nativeint interleaved,
+        int width,
+        int height)
+
     [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_complex_z_inplace")>]
     extern int fftwfComplexZInplace(
         nativeint interleaved,
@@ -62,6 +68,13 @@ module NativeSp =
         int height,
         int depth,
         int inverse)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_inv_fftwf_complex_z_inplace")>]
+    extern int invFftwfComplexZInplace(
+        nativeint interleaved,
+        int width,
+        int height,
+        int depth)
 
     let ensureAvailable () =
         let mutable handle = nativeint 0

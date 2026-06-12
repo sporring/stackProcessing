@@ -611,6 +611,170 @@ let fillSmallHoles maximumVolume connectivity : Stage<Image<uint8>, Image<uint8>
         invertedBinaryImage
         protectExterior
 
+let private copyBinaryChunkBytes (chunk: Chunk<uint8>) =
+    let output = Array.zeroCreate<uint8> chunk.ByteLength
+    chunk.Bytes.AsSpan(0, chunk.ByteLength).CopyTo(output.AsSpan())
+    output
+
+let private invertedBinaryChunk (chunk: Chunk<uint8>) =
+    let output = Chunk.create<uint8> chunk.Size
+    try
+        let inputPixels = Chunk.span<uint8> chunk
+        let outputPixels = Chunk.span<uint8> output
+        for i in 0 .. inputPixels.Length - 1 do
+            outputPixels[i] <- if inputPixels[i] = 0uy then 1uy else 0uy
+        output
+    with
+    | ex ->
+        Chunk.decRef output
+        raise ex
+
+let private emitChunkBufferThrough width height cutoff (buffer: SortedDictionary<int, uint8[]>) =
+    seq {
+        let mutable emitting = true
+
+        while emitting && buffer.Count > 0 do
+            let z = buffer.Keys |> Seq.head
+
+            if z <= cutoff then
+                let chunk = Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
+                try
+                    buffer[z].AsSpan().CopyTo(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+                    buffer.Remove z |> ignore
+                    yield chunk
+                with
+                | ex ->
+                    Chunk.decRef chunk
+                    raise ex
+            else
+                emitting <- false
+    }
+
+let private bufferedBinaryChunkComponentEdit
+    name
+    (maximumVolume: uint64)
+    connectivity
+    targetValue
+    componentChunk
+    isProtectedComponent
+    : Stage<Chunk<uint8>, Chunk<uint8>> =
+
+    let apply _debug (input: AsyncSeq<Chunk<uint8>>) =
+        asyncSeq {
+            let buffer = SortedDictionary<int, uint8[]>()
+            let mutable state = 1UL, Map.empty<uint64, ActiveObject>
+            let mutable width = None
+            let mutable height = None
+            let mutable firstZ = None
+            let mutable z = 0
+            let enumerator = input.GetAsyncEnumerator()
+            let mutable more = true
+
+            while more do
+                let! hasNext = enumerator.MoveNextAsync().AsTask() |> Async.AwaitTask
+
+                if hasNext then
+                    let chunk = enumerator.Current
+                    let widthU, heightU, depthU = chunk.Size
+                    if depthU <> 1UL then
+                        invalidArg "chunk" $"{name} expects 2D UInt8 slice chunks with depth 1, got {chunk.Size}."
+                    if widthU > uint64 Int32.MaxValue || heightU > uint64 Int32.MaxValue then
+                        invalidArg "chunk" $"{name} chunk dimensions must fit in Int32, got {chunk.Size}."
+
+                    let currentWidth = int widthU
+                    let currentHeight = int heightU
+
+                    match width, height with
+                    | None, None ->
+                        width <- Some currentWidth
+                        height <- Some currentHeight
+                        firstZ <- Some z
+                    | Some expectedWidth, Some expectedHeight when expectedWidth = currentWidth && expectedHeight = currentHeight -> ()
+                    | _ ->
+                        invalidOp $"{name} requires a stream with constant x-y slice size."
+
+                    buffer[z] <- copyBinaryChunkBytes chunk
+
+                    let componentInput = componentChunk chunk
+                    let nextState, completed =
+                        try
+                            processChunkSlice connectivity state z componentInput
+                        finally
+                            Chunk.decRef componentInput
+                            Chunk.decRef chunk
+
+                    state <- nextState
+
+                    for object in completed do
+                        if object.Size <= maximumVolume && not (isProtectedComponent currentWidth currentHeight firstZ None object) then
+                            paintObjectValue currentWidth targetValue buffer object
+
+                    let _, active = state
+                    let cutoff =
+                        if active.IsEmpty then
+                            z
+                        else
+                            active
+                            |> Map.toSeq
+                            |> Seq.map (fun (_, object) -> object.Bounds.MinZ)
+                            |> Seq.min
+                            |> fun minActiveZ -> minActiveZ - 1
+
+                    for chunk in emitChunkBufferThrough currentWidth currentHeight cutoff buffer do
+                        yield chunk
+
+                    z <- z + 1
+                else
+                    more <- false
+
+            let _, active = state
+            let lastZ =
+                if buffer.Count = 0 then
+                    None
+                else
+                    Some (buffer.Keys |> Seq.max)
+
+            for object in active |> Map.toList |> List.map (snd >> toStreamedObject) do
+                let currentWidth = width |> Option.defaultValue 0
+                let currentHeight = height |> Option.defaultValue 0
+
+                if object.Size <= maximumVolume && not (isProtectedComponent currentWidth currentHeight firstZ lastZ object) then
+                    paintObjectValue currentWidth targetValue buffer object
+
+            for chunk in emitChunkBufferThrough (width |> Option.defaultValue 0) (height |> Option.defaultValue 0) Int32.MaxValue buffer do
+                yield chunk
+        }
+
+    let pipe =
+        { Name = name
+          Apply = apply
+          Profile = Streaming }
+
+    Stage.fromPipe name (ProfileTransition.create Streaming Streaming) id id pipe
+
+let removeSmallObjectsChunk maximumVolume connectivity : Stage<Chunk<uint8>, Chunk<uint8>> =
+    bufferedBinaryChunkComponentEdit
+        "chunkRemoveSmallObjects"
+        maximumVolume
+        connectivity
+        0uy
+        Chunk.incRef
+        (fun _ _ _ _ _ -> false)
+
+let fillSmallHolesChunk maximumVolume connectivity : Stage<Chunk<uint8>, Chunk<uint8>> =
+    let protectExterior width height firstZ lastZ object =
+        touchesXYBoundary width height object
+        || (firstZ |> Option.exists (fun z -> object.Bounds.MinZ = z))
+        || (lastZ |> Option.exists (fun z -> object.Bounds.MaxZ = z))
+
+    bufferedBinaryChunkComponentEdit
+        "chunkFillSmallHoles"
+        maximumVolume
+        connectivity
+        1uy
+        invertedBinaryChunk
+        protectExterior
+
 let private paintObjectBatch width height (objects: StreamedObject list) =
     if width = 0u then invalidArg (nameof width) "paintObjects width must be positive."
     if height = 0u then invalidArg (nameof height) "paintObjects height must be positive."

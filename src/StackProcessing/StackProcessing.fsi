@@ -272,6 +272,14 @@ val readVolume<'T when 'T: equality> :
      SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
     when 'T: equality
 
+val readChunkVolume<'T
+                      when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+                           'T :> System.ValueType> :
+  (string ->
+     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
 val readVolumeRandom<'T when 'T: equality> :
   (uint ->
      string ->
@@ -505,6 +513,30 @@ val chunkEuler2DRotateNative<'T
     when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
          'T :> System.ValueType
 
+val chunkResize<'T
+                  when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+                       'T :> System.ValueType> :
+  (uint32 ->
+     uint32 ->
+     uint32 ->
+     string ->
+     SlimPipeline.Plan<unit,StackCore.Chunk<'T>> ->
+     SlimPipeline.Plan<unit,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkResample<'T
+                    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+                         'T :> System.ValueType> :
+  (float ->
+     float ->
+     float ->
+     string ->
+     SlimPipeline.Plan<unit,StackCore.Chunk<'T>> ->
+     SlimPipeline.Plan<unit,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
 val chunkShow<'T
                 when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
                      'T :> System.ValueType> :
@@ -532,6 +564,14 @@ val chunkVector3ToColorFloat32:
 val chunkVectorAngleToFloat32:
   (float32 list ->
      StackCore.Stage<StackCore.VectorChunk<float32>,StackCore.Chunk<float32>>)
+
+val chunkConvolveVectorComponentsFloat32NativeParallelCollect:
+  (float32 array ->
+     float32 array ->
+     float32 array ->
+     int ->
+     StackCore.Stage<StackCore.VectorChunk<float32>,
+                     StackCore.VectorChunk<float32>>)
 
 val chunkToVectorImage<'T
                          when 'T: equality and 'T: (new: unit -> 'T) and
@@ -604,7 +644,7 @@ val chunkStructureTensorNativeParallelCollect:
   (float ->
      int ->
      float ->
-     'a ->
+     int ->
      int ->
      StackCore.Stage<StackCore.Chunk<float32>,StackCore.VectorChunk<float32>>)
 
@@ -635,6 +675,21 @@ val chunkComplex64Argument:
   StackCore.Stage<StackCore.Chunk<float32>,StackCore.Chunk<float>>
 
 val chunkComplex64Conjugate:
+  StackCore.Stage<StackCore.Chunk<float32>,StackCore.Chunk<float32>>
+
+val chunkFftXYFloat32ToComplex64Interleaved:
+  StackCore.Stage<StackCore.Chunk<float32>,StackCore.Chunk<float32>>
+
+val chunkFftXYFloat32ToComplex64InterleavedParallelCollect:
+  (int -> StackCore.Stage<StackCore.Chunk<float32>,StackCore.Chunk<float32>>)
+
+val chunkInvFftXYComplex64InterleavedToFloat32:
+  StackCore.Stage<StackCore.Chunk<float32>,StackCore.Chunk<float32>>
+
+val chunkInvFftXYComplex64InterleavedToFloat32ParallelCollect:
+  (int -> StackCore.Stage<StackCore.Chunk<float32>,StackCore.Chunk<float32>>)
+
+val chunkFftShift3DComplex64Interleaved:
   StackCore.Stage<StackCore.Chunk<float32>,StackCore.Chunk<float32>>
 
 val chunkConnectedComponentsSauf3DUInt8UInt32:
@@ -1205,6 +1260,12 @@ val chunkBinaryGradientZonohedralParallel:
   (uint32 ->
      int -> StackCore.Stage<StackCore.Chunk<uint8>,StackCore.Chunk<uint8>>)
 
+val chunkBinaryContourZonohedral:
+  (bool -> StackCore.Stage<StackCore.Chunk<uint8>,StackCore.Chunk<uint8>>)
+
+val chunkBinaryContourZonohedralParallel:
+  (bool -> int -> StackCore.Stage<StackCore.Chunk<uint8>,StackCore.Chunk<uint8>>)
+
 val readZarrSlabStacked<'T when 'T: equality> :
   (string ->
      int ->
@@ -1336,6 +1397,9 @@ val writeThrough:
 val writeChunkSlices<'T when 'T: equality> :
   (string -> string -> StackCore.Stage<StackCore.Chunk<'T>,unit>)
     when 'T: equality
+
+val writeColorChunkSlices:
+  (string -> string -> StackCore.Stage<StackCore.VectorChunk<uint8>,unit>)
 
 val writeVolume<'T when 'T: equality> :
   (string -> StackCore.Stage<StackCore.Image<'T>,unit>) when 'T: equality
@@ -1733,6 +1797,16 @@ val objectSizeStats:
 
 val histogram:
   (uint64 -> StackCore.Stage<uint64 list,StackCore.Histogram<uint64>>)
+
+val chunkRemoveSmallObjects:
+  (uint64 ->
+     StackObjects.ObjectConnectivity ->
+     StackCore.Stage<StackCore.Chunk<uint8>,StackCore.Chunk<uint8>>)
+
+val chunkFillSmallHoles:
+  (uint64 ->
+     StackObjects.ObjectConnectivity ->
+     StackCore.Stage<StackCore.Chunk<uint8>,StackCore.Chunk<uint8>>)
 
 val resampleAffineFromChunks:
   (string ->
@@ -2345,6 +2419,14 @@ val correctBiasChunkMasked<'T
     when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
          'T :> System.ValueType
 
+val chunkSerialPolynomialBiasCorrect<'T
+                                       when 'T: equality and
+                                            'T: (new: unit -> 'T) and 'T: struct and
+                                            'T :> System.ValueType> :
+  (int -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
 val serialIdentityManifest:
   (uint32 -> uint32 -> int -> StackSerialSections.SerialSliceManifest)
 
@@ -2761,4 +2843,3 @@ val permuteAxes:
   (uint * uint * uint ->
      uint -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
-

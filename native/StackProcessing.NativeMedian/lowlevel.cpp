@@ -778,6 +778,169 @@ static void convolve_axis_z_slice_outputs(
     }
 }
 
+static int convolve_float32_vector_components_slice_outputs(
+    const float* const* slices,
+    float* const* outputs,
+    const float* kernel,
+    int width,
+    int height,
+    int components,
+    int window_length,
+    int kernel_length,
+    int output_start,
+    int output_count,
+    int axis)
+{
+    if (slices == nullptr || outputs == nullptr || kernel == nullptr ||
+        width <= 0 || height <= 0 || components <= 0 ||
+        window_length <= 0 || kernel_length <= 0 || output_count < 0) {
+        return 1;
+    }
+    if ((kernel_length % 2) == 0) {
+        return 2;
+    }
+    if (axis < 0 || axis > 2) {
+        return 3;
+    }
+
+    const int pad = kernel_length / 2;
+    const int vector_plane = width * height * components;
+
+    for (int out_z = 0; out_z < output_count; ++out_z) {
+        const int center_z = output_start + out_z;
+        float* output_slice = outputs[out_z];
+        if (output_slice == nullptr) {
+            return 4;
+        }
+
+        if (axis == 0 || axis == 1) {
+            if (center_z < 0 || center_z >= window_length || slices[center_z] == nullptr) {
+                std::fill(output_slice, output_slice + vector_plane, 0.0f);
+                continue;
+            }
+
+            const float* input_slice = slices[center_z];
+            if (axis == 0) {
+                const int x_begin = pad;
+                const int x_end = width - pad;
+
+                for (int y = 0; y < height; ++y) {
+                    const int row = y * width;
+
+                    for (int x = 0; x < x_begin && x < width; ++x) {
+                        const int target = (row + x) * components;
+                        for (int c = 0; c < components; ++c) {
+                            float acc = 0.0f;
+                            for (int k = 0; k < kernel_length; ++k) {
+                                const int xx = x + k - pad;
+                                if (0 <= xx && xx < width) {
+                                    acc += input_slice[(row + xx) * components + c] * kernel[k];
+                                }
+                            }
+                            output_slice[target + c] = acc;
+                        }
+                    }
+
+                    for (int x = x_begin; x < x_end; ++x) {
+                        const int target = (row + x) * components;
+                        const int source = (row + x - pad) * components;
+                        for (int c = 0; c < components; ++c) {
+                            float acc = 0.0f;
+                            for (int k = 0; k < kernel_length; ++k) {
+                                acc += input_slice[source + k * components + c] * kernel[k];
+                            }
+                            output_slice[target + c] = acc;
+                        }
+                    }
+
+                    for (int x = std::max(x_begin, x_end); x < width; ++x) {
+                        const int target = (row + x) * components;
+                        for (int c = 0; c < components; ++c) {
+                            float acc = 0.0f;
+                            for (int k = 0; k < kernel_length; ++k) {
+                                const int xx = x + k - pad;
+                                if (0 <= xx && xx < width) {
+                                    acc += input_slice[(row + xx) * components + c] * kernel[k];
+                                }
+                            }
+                            output_slice[target + c] = acc;
+                        }
+                    }
+                }
+            } else {
+                const int y_begin = pad;
+                const int y_end = height - pad;
+
+                for (int y = 0; y < y_begin && y < height; ++y) {
+                    const int row = y * width;
+                    for (int x = 0; x < width; ++x) {
+                        const int target = (row + x) * components;
+                        for (int c = 0; c < components; ++c) {
+                            float acc = 0.0f;
+                            for (int k = 0; k < kernel_length; ++k) {
+                                const int yy = y + k - pad;
+                                if (0 <= yy && yy < height) {
+                                    acc += input_slice[(yy * width + x) * components + c] * kernel[k];
+                                }
+                            }
+                            output_slice[target + c] = acc;
+                        }
+                    }
+                }
+
+                for (int y = y_begin; y < y_end; ++y) {
+                    const int row = y * width;
+                    const int source_row = (y - pad) * width;
+                    for (int x = 0; x < width; ++x) {
+                        const int target = (row + x) * components;
+                        const int source = (source_row + x) * components;
+                        for (int c = 0; c < components; ++c) {
+                            float acc = 0.0f;
+                            for (int k = 0; k < kernel_length; ++k) {
+                                acc += input_slice[source + k * width * components + c] * kernel[k];
+                            }
+                            output_slice[target + c] = acc;
+                        }
+                    }
+                }
+
+                for (int y = std::max(y_begin, y_end); y < height; ++y) {
+                    const int row = y * width;
+                    for (int x = 0; x < width; ++x) {
+                        const int target = (row + x) * components;
+                        for (int c = 0; c < components; ++c) {
+                            float acc = 0.0f;
+                            for (int k = 0; k < kernel_length; ++k) {
+                                const int yy = y + k - pad;
+                                if (0 <= yy && yy < height) {
+                                    acc += input_slice[(yy * width + x) * components + c] * kernel[k];
+                                }
+                            }
+                            output_slice[target + c] = acc;
+                        }
+                    }
+                }
+            }
+        } else {
+            for (int i = 0; i < vector_plane; ++i) {
+                float acc = 0.0f;
+                for (int k = 0; k < kernel_length; ++k) {
+                    const int zz = center_z + k - pad;
+                    if (0 <= zz && zz < window_length) {
+                        const float* input_slice = slices[zz];
+                        if (input_slice != nullptr) {
+                            acc += input_slice[i] * kernel[k];
+                        }
+                    }
+                }
+                output_slice[i] = acc;
+            }
+        }
+    }
+
+    return 0;
+}
+
 static void scale_complex_buffer(float* interleaved, int complex_count, float scale)
 {
     const int value_count = 2 * complex_count;
@@ -1359,6 +1522,33 @@ SP_CONVOLVE_AXIS_EXPORTS(float, float32)
 
 #undef SP_CONVOLVE_AXIS_EXPORTS
 
+SP_MEDIAN_API int sp_convolve_float32_vector_components_slices(
+    const float* const* slices,
+    float* const* outputs,
+    const float* kernel,
+    int width,
+    int height,
+    int components,
+    int window_length,
+    int kernel_length,
+    int output_start,
+    int output_count,
+    int axis)
+{
+    return convolve_float32_vector_components_slice_outputs(
+        slices,
+        outputs,
+        kernel,
+        width,
+        height,
+        components,
+        window_length,
+        kernel_length,
+        output_start,
+        output_count,
+        axis);
+}
+
 }
 
 enum SpPixelType {
@@ -1441,6 +1631,34 @@ static inline T sample_linear_2d(
 }
 
 template <typename T>
+static inline double sample_linear_2d_double(
+    const T* input,
+    int width,
+    int height,
+    double x,
+    double y)
+{
+    if (input == nullptr || x < 0.0 || y < 0.0 || x > static_cast<double>(width - 1) || y > static_cast<double>(height - 1)) {
+        return 0.0;
+    }
+
+    const int x0 = static_cast<int>(std::floor(x));
+    const int y0 = static_cast<int>(std::floor(y));
+    const int x1 = std::min(x0 + 1, width - 1);
+    const int y1 = std::min(y0 + 1, height - 1);
+    const double fx = x - static_cast<double>(x0);
+    const double fy = y - static_cast<double>(y0);
+
+    const double c00 = static_cast<double>(input[y0 * width + x0]);
+    const double c10 = static_cast<double>(input[y0 * width + x1]);
+    const double c01 = static_cast<double>(input[y1 * width + x0]);
+    const double c11 = static_cast<double>(input[y1 * width + x1]);
+    const double c0 = c00 + (c10 - c00) * fx;
+    const double c1 = c01 + (c11 - c01) * fx;
+    return c0 + (c1 - c0) * fy;
+}
+
+template <typename T>
 static inline T sample_2d(
     const T* input,
     int width,
@@ -1482,6 +1700,56 @@ static int resample_2d_typed(
         for (int x = 0; x < output_width; ++x) {
             const double source_x = static_cast<double>(x) * spacing_x;
             output[y * output_width + x] = sample_2d(input, input_width, input_height, source_x, source_y, interpolation);
+        }
+    }
+
+    return 0;
+}
+
+template <typename T>
+static int resize_3d_pair_slice_typed(
+    const void* lower_ptr,
+    const void* upper_ptr,
+    void* output_ptr,
+    int input_width,
+    int input_height,
+    int output_width,
+    int output_height,
+    double spacing_x,
+    double spacing_y,
+    double z_fraction,
+    int interpolation)
+{
+    if (lower_ptr == nullptr || upper_ptr == nullptr || output_ptr == nullptr ||
+        input_width <= 0 || input_height <= 0 || output_width <= 0 || output_height <= 0) {
+        return 1;
+    }
+    if (spacing_x <= 0.0 || spacing_y <= 0.0 || z_fraction < 0.0 || z_fraction > 1.0) {
+        return 2;
+    }
+
+    const T* lower = static_cast<const T*>(lower_ptr);
+    const T* upper = static_cast<const T*>(upper_ptr);
+    T* output = static_cast<T*>(output_ptr);
+
+    if (interpolation == SP_INTERP_NEAREST) {
+        const T* selected = z_fraction < 0.5 ? lower : upper;
+        for (int y = 0; y < output_height; ++y) {
+            const double source_y = static_cast<double>(y) * spacing_y;
+            for (int x = 0; x < output_width; ++x) {
+                const double source_x = static_cast<double>(x) * spacing_x;
+                output[y * output_width + x] = sample_nearest_2d(selected, input_width, input_height, source_x, source_y);
+            }
+        }
+    } else {
+        for (int y = 0; y < output_height; ++y) {
+            const double source_y = static_cast<double>(y) * spacing_y;
+            for (int x = 0; x < output_width; ++x) {
+                const double source_x = static_cast<double>(x) * spacing_x;
+                const double lower_value = sample_linear_2d_double(lower, input_width, input_height, source_x, source_y);
+                const double upper_value = sample_linear_2d_double(upper, input_width, input_height, source_x, source_y);
+                output[y * output_width + x] = clamp_round_value<T>(lower_value + (upper_value - lower_value) * z_fraction);
+            }
         }
     }
 
@@ -1567,6 +1835,38 @@ SP_MEDIAN_API int sp_resample_2d(
     }
 }
 
+SP_MEDIAN_API int sp_resize_3d_pair_slice(
+    const void* lower,
+    const void* upper,
+    void* output,
+    int pixel_type,
+    int input_width,
+    int input_height,
+    int output_width,
+    int output_height,
+    double spacing_x,
+    double spacing_y,
+    double z_fraction,
+    int interpolation)
+{
+    switch (pixel_type) {
+        case SP_PIXEL_UINT8:
+            return resize_3d_pair_slice_typed<uint8_t>(lower, upper, output, input_width, input_height, output_width, output_height, spacing_x, spacing_y, z_fraction, interpolation);
+        case SP_PIXEL_INT8:
+            return resize_3d_pair_slice_typed<int8_t>(lower, upper, output, input_width, input_height, output_width, output_height, spacing_x, spacing_y, z_fraction, interpolation);
+        case SP_PIXEL_UINT16:
+            return resize_3d_pair_slice_typed<uint16_t>(lower, upper, output, input_width, input_height, output_width, output_height, spacing_x, spacing_y, z_fraction, interpolation);
+        case SP_PIXEL_INT16:
+            return resize_3d_pair_slice_typed<int16_t>(lower, upper, output, input_width, input_height, output_width, output_height, spacing_x, spacing_y, z_fraction, interpolation);
+        case SP_PIXEL_INT32:
+            return resize_3d_pair_slice_typed<int32_t>(lower, upper, output, input_width, input_height, output_width, output_height, spacing_x, spacing_y, z_fraction, interpolation);
+        case SP_PIXEL_FLOAT32:
+            return resize_3d_pair_slice_typed<float>(lower, upper, output, input_width, input_height, output_width, output_height, spacing_x, spacing_y, z_fraction, interpolation);
+        default:
+            return 100;
+    }
+}
+
 SP_MEDIAN_API int sp_euler_2d(
     const void* input,
     void* output,
@@ -1608,6 +1908,14 @@ SP_MEDIAN_API int sp_fftwf_complex_xy_inplace(
     return fftwf_complex_xy_inplace(interleaved, width, height, inverse);
 }
 
+SP_MEDIAN_API int sp_inv_fftwf_complex_xy_inplace(
+    float* interleaved,
+    int width,
+    int height)
+{
+    return fftwf_complex_xy_inplace(interleaved, width, height, 1);
+}
+
 SP_MEDIAN_API int sp_fftwf_complex_z_inplace(
     float* interleaved,
     int width,
@@ -1616,6 +1924,15 @@ SP_MEDIAN_API int sp_fftwf_complex_z_inplace(
     int inverse)
 {
     return fftwf_complex_z_inplace(interleaved, width, height, depth, inverse);
+}
+
+SP_MEDIAN_API int sp_inv_fftwf_complex_z_inplace(
+    float* interleaved,
+    int width,
+    int height,
+    int depth)
+{
+    return fftwf_complex_z_inplace(interleaved, width, height, depth, 1);
 }
 
 }

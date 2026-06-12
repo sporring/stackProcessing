@@ -66,6 +66,11 @@ implementation before Chunk can act as the regular StackProcessing backbone.
   - Convenience magnitude stages: `gradientMagnitudeNativeParallelCollect`,
     `gradientMagnitudeNativeParallelCollectXYZ`, and
     `sobelMagnitudeNativeParallelCollect`.
+  - Structure tensor now has a Chunk-native Float32 path:
+    `structureTensorNativeParallelCollect` builds the smoothed gradient,
+    6-component upper outer-product tensor, optional separable Gaussian tensor
+    smoothing, and 12-component eigensystem vector Chunk
+    `[eigenvalues; eigenvector0; eigenvector1; eigenvector2]`.
   - UInt8 Perreault-Hebert dense median baseline with y-band workers
   - native nth-element median stages for `UInt8`, `UInt16`, `Int32`, and
     `Float32`, including `ParallelCollect` variants
@@ -94,8 +99,9 @@ implementation before Chunk can act as the regular StackProcessing backbone.
     `VectorChunk` PCA, and marching cubes over Chunk slices.
   - More `VectorChunk` list-backed replacements: component range,
     append-element, element mapping, vector-to-color, and color-to-vector
-    stages. These are native Chunk operations, but Studio still needs a clear
-    sink/display policy for vector-valued outputs.
+    stages. Studio now has a Float32 vector lowering policy for the Chunk
+    gradient, structure tensor, PCA, vector-range, vector-to-color, and RGB
+    TIFF stack sink path.
   - Complex64-interleaved Chunk construction and scalar operations:
     real/imaginary composition, polar composition, real, imaginary, modulus,
     argument, and conjugate. These share the same doubled-width `[re; im]`
@@ -130,23 +136,21 @@ implementation before Chunk can act as the regular StackProcessing backbone.
   - connected-components relabel/update translation-table Studio paths still
     use Image stages; the direct Chunk SAUF label stage exists, but the old
     labels-plus-object-count tuple shape is intentionally not recreated yet
-  - full FFT workflows and complex IO/write decisions still need Chunk policy
-    beyond the current low-level XY FFT and complex64-interleaved scalar helpers
-  - structure tensor still needs a `VectorChunk` stage or should be explicitly
-    marked legacy
+  - full 3D FFT composition and complex IO/write decisions still need Chunk
+    policy beyond the current low-level XY FFT round-trip, temp-chunk-backed
+    3D FFT shift, and complex64-interleaved scalar helpers
   - speckle noise, bilateral filtering, grayscale morphology, label contour,
     and change-label are shelved and not being ported for now.
 - Slab bridges: `ofSlab` and `toSlab` need a Chunk-native shape. The current
   `Slab<'T>` record contains an `Image<'T>`, so either the record should become
   storage-polymorphic or a parallel `ChunkSlab<'T>` should be introduced.
-- Higher-level vector-valued operations still need Chunk stages or kernels:
-  structure-tensor helpers.
 - Some geometric and resampling operations remain Image/ITK paths for now.
   Affine resampling has a first simple Chunk-slice stage, but it still needs
   optimization before it should be considered final.
-- Full FFT workflows remain Image/ITK paths. The Chunk path currently has
-  native XY FFT for `Float32` chunks to complex64-interleaved `Float32` storage
-  plus simple complex64-interleaved scalar helpers. Also, it needs speedup!
+- The `samples/fft` round trip now uses the native Chunk XY FFT, temp-chunk-
+  backed 3D FFT shift, and inverse XY FFT for `Float32` chunks to
+  complex64-interleaved `Float32` storage. Full 3D FFT composition and complex
+  IO/write decisions still need Chunk policy.
 - Exact or ITK-backed neighbourhood filters still need either native Chunk
   versions or explicit bridge decisions:
   label contour and exact spherical morphology.
@@ -195,26 +199,27 @@ Chunk-upgraded DSL samples now include:
 - `samples/blackTopHat`
 - `samples/whiteTopHat`
 - `samples/morphologicalGradient`
+- `samples/structureTensor`
+- `samples/pcaGradientDirection`
+- `samples/volume`
+- `samples/resize`
+- `samples/binaryContour`
+- `samples/randomRigidTransform`
+- `samples/affineKeypointRegistration`
+- `samples/serialBiasCorrect`
+- `samples/fillSmallHoles`
+- `samples/removeSmallObjects`
+- `samples/fft` for the first native Chunk XY FFT, temp-chunk-backed 3D
+  `fftshift`, and inverse XY FFT round trip.
 
 Studio JSON graphs that use the corresponding boxes lower through the new
 Chunk stages automatically; their box IDs are mostly unchanged because the
 compiler now selects Chunk-backed stages for those boxes.
 
-Sample JSON graphs that still are not supported without Image or Slabs:
+Deferred Chunk capabilities:
 
-- `samples/fft` because full FFT/inverse/shift workflows remain Image-backed.
-- `samples/structureTensor` and `samples/pcaGradientDirection` JSON graphs
-  because the handwritten DSL paths are Chunk-native now, but Studio vector
-  boxes still need a clear Float32 lowering policy and true RGB/vector sink
-  policy.
-- `samples/volume` because the standalone sample still needs the same
-  threshold-to-Chunk-volume cleanup now used by `samples/meshMeasurement`.
-- `samples/resize`, `samples/randomRigidTransform`,
-  `samples/affineKeypointRegistration`, and `samples/serialBiasCorrect`
-  because those geometric/registration variants still use Image-only paths.
-- `samples/binaryContour`, `samples/fillSmallHoles`, and
-  `samples/removeSmallObjects` because those morphology/object cleanup paths
-  remain Image-backed or intentionally deferred.
+- Full 3D FFT composition remains intentionally deferred; the `samples/fft`
+  JSON graph now covers the current Chunk XY FFT plus 3D `fftshift` round trip.
 
 ## Design Notes
 

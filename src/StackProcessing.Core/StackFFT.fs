@@ -1,6 +1,8 @@
 module StackFFT
 
 open System
+open System.IO
+open FSharp.Control
 open SlimPipeline
 open StackCore
 
@@ -143,6 +145,103 @@ let private complex64ConjugateChunk (chunk: Chunk<float32>) =
 let complex64Conjugate : Stage<Chunk<float32>, Chunk<float32>> =
     releaseUnaryChunk "chunkComplex64Conjugate" complex64ConjugateChunk (fun n -> n * uint64 (4 * sizeof<float32>))
 
+let fftShiftXYComplex64Interleaved : Stage<Chunk<float32>, Chunk<float32>> =
+    releaseUnaryChunk
+        "chunkFftShiftXYComplex64Interleaved"
+        ChunkKernel.fftShiftXYComplex64InterleavedChunk
+        (fun n -> n * uint64 (2 * sizeof<float32> + 2 * sizeof<float32>))
+
+let fftShiftZComplex64InterleavedViaTempChunks : Stage<Chunk<float32>, Chunk<float32>> =
+    let name = "chunkFftShiftZComplex64InterleavedViaTempChunks"
+    let transition = ProfileTransition.create Streaming Streaming
+    let memoryModel =
+        StageMemoryModel.fromSinglePeak
+            (Custom name)
+            (fun n -> n * uint64 (3 * sizeof<float32>))
+
+    let apply _debug (input: AsyncSeq<Chunk<float32>>) =
+        asyncSeq {
+            let tempDir =
+                Path.Combine(
+                    Path.GetTempPath(),
+                    $"stackprocessing-fftshift-{Guid.NewGuid():N}")
+
+            Directory.CreateDirectory(tempDir) |> ignore
+            let paths = ResizeArray<string>()
+            let mutable expectedSize = ValueNone
+
+            let cleanup () =
+                for path in paths do
+                    try
+                        if File.Exists(path) then
+                            File.Delete(path)
+                    with _ ->
+                        ()
+
+                try
+                    if Directory.Exists(tempDir) then
+                        Directory.Delete(tempDir)
+                with _ ->
+                    ()
+
+            try
+                for chunk in input do
+                    try
+                        let interleavedWidth, _height, depth = chunk.Size
+                        if depth <> 1UL then
+                            invalidArg "chunk" $"{name} expects 2D complex64-interleaved chunks with depth 1, got {chunk.Size}."
+                        if interleavedWidth % 2UL <> 0UL then
+                            invalidArg "chunk" $"{name} expects even interleaved width, got {chunk.Size}."
+
+                        match expectedSize with
+                        | ValueNone ->
+                            expectedSize <- ValueSome chunk.Size
+                        | ValueSome size when size <> chunk.Size ->
+                            invalidArg "chunk" $"{name} expects all slices to have the same size, got {chunk.Size} after {size}."
+                        | ValueSome _ ->
+                            ()
+
+                        let path = Path.Combine(tempDir, $"{paths.Count:D12}.bin")
+                        use stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1024 * 1024, FileOptions.SequentialScan)
+                        stream.Write(chunk.Bytes, 0, chunk.ByteLength)
+                        paths.Add(path)
+                    finally
+                        Chunk.decRef chunk
+
+                let depth = paths.Count
+                if depth > 0 then
+                    let shiftZ = depth / 2
+                    let start = depth - shiftZ
+                    let size =
+                        match expectedSize with
+                        | ValueSome value -> value
+                        | ValueNone -> invalidOp $"{name} internal error: missing chunk size for non-empty stream."
+
+                    for outZ in 0 .. depth - 1 do
+                        let sourceZ = (start + outZ) % depth
+                        let path = paths[sourceZ]
+                        let bytes = File.ReadAllBytes(path)
+                        let output = Chunk.create<float32> size
+
+                        try
+                            if bytes.Length <> output.ByteLength then
+                                invalidOp $"{name} expected {output.ByteLength} bytes in {path}, got {bytes.Length}."
+                            bytes.AsSpan().CopyTo(output.Bytes.AsSpan(0, output.ByteLength))
+                            yield output
+                            File.Delete(path)
+                        with
+                        | _ ->
+                            Chunk.decRef output
+                            reraise()
+            finally
+                cleanup()
+        }
+
+    Stage.fromAsyncSeq name apply transition memoryModel id
+
+let fftShift3DComplex64Interleaved : Stage<Chunk<float32>, Chunk<float32>> =
+    fftShiftXYComplex64Interleaved --> fftShiftZComplex64InterleavedViaTempChunks
+
 let fftXYFloat32ToComplex64Interleaved : Stage<Chunk<float32>, Chunk<float32>> =
     let mapper (input: Chunk<float32>) =
         ChunkKernel.fftXYFloat32ToComplex64InterleavedChunk input
@@ -151,6 +250,15 @@ let fftXYFloat32ToComplex64Interleaved : Stage<Chunk<float32>, Chunk<float32>> =
         "chunkFftXYFloat32ToComplex64Interleaved"
         mapper
         (fun nPixels -> nPixels * uint64 (sizeof<float32> + 2 * sizeof<float32>))
+
+let invFftXYComplex64InterleavedToFloat32 : Stage<Chunk<float32>, Chunk<float32>> =
+    let mapper (input: Chunk<float32>) =
+        ChunkKernel.invFftXYComplex64InterleavedToFloat32Chunk input
+
+    releaseUnaryChunk
+        "chunkInvFftXYComplex64InterleavedToFloat32"
+        mapper
+        (fun nPixels -> nPixels * uint64 (2 * sizeof<float32> + sizeof<float32>))
 
 let fftXYFloat32ToComplex64InterleavedParallelCollect (workers: int) : Stage<Chunk<float32>, Chunk<float32>> =
     if workers < 1 then
@@ -179,4 +287,33 @@ let fftXYFloat32ToComplex64InterleavedParallelCollect (workers: int) : Stage<Chu
             (fun _ chunk -> chunk)
             mapper
             (fun nPixels -> nPixels * uint64 (sizeof<float32> + 2 * sizeof<float32>))
+            id
+
+let invFftXYComplex64InterleavedToFloat32ParallelCollect (workers: int) : Stage<Chunk<float32>, Chunk<float32>> =
+    if workers < 1 then
+        invalidArg "workers" $"Chunk inverse FFT XY parallelCollect expects at least one worker, got {workers}."
+    if workers = 1 then
+        invFftXYComplex64InterleavedToFloat32
+    else
+        let mapper _debug (window: Window<Chunk<float32>>) =
+            match window.Items with
+            | [ chunk ] ->
+                try
+                    [ ChunkKernel.invFftXYComplex64InterleavedToFloat32Chunk chunk ]
+                finally
+                    Chunk.decRef chunk
+            | items ->
+                for chunk in items do
+                    Chunk.decRef chunk
+                invalidArg "window" $"Chunk inverse FFT XY parallelCollect expects singleton windows, got {items.Length} items."
+
+        Stage.parallelCollect
+            $"chunkInvFftXYComplex64InterleavedToFloat32.parallelCollect.workers{workers}"
+            1
+            workers
+            1
+            0
+            (fun _ chunk -> chunk)
+            mapper
+            (fun nPixels -> nPixels * uint64 (2 * sizeof<float32> + sizeof<float32>))
             id

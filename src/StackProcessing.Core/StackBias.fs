@@ -25,6 +25,15 @@ type BiasPolynomialModel =
 let private toDouble value =
     Convert.ToDouble(box value, CultureInfo.InvariantCulture)
 
+let private fromDouble<'T> value =
+    let t = typeof<'T>
+    if t = typeof<float32> then
+        box (float32 value) :?> 'T
+    elif t = typeof<float> then
+        box value :?> 'T
+    else
+        invalidArg "T" $"Serial polynomial bias correction supports Float32 and Float64 chunks, got {t.Name}."
+
 let private polynomialTerms order =
     if order < 0 then invalidArg "order" "Polynomial order must be non-negative."
 
@@ -96,6 +105,26 @@ let private evaluateValues
         let term = terms[i]
         sum <- sum + coefficients[i] * xPowers[x][term.XPower] * yPowers[y][term.YPower] * zPowers[z][term.ZPower]
 
+    sum
+
+let private polynomialTerms2D order =
+    if order < 0 then invalidArg "order" "Polynomial order must be non-negative."
+
+    [ for total in 0 .. order do
+        for xPower in 0 .. total do
+            let yPower = total - xPower
+            xPower, yPower ]
+
+let private basis2DValues (terms: (int * int)[]) (xPowers: float[][]) (yPowers: float[][]) x y =
+    Array.init terms.Length (fun i ->
+        let xPower, yPower = terms[i]
+        xPowers[x][xPower] * yPowers[y][yPower])
+
+let private evaluate2DValues (terms: (int * int)[]) (coefficients: float[]) (xPowers: float[][]) (yPowers: float[][]) x y =
+    let mutable sum = 0.0
+    for i in 0 .. terms.Length - 1 do
+        let xPower, yPower = terms[i]
+        sum <- sum + coefficients[i] * xPowers[x][xPower] * yPowers[y][yPower]
     sum
 
 let private solveLinearSystem (a: float[,]) (b: float[]) =
@@ -522,3 +551,74 @@ let correctBiasChunkMasked<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T
           Profile = Streaming }
 
     Stage.fromPipe name (ProfileTransition.create Streaming Streaming) memoryNeed id pipe
+
+let private fitPolynomial2DChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    order
+    (chunk: Chunk<'T>)
+    =
+    let width, height, depth = chunk.Size
+    if depth <> 1UL then
+        invalidOp $"serialPolynomialBiasCorrectChunk expects 2D slice chunks with depth 1, got {chunk.Size}."
+
+    let widthU = uint width
+    let heightU = uint height
+    let widthI = int width
+    let heightI = int height
+    let terms = polynomialTerms2D order |> List.toArray
+    let n = terms.Length
+    let normal = Array2D.zeroCreate<float> n n
+    let right = Array.zeroCreate<float> n
+    let pixels = Chunk.span<'T> chunk
+    let xPowers = coordinatePowers widthU order
+    let yPowers = coordinatePowers heightU order
+
+    for y in 0 .. heightI - 1 do
+        for x in 0 .. widthI - 1 do
+            let values = basis2DValues terms xPowers yPowers x y
+            let intensity = pixels[flatIndex2 widthI x y] |> toDouble
+            for row in 0 .. n - 1 do
+                right[row] <- right[row] + values[row] * intensity
+                for col in 0 .. n - 1 do
+                    normal[row, col] <- normal[row, col] + values[row] * values[col]
+
+    terms, xPowers, yPowers, solveLinearSystem normal right
+
+let serialPolynomialBiasCorrectChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    order
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    fromDouble<'T> 0.0 |> ignore
+
+    let name = $"serialPolynomialBiasCorrectChunk.{typeof<'T>.Name}"
+    let memoryNeed n = 2UL * n * uint64 (Marshal.SizeOf<'T>())
+    let mapper _ (chunk: Chunk<'T>) =
+        try
+            let width, height, depth = chunk.Size
+            if depth <> 1UL then
+                invalidOp $"serialPolynomialBiasCorrectChunk expects 2D slice chunks with depth 1, got {chunk.Size}."
+
+            let widthI = int width
+            let heightI = int height
+            let terms, xPowers, yPowers, coefficients = fitPolynomial2DChunk order chunk
+            let output = Chunk.create<'T> (width, height, 1UL)
+
+            try
+                let inputPixels = Chunk.span<'T> chunk
+                let outputPixels = Chunk.span<'T> output
+
+                for y in 0 .. heightI - 1 do
+                    for x in 0 .. widthI - 1 do
+                        let i = flatIndex2 widthI x y
+                        let corrected =
+                            (inputPixels[i] |> toDouble)
+                            - evaluate2DValues terms coefficients xPowers yPowers x y
+                        outputPixels[i] <- fromDouble<'T> corrected
+
+                output
+            with
+            | _ ->
+                Chunk.decRef output
+                reraise()
+        finally
+            Chunk.decRef chunk
+
+    Stage.map name mapper memoryNeed id

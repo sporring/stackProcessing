@@ -13,9 +13,9 @@ let main args =
         | _ -> "../data/rotatingBoxes", "../tmp/binaryContour"
 
     src
-    |> read<uint8> input ".tiff"
-    >=> binaryContour false None
-    >=> write output ".tiff"
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> chunkBinaryContourZonohedral false
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     0

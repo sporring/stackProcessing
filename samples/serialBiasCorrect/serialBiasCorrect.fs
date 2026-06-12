@@ -13,9 +13,9 @@ let main args =
         | _ -> "../data/volume", "../tmp/serialBiasCorrect"
 
     src
-    |> read<float32> input ".tiff"
-    >=> serialPolynomialBiasCorrect<float32> 2
-    >=> write output ".tiff"
+    |> readChunkSlices<float32> input ".tiff"
+    >=> chunkSerialPolynomialBiasCorrect<float32> 2
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     0

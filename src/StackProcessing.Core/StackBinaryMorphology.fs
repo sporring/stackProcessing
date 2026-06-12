@@ -603,3 +603,11 @@ let binaryGradientZonohedral radius : Stage<Chunk<uint8>, Chunk<uint8>> =
 let binaryGradientZonohedralParallel radius windowSize : Stage<Chunk<uint8>, Chunk<uint8>> =
     fork (binaryDilateZonohedralParallel radius windowSize, binaryErodeZonohedralParallel radius windowSize)
     --> binaryDifferenceStage $"chunkBinaryGradientZonohedral.parallel{windowSize}"
+
+let binaryContourZonohedral (_fullyConnected: bool) : Stage<Chunk<uint8>, Chunk<uint8>> =
+    fork (Stage.map "chunkBinaryContourZonohedral.input" (fun _ chunk -> chunk) id id, binaryErodeZonohedral 1u)
+    --> binaryDifferenceStage "chunkBinaryContourZonohedral"
+
+let binaryContourZonohedralParallel (_fullyConnected: bool) windowSize : Stage<Chunk<uint8>, Chunk<uint8>> =
+    fork (Stage.map $"chunkBinaryContourZonohedral.parallel{windowSize}.input" (fun _ chunk -> chunk) id id, binaryErodeZonohedralParallel 1u windowSize)
+    --> binaryDifferenceStage $"chunkBinaryContourZonohedral.parallel{windowSize}"

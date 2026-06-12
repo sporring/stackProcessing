@@ -1250,6 +1250,23 @@ let readVolume<'T when 'T: equality> (filename: string) (pl: Plan<unit, unit>) :
     else
         readSimpleItkVolume<'T> filename pl
 
+let readChunkVolume<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (filename: string)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+    let toChunk =
+        Stage.map
+            $"readChunkVolume.toChunk.{typeof<'T>.Name}"
+            (fun _ image ->
+                try
+                    Chunk.ofImage image
+                finally
+                    image.decRefCount())
+            (fun n -> 2UL * imageBytes<'T> n)
+            id
+
+    readVolume<'T> filename pl >=> toChunk
+
 let private randomIndices count depth =
     if depth <= 0 then
         invalidArg "depth" "Cannot sample random slices from an empty image source."
@@ -3819,7 +3836,7 @@ let writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ (volume: Ima
         slab.decRefCount()
         k <- k + chunkZ
 
-let readChunkVolume<'T when 'T: equality> inputDir suffix =
+let private readChunkDirectoryVolume<'T when 'T: equality> inputDir suffix =
     let chunkInfo = getChunkInfo inputDir suffix
     let slabs =
         [ for k in 0 .. chunkInfo.chunks[2] - 1 ->
@@ -3942,7 +3959,7 @@ let chunkedInvFFTFloat32AlongZ debug inputDir outputDir suffix chunkX chunkY chu
 let chunkedShiftFFT debug inputDir outputDir suffix chunkX chunkY chunkZ =
     if Directory.Exists(outputDir) then Directory.Delete(outputDir, true)
     Directory.CreateDirectory(outputDir) |> ignore
-    let volume, _ = readChunkVolume<System.Numerics.Complex> inputDir suffix
+    let volume, _ = readChunkDirectoryVolume<System.Numerics.Complex> inputDir suffix
     let shifted = ImageFunctions.shiftFFT volume
     volume.decRefCount()
     writeVolumeAsChunks debug outputDir suffix chunkX chunkY chunkZ shifted

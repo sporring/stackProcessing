@@ -351,6 +351,204 @@ let resample2DNative<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: stru
         (ChunkKernel.resample2DNativeChunk<'T> interpolation outputWidth outputHeight spacingX spacingY)
         (fun n -> 3UL * chunkMemoryNeed<'T> n)
 
+let private roundPositiveToUInt (value: float) =
+    Math.Round(value, MidpointRounding.AwayFromZero)
+    |> max 1.0
+    |> uint
+
+let private outputSpacingForSize inputSize outputSize =
+    if inputSize <= 1u || outputSize <= 1u then
+        1.0
+    else
+        float (inputSize - 1u) / float (outputSize - 1u)
+
+let private trySourcePeekUInt key (pl: Plan<unit, Chunk<'T>>) =
+    pl.sourcePeek
+    |> Option.bind (fun peek -> peek.Shape |> Map.tryFind key)
+    |> Option.bind (fun text ->
+        match UInt32.TryParse text with
+        | true, value -> Some value
+        | _ -> None)
+
+let private validateResizeOutput name value =
+    if value = 0u then
+        invalidArg name $"{name} must be positive."
+    value
+
+let private resize3DNativeStage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    outputWidth
+    outputHeight
+    outputDepth
+    spacingX
+    spacingY
+    spacingZ
+    interpolationName
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    let outputWidth = validateResizeOutput "outputWidth" outputWidth
+    let outputHeight = validateResizeOutput "outputHeight" outputHeight
+    let outputDepth = validateResizeOutput "outputDepth" outputDepth
+    if spacingX <= 0.0 || spacingY <= 0.0 || spacingZ <= 0.0 then
+        invalidArg "spacing" $"chunkResize expects positive spacing, got ({spacingX}, {spacingY}, {spacingZ})."
+
+    let interpolation = ChunkKernel.ResampleInterpolation.parse interpolationName
+    let name = $"chunkResize3DNative.{typeof<'T>.Name}.{outputWidth}x{outputHeight}x{outputDepth}.{interpolationName}"
+
+    let apply debug (input: AsyncSeq<Chunk<'T>>) =
+        asyncSeq {
+            let mutable previous: (int * Chunk<'T>) option = None
+            let mutable currentIndex = -1
+            let mutable outputIndex = 0
+            let mutable completed = false
+
+            let releasePrevious () =
+                match previous with
+                | Some(_, chunk) -> Chunk.decRef chunk
+                | None -> ()
+                previous <- None
+
+            let emitFromPair lowerIndex lower upperIndex upper =
+                seq {
+                    let mutable keepEmitting = true
+                    while keepEmitting && outputIndex < int outputDepth do
+                        let sourceZ = float outputIndex * spacingZ
+                        if sourceZ > float upperIndex + 1.0e-9 then
+                            keepEmitting <- false
+                        else
+                            let z0 = int (Math.Floor sourceZ)
+                            let z1 = int (Math.Ceiling sourceZ)
+                            if z0 < lowerIndex || z1 > upperIndex then
+                                keepEmitting <- false
+                            else
+                                let zFraction =
+                                    if z1 = z0 then 0.0
+                                    else sourceZ - float z0
+
+                                let lowerSlice = if z0 = lowerIndex then lower else upper
+                                let upperSlice = if z1 = upperIndex then upper else lower
+                                let output =
+                                    ChunkKernel.resize3DPairSliceNativeChunk<'T>
+                                        interpolation
+                                        outputWidth
+                                        outputHeight
+                                        spacingX
+                                        spacingY
+                                        zFraction
+                                        lowerSlice
+                                        upperSlice
+                                outputIndex <- outputIndex + 1
+                                yield output
+                }
+
+            let emitRemainingFromLast lastChunk =
+                seq {
+                    while outputIndex < int outputDepth do
+                        let output =
+                            ChunkKernel.resize3DPairSliceNativeChunk<'T>
+                                interpolation
+                                outputWidth
+                                outputHeight
+                                spacingX
+                                spacingY
+                                0.0
+                                lastChunk
+                                lastChunk
+                        outputIndex <- outputIndex + 1
+                        yield output
+                }
+
+            try
+                for chunk in input do
+                    currentIndex <- currentIndex + 1
+                    match previous with
+                    | None ->
+                        previous <- Some(currentIndex, chunk)
+                        if currentIndex = 0 then
+                            for output in emitFromPair 0 chunk 0 chunk do
+                                yield output
+                    | Some(prevIndex, prevChunk) ->
+                        for output in emitFromPair prevIndex prevChunk currentIndex chunk do
+                            yield output
+                        Chunk.decRef prevChunk
+                        previous <- Some(currentIndex, chunk)
+
+                match previous with
+                | Some(lastIndex, lastChunk) ->
+                    for output in emitFromPair lastIndex lastChunk lastIndex lastChunk do
+                        yield output
+                    for output in emitRemainingFromLast lastChunk do
+                        yield output
+                    releasePrevious ()
+                | None -> ()
+
+                completed <- true
+            finally
+                if not completed then
+                    releasePrevious ()
+        }
+
+    let memoryNeed n =
+        let inputBytes = chunkMemoryNeed<'T> n
+        let outputBytes = chunkMemoryNeed<'T> (uint64 outputWidth * uint64 outputHeight)
+        2UL * inputBytes + outputBytes
+
+    Stage.fromAsyncSeq
+        name
+        apply
+        (ProfileTransition.create Streaming Streaming)
+        (StageMemoryModel.fromSinglePeak Map memoryNeed)
+        (fun _ -> uint64 outputWidth * uint64 outputHeight)
+    |> Stage.withSliceCardinality (SliceCardinality.reduceTo (uint64 outputDepth))
+
+let chunkResize<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    outputWidth
+    outputHeight
+    outputDepth
+    interpolationName
+    (pl: Plan<unit, Chunk<'T>>)
+    : Plan<unit, Chunk<'T>> =
+    let outputWidth = validateResizeOutput "outputWidth" outputWidth
+    let outputHeight = validateResizeOutput "outputHeight" outputHeight
+    let outputDepth = validateResizeOutput "outputDepth" outputDepth
+    let inputWidth = trySourcePeekUInt "width" pl
+    let inputHeight = trySourcePeekUInt "height" pl
+    let inputDepth =
+        trySourcePeekUInt "depth" pl
+        |> Option.defaultValue (uint pl.length)
+
+    let spacingX = inputWidth |> Option.map (fun width -> outputSpacingForSize width outputWidth) |> Option.defaultValue 1.0
+    let spacingY = inputHeight |> Option.map (fun height -> outputSpacingForSize height outputHeight) |> Option.defaultValue 1.0
+    let spacingZ = outputSpacingForSize inputDepth outputDepth
+
+    pl >=> resize3DNativeStage<'T> outputWidth outputHeight outputDepth spacingX spacingY spacingZ interpolationName
+
+let chunkResample<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    factorX
+    factorY
+    factorZ
+    interpolationName
+    (pl: Plan<unit, Chunk<'T>>)
+    : Plan<unit, Chunk<'T>> =
+    if factorX <= 0.0 || factorY <= 0.0 || factorZ <= 0.0 then
+        invalidArg "factor" "chunkResample factors must be positive."
+
+    let inputWidth = trySourcePeekUInt "width" pl
+    let inputHeight = trySourcePeekUInt "height" pl
+    let inputDepth =
+        trySourcePeekUInt "depth" pl
+        |> Option.defaultValue (uint pl.length)
+
+    let outputWidth =
+        inputWidth
+        |> Option.map (fun width -> roundPositiveToUInt (float width * factorX))
+        |> Option.defaultValue (roundPositiveToUInt (Math.Sqrt(float (SingleOrPair.fst pl.nElemsPerSlice)) * factorX))
+    let outputHeight =
+        inputHeight
+        |> Option.map (fun height -> roundPositiveToUInt (float height * factorY))
+        |> Option.defaultValue (roundPositiveToUInt (Math.Sqrt(float (SingleOrPair.fst pl.nElemsPerSlice)) * factorY))
+    let outputDepth = roundPositiveToUInt (float inputDepth * factorZ)
+
+    pl >=> resize3DNativeStage<'T> outputWidth outputHeight outputDepth (1.0 / factorX) (1.0 / factorY) (1.0 / factorZ) interpolationName
+
 let euler2DTransformNative<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     rotation
     translation
@@ -438,6 +636,9 @@ let connectedComponentsSauf3DUInt8 () = StackConnectedComponents.connectedCompon
 
 let fftXYFloat32ToComplex64Interleaved = StackFFT.fftXYFloat32ToComplex64Interleaved
 let fftXYFloat32ToComplex64InterleavedParallelCollect workers = StackFFT.fftXYFloat32ToComplex64InterleavedParallelCollect workers
+let invFftXYComplex64InterleavedToFloat32 = StackFFT.invFftXYComplex64InterleavedToFloat32
+let invFftXYComplex64InterleavedToFloat32ParallelCollect workers = StackFFT.invFftXYComplex64InterleavedToFloat32ParallelCollect workers
+let fftShift3DComplex64Interleaved = StackFFT.fftShift3DComplex64Interleaved
 let toComplex64 = StackFFT.toComplex64
 let polarToComplex64 = StackFFT.polarToComplex64
 let complex64Real = StackFFT.complex64Real
@@ -715,6 +916,93 @@ let private structureTensorOuterProductFloat32 : Stage<VectorChunk<float32>, Vec
         mapper
         (fun n -> n * uint64 (chunkElementBytes<float32> * (3 + 6)))
 
+let private zeroVectorFloat32Like (_index: int) (source: VectorChunk<float32>) : VectorChunk<float32> =
+    let width, height, depth = source.SpatialSize
+    if depth <> 1UL then
+        invalidArg "source" $"Chunk vector convolution stages expect 2D slice vector chunks with depth 1, got {source.SpatialSize}."
+
+    let chunk = Chunk.create<float32> (width * uint64 source.Components, height, 1UL)
+    chunk.Bytes.AsSpan(0, chunk.ByteLength).Clear()
+    let vector: VectorChunk<float32> =
+        { SpatialSize = source.SpatialSize
+          Components = source.Components
+          Chunk = chunk }
+    vector
+
+let private releaseConsumedVectorWindow (window: Window<VectorChunk<float32>>) =
+    let _emitStart, emitCount = window.EmitRange
+    let releaseCount =
+        if emitCount = 0u then
+            window.Items.Length
+        else
+            min (int window.ReleaseCount) window.Items.Length
+
+    window.Items
+    |> List.truncate releaseCount
+    |> List.iter (fun vector -> Chunk.decRef vector.Chunk)
+
+let private convolveVectorComponentsXFloat32 (kernel: float32[]) : Stage<VectorChunk<float32>, VectorChunk<float32>> =
+    releaseUnaryVectorToVectorChunk
+        $"chunkConvolveVectorComponentsXFloat32.k{kernel.Length}"
+        (ChunkKernel.convolveVectorComponentsNativeXFloat32 kernel)
+        (fun n -> n * uint64 (chunkElementBytes<float32> * 4))
+
+let private convolveVectorComponentsYFloat32 (kernel: float32[]) : Stage<VectorChunk<float32>, VectorChunk<float32>> =
+    releaseUnaryVectorToVectorChunk
+        $"chunkConvolveVectorComponentsYFloat32.k{kernel.Length}"
+        (ChunkKernel.convolveVectorComponentsNativeYFloat32 kernel)
+        (fun n -> n * uint64 (chunkElementBytes<float32> * 4))
+
+let private convolveVectorComponentsZChunkFloat32 (kernel: float32[]) (items: VectorChunk<float32>[]) =
+    if items.Length <> kernel.Length then
+        invalidArg "items" $"chunkConvolveVectorComponentsZFloat32 expects {kernel.Length} slices, got {items.Length}."
+    ChunkKernel.convolveVectorComponentsNativeZFloat32 kernel items
+
+let private convolveVectorComponentsZFloat32 (kernel: float32[]) (workers: int) : Stage<VectorChunk<float32>, VectorChunk<float32>> =
+    if isNull kernel then
+        nullArg "kernel"
+    if kernel.Length = 0 || kernel.Length % 2 = 0 then
+        invalidArg "kernel" $"chunkConvolveVectorComponentsZFloat32 expects a non-empty odd-length kernel, got {kernel.Length}."
+    let radius = kernel.Length / 2
+    if workers < 1 then
+        invalidArg "workers" $"chunkConvolveVectorComponentsZFloat32 expects at least one worker, got {workers}."
+
+    let mapper _debug (window: Window<VectorChunk<float32>>) =
+        let items = window.Items |> List.toArray
+        let _emitStart, emitCount = window.EmitRange
+        try
+            if emitCount = 0u then
+                []
+            else
+                [ convolveVectorComponentsZChunkFloat32 kernel items ]
+        finally
+            releaseConsumedVectorWindow window
+
+    Stage.parallelCollect
+        $"chunkConvolveVectorComponentsZFloat32.k{kernel.Length}.workers{workers}"
+        kernel.Length
+        workers
+        1
+        radius
+        zeroVectorFloat32Like
+        mapper
+        (fun n -> uint64 (kernel.Length + workers) * n * uint64 (chunkElementBytes<float32> * 6))
+        id
+
+let convolveVectorComponentsFloat32NativeParallelCollect (xKernel: float32[]) (yKernel: float32[]) (zKernel: float32[]) (workers: int) : Stage<VectorChunk<float32>, VectorChunk<float32>> =
+    convolveVectorComponentsXFloat32 xKernel
+    --> convolveVectorComponentsYFloat32 yKernel
+    --> convolveVectorComponentsZFloat32 zKernel workers
+
+let private gaussianSmoothVectorComponentsFloat32 (sigma: float) (radius: int) (workers: int) =
+    let radius =
+        if radius > 0 then
+            radius
+        else
+            StackConvolve.defaultGaussianRadius sigma
+    let kernel = StackConvolve.gaussianKernel sigma radius
+    convolveVectorComponentsFloat32NativeParallelCollect kernel kernel kernel workers
+
 let private tensorEigenMatrixValuesFloat32 xx xy xz yy yz zz =
     let matrix =
         { m00 = float xx; m01 = float xy; m02 = float xz
@@ -858,13 +1146,17 @@ let gradientMagnitudeNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigm
 let gradientMagnitudeNativeParallelCollect sigma radius workers : Stage<Chunk<float32>, Chunk<float32>> =
     gradientMagnitudeNativeParallelCollectXYZ sigma radius sigma radius sigma radius workers
 
-let structureTensorNativeParallelCollect sigma radius rho _rhoRadius workers : Stage<Chunk<float32>, VectorChunk<float32>> =
-    if rho > 0.0 then
-        invalidArg "rho" "Chunk structureTensor currently supports rho <= 0.0; component smoothing is still pending."
+let structureTensorNativeParallelCollect sigma radius rho rhoRadius workers : Stage<Chunk<float32>, VectorChunk<float32>> =
+    let outerProduct =
+        gradientVectorNativeParallelCollect sigma radius workers
+        --> structureTensorOuterProductFloat32
 
-    gradientVectorNativeParallelCollect sigma radius workers
-    --> structureTensorOuterProductFloat32
-    --> structureTensorEigenMatrixFloat32
+    if rho <= 0.0 then
+        outerProduct --> structureTensorEigenMatrixFloat32
+    else
+        outerProduct
+        --> gaussianSmoothVectorComponentsFloat32 rho rhoRadius workers
+        --> structureTensorEigenMatrixFloat32
 
 let hessianUpperNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers : Stage<Chunk<float32>, VectorChunk<float32>> =
     let smooth = gaussianSmoothFloat32XYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers
@@ -1716,3 +2008,5 @@ let binaryBlackTopHatZonohedral radius = StackBinaryMorphology.binaryBlackTopHat
 let binaryBlackTopHatZonohedralParallel radius windowSize = StackBinaryMorphology.binaryBlackTopHatZonohedralParallel radius windowSize
 let binaryGradientZonohedral radius = StackBinaryMorphology.binaryGradientZonohedral radius
 let binaryGradientZonohedralParallel radius windowSize = StackBinaryMorphology.binaryGradientZonohedralParallel radius windowSize
+let binaryContourZonohedral fullyConnected = StackBinaryMorphology.binaryContourZonohedral fullyConnected
+let binaryContourZonohedralParallel fullyConnected windowSize = StackBinaryMorphology.binaryContourZonohedralParallel fullyConnected windowSize

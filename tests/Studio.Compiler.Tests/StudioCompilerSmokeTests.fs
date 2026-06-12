@@ -385,7 +385,8 @@ let private sinkFor caseId functionId portType =
     | PortType.Image _ ->
         [ node $"sink_{caseId}_write" "Write" [ p "output" "out" false; p "suffix" ".tiff" false ] ],
         [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_write" "input" 0 ]
-    | PortType.Custom "VectorImageFloat64" ->
+    | PortType.Custom "VectorImageFloat64"
+    | PortType.Custom "VectorImageFloat32" ->
         [ node $"sink_{caseId}_element" "VectorElement" [ p "component" "0" false ]
           node $"sink_{caseId}_write" "Write" [ p "output" "out" false; p "suffix" ".tiff" false ] ],
         [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_element" "input" 0

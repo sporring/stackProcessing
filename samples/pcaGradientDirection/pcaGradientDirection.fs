@@ -1,4 +1,4 @@
-// Write the x/color component of the dominant gradient direction estimated with Chunk PCA.
+// Write the dominant gradient direction estimated with Chunk PCA as RGB color slices.
 open StackProcessing
 
 [<EntryPoint>]
@@ -18,8 +18,7 @@ let main args =
     >=> chunkPCAFloat32 3u
     >=> chunkSelectGroupedVectorOutput 4u 1u
     >=> chunkVector3ToColorFloat32 -1.0f 1.0f
-    >=> chunkVectorElement<uint8> 0u
-    >=> writeChunkSlices output ".tiff"
+    >=> writeColorChunkSlices output ".tiff"
     |> sink
 
     0
