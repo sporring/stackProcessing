@@ -13,9 +13,9 @@ let main args =
         | _ -> "../data/rotatingBoxes", "../tmp/resize"
 
     src
-    |> readChunkSlices<uint8> input ".tiff"
-    |> chunkResize<uint8> 96u 96u 96u "Linear"
-    >=> writeChunkSlices output ".tiff"
+    |> read<uint8> input ".tiff"
+    |> resize<uint8> 96u 96u 96u "Linear"
+    >=> write output ".tiff"
     |> sink
 
     0

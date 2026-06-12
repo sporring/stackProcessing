@@ -13,10 +13,10 @@ let main args =
         | _ -> "../data/volume", "../tmp/morphologicalGradient"
 
     src
-    |> readChunkSlices<uint8> input ".tiff"
-    >=> chunkThresholdRange<uint8> 1 255
-    >=> chunkBinaryGradientZonohedral 3u
-    >=> writeChunkSlices output ".tiff"
+    |> read<uint8> input ".tiff"
+    >=> thresholdRange<uint8> 1 255
+    >=> binaryGradient 3u
+    >=> write output ".tiff"
     |> sink
 
     0

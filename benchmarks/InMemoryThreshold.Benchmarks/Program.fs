@@ -7,6 +7,7 @@ open System.Numerics
 open System.Runtime.CompilerServices
 open System.Runtime.InteropServices
 open System.Threading
+open Image
 open Microsoft.FSharp.NativeInterop
 
 #nowarn "9"

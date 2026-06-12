@@ -22,14 +22,14 @@ let main args =
         randomRigidTransform 7 64u 64u 16u 0.0
 
     src
-    |> readChunkSlices<float32> input ".tiff"
-    >=> resampleAffineChunk
+    |> read<float32> input ".tiff"
+    >=> resampleAffine
             (fun a b t -> a + (b - a) * t)
             geometry
             geometry
             affine
             0.0f
-    >=> writeChunkSlices "../tmp/randomRigidTransform" ".tiff"
+    >=> write "../tmp/randomRigidTransform" ".tiff"
     |> sink
 
     0

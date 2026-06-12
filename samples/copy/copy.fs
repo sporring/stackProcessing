@@ -14,8 +14,8 @@ let main arg =
             "../data/volume", "../tmp/copy"
 
     src
-    |> readChunkSlices<uint8> input ".tiff"
-    >=> writeChunkSlices output ".tiff"
+    |> read<uint8> input ".tiff"
+    >=> write output ".tiff"
     |> sink
 
     0

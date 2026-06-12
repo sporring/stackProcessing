@@ -15,16 +15,16 @@ let main arg =
 
     let imageMaker =
         src
-        |> readChunkSlices<uint8> input ".tiff"
+        |> read<uint8> input ".tiff"
     let maskMaker =
         src
-        |> readChunkSlices<uint8> mask ".tiff"
+        |> read<uint8> mask ".tiff"
 
     (imageMaker, maskMaker) ||> zip
     >=> tap "[tab] For mul2"
-    >=> chunkMulPair<uint8>
+    >=> mulPair<uint8>
     >=> tap "[tab] For write"
-    >=> writeChunkSlices output ".tiff"
+    >=> write output ".tiff"
     |> sink
 
     0

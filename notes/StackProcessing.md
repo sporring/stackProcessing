@@ -65,10 +65,10 @@ From the user's point of view, a pipeline looks like:
 open StackProcessing
 
 source availableMemory
-|> readChunkSlices<float32> "input" ".tiff"
->=> gaussianFilterNativeParallelCollect<float32> 1.5 3 4
->=> chunkCast<float32,uint8>
->=> writeChunkSlices "output" ".tiff"
+|> read<float32> "input" ".tiff"
+>=> gaussianFilter<float32> 1.5 3 4
+>=> cast<float32,uint8>
+>=> write "output" ".tiff"
 |> sink
 ```
 

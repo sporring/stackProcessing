@@ -14,7 +14,7 @@ window win pad stride
 --> flattenList ()
 ```
 
-Pulling these internal pieces up into user-visible `>=>` composition would improve optimiser visibility, but it would make the DSL much less pleasant. Users should be able to write compact Chunk stages such as `gaussianFilterNativeParallelCollect`, `chunkThresholdRange`, `readChunkSlices`, and `chunkCast` without manually spelling out all windowed scaffolding.
+Pulling these internal pieces up into user-visible `>=>` composition would improve optimiser visibility, but it would make the DSL much less pleasant. Users should be able to write compact Chunk stages such as `gaussianFilter`, `thresholdRange`, `read`, and `cast` without manually spelling out all windowed scaffolding.
 
 ## Rejected Direction: Shadow IR
 
@@ -57,7 +57,7 @@ The missing piece is that graph nodes are mostly name/transition records. They a
 - `Cast Float32 UInt8`
 - `Read TIFF UInt8 as Float32`
 - `Window`
-- `ParallelCollect Threshold`
+- `WindowedCollect Threshold`
 - `EmitValidRange`
 - `Flatten`
 
@@ -75,7 +75,7 @@ type StageGraphOp =
     | Cast of sourceType: string * targetType: string
     | Window of size: uint * pad: uint * stride: uint
     | RequireWindowSize of depth: uint
-    | ParallelCollect of name: string
+    | WindowedCollect of name: string
     | EmitValidRange of start: uint * count: uint
     | WindowSkipTakeM of start: uint * count: uint
     | Flatten
@@ -108,7 +108,7 @@ This is only safe when the intermediate type `T` is not semantically lossy. For 
 For reads:
 
 ```text
-readChunkSlices<diskT> --> chunkCast<diskT,T>
+read<diskT> --> cast<diskT,T>
 ```
 
 should probably become an optimiser candidate rather than an unconditional rewrite:
@@ -135,7 +135,7 @@ Windowed Chunk scaffolding could also be recognized as a structured compound pat
 ```text
 Window
 RequireWindowSize
-ParallelCollect op
+WindowedCollect op
 WindowSkipTakeM
 Flatten
 ```

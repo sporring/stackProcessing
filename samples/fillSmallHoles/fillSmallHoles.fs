@@ -13,9 +13,9 @@ let main args =
         | _ -> "../data/rotatingBoxes", "../tmp/fillSmallHoles"
 
     src
-    |> readChunkSlices<uint8> input ".tiff"
-    >=> chunkFillSmallHoles 128UL ObjectConnectivity.TwentySix
-    >=> writeChunkSlices output ".tiff"
+    |> read<uint8> input ".tiff"
+    >=> fillSmallHoles 128UL ObjectConnectivity.TwentySix
+    >=> write output ".tiff"
     |> sink
 
     0

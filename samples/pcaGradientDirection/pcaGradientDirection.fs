@@ -13,12 +13,12 @@ let main args =
         | _ -> "../data/volume", "../tmp/pcaGradientDirection"
 
     src
-    |> readChunkSlices<float32> input ".tiff"
-    >=> gradientVectorNativeParallelCollect 1.0 7 4
-    >=> chunkPCAFloat32 3u
-    >=> chunkSelectGroupedVectorOutput 4u 1u
-    >=> chunkVector3ToColorFloat32 -1.0f 1.0f
-    >=> writeColorChunkSlices output ".tiff"
+    |> read<float32> input ".tiff"
+    >=> gradientVector 1.0 7 4
+    >=> pcaFloat32 3u
+    >=> selectGroupedVectorOutput 4u 1u
+    >=> vector3ToColorFloat32 -1.0f 1.0f
+    >=> writeColor output ".tiff"
     |> sink
 
     0

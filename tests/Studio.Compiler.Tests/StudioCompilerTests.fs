@@ -529,7 +529,7 @@ let generatorSuite =
                 graph [ read; write ] [ edge "read" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code "|> readChunkSlices<uint8> \"input\" \".mha\"" "Read should generate the Chunk slice reader."
+            Expect.stringContains code "|> read<uint8> \"input\" \".mha\"" "Read should generate the Chunk slice reader."
             Expect.stringContains code ">=> writeChunks \"chunks-out\" \".mha\" 12u 13u 14u" "WriteChunks should generate the chunk writer wrapper."
 
             let expand =
@@ -2129,8 +2129,8 @@ let generatorSuite =
                       edge "connected" "output" 0 "cast" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> chunkConnectedComponentsSauf3DUInt8UInt32ParallelCollect 15 System.Environment.ProcessorCount" "Connected components should produce compact Chunk label slices directly."
-            Expect.stringContains code ">=> chunkCast<uint32,uint8>" "Label slices should feed regular image stages."
+            Expect.stringContains code ">=> connectedComponentsUInt32Windowed 15 System.Environment.ProcessorCount" "Connected components should produce compact Chunk label slices directly."
+            Expect.stringContains code ">=> cast<uint32,uint8>" "Label slices should feed regular image stages."
             Expect.isFalse (code.Contains "writeSlabSlices") "Connected components should not need slab temp writes."
             Expect.isFalse (code.Contains "makeConnectedComponentTranslationTable") "Connected components should not need a second translation-table reducer."
 

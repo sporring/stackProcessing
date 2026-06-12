@@ -13,9 +13,9 @@ let main args =
         | _ -> "../data/rotatingBoxes", "../tmp/opening"
 
     src
-    |> readChunkSlices<uint8> input ".tiff"
-    >=> chunkBinaryOpeningZonohedral 2u
-    >=> writeChunkSlices output ".tiff"
+    |> read<uint8> input ".tiff"
+    >=> binaryOpening 2u
+    >=> write output ".tiff"
     |> sink
 
     0

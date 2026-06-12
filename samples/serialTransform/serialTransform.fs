@@ -14,17 +14,17 @@ let main args =
 
     let geometry =
         src
-        |> readChunkSlicesRange<float32> 0u 16 64u input ".tiff"
-        >=> chunkSerialEstTrans<float32> 8 "dogAffine" 1.6 0.1
-        >=> chunkSerialEstBoundingBox<float32>
+        |> readRange<float32> 0u 16 64u input ".tiff"
+        >=> serialEstTrans<float32> 8 "dogAffine" 1.6 0.1
+        >=> serialEstBoundingBox<float32>
         |> drain
 
     src
-    |> readChunkSlices<float32> input ".tiff"
-    >=> chunkSerialEstTrans<float32> 8 "dogAffine" 1.6 0.1
-    >=> chunkSerialApplyTrans<float32> 0.0f (Some geometry)
-    >=> chunkCast<float32, uint8>
-    >=> writeChunkSlices output ".tiff"
+    |> read<float32> input ".tiff"
+    >=> serialEstTrans<float32> 8 "dogAffine" 1.6 0.1
+    >=> serialApplyTrans<float32> 0.0f (Some geometry)
+    >=> cast<float32, uint8>
+    >=> write output ".tiff"
     |> sink
 
     0

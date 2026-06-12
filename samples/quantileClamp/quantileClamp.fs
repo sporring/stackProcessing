@@ -14,18 +14,18 @@ let main args =
 
     let histogram =
         src
-        |> readChunkSlicesRandom<uint8> 24u input ".tiff"
-        >=> chunkHistogramFixedBins<uint8> 0.0 255.0 256u
+        |> readRandom<uint8> 24u input ".tiff"
+        >=> imageHistogramFixedBins<uint8> 0.0 255.0 256u
         |> drain
 
-    let limits = chunkQuantiles [0.01; 0.99] (histogram :> obj)
+    let limits = quantiles [0.01; 0.99] (histogram :> obj)
 
     src
-    |> readChunkSlices<float32> input ".tiff"
-    >=> chunkIntensityWindow<float32> limits[0] limits[1] 0.0 255.0
-    >=> chunkClamp<float32> 0.0 255.0
-    >=> chunkCast<float32, uint8>
-    >=> writeChunkSlices output ".tiff"
+    |> read<float32> input ".tiff"
+    >=> intensityWindow<float32> limits[0] limits[1] 0.0 255.0
+    >=> clamp<float32> 0.0 255.0
+    >=> cast<float32, uint8>
+    >=> write output ".tiff"
     |> sink
 
     0

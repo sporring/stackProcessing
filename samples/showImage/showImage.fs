@@ -14,8 +14,8 @@ let main arg =
             "../data/volume"
 
     src
-    |> readChunkSlicesRandom<uint8> 1u input ".tiff"
-    >=> chunkShow (fun chunk -> showChunkWithLabels<uint8> "Viridis" "An Image" "" "" chunk)
+    |> readRandom<uint8> 1u input ".tiff"
+    >=> show (fun chunk -> showChunkWithLabels<uint8> "Viridis" "An Image" "" "" chunk)
     |> sink
 
     0

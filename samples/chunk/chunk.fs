@@ -15,8 +15,8 @@ let main arg =
 
     deleteIfExists output
     src
-    |> readChunkSlicesRange<uint8> 0u 1 31u input ".tiff"
-    >=> writeZarrChunkSlices<uint8> output "image" 32u 12u 13u 14u 1.0 1.0 1.0 0
+    |> readRange<uint8> 0u 1 31u input ".tiff"
+    >=> writeZarr<uint8> output "image" 32u 12u 13u 14u 1.0 1.0 1.0 0
     |> sink
 
     let chunkInfo = getZarrInfo output 0 0
@@ -25,8 +25,8 @@ let main arg =
     let output2 = "../tmp/chunk-zarr-copy"
     deleteIfExists output2
     src
-    |> readZarrChunkSlicesRange<uint8> 0u 1 31u output 0 0 0 0 0
-    >=> writeChunkSlices output2 ".tiff"
+    |> readZarrRange<uint8> 0u 1 31u output 0 0 0 0 0
+    >=> write output2 ".tiff"
     |> sink
 
     0

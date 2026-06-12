@@ -20,10 +20,10 @@ let main arg =
     let workers = max 1 (min Environment.ProcessorCount windowSize)
 
     src
-    |> readChunkSlices<uint8> input suffix
-    >=> chunkConnectedComponentsSauf3DUInt8UInt32ParallelCollect windowSize workers
-    >=> chunkCast<uint32,uint8>
-    >=> writeChunkSlices output suffix
+    |> read<uint8> input suffix
+    >=> connectedComponentsUInt32Windowed windowSize workers
+    >=> cast<uint32,uint8>
+    >=> write output suffix
     |> sink
 
     0

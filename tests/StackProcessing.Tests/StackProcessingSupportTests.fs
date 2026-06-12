@@ -2489,7 +2489,7 @@ let stackProcessingSupportSuite =
                 disposeImages slices
                 deleteDirectory inputDir
 
-        testCase "Chunk readChunkSlices feeds dense histogram reducer from TIFF ArrayPool storage" <| fun _ ->
+        testCase "Chunk read feeds dense histogram reducer from TIFF ArrayPool storage" <| fun _ ->
             let inputDir = tempDirectory "chunk-histogram-input"
             let suffix = ".tiff"
             let slices =
@@ -2501,7 +2501,7 @@ let stackProcessingSupportSuite =
 
                 let actual =
                     source (2UL * 1024UL * 1024UL * 1024UL)
-                    |> readChunkSlices<uint8> inputDir suffix
+                    |> read<uint8> inputDir suffix
                     >=> ChunkFunctions.histogramDenseReducer<uint8> ()
                     |> drain
 
@@ -2510,7 +2510,7 @@ let stackProcessingSupportSuite =
                 disposeImages slices
                 deleteDirectory inputDir
 
-        testCase "Chunk readChunkSlices and writeChunkSlices round-trip TIFF slices" <| fun _ ->
+        testCase "Chunk read and write round-trip TIFF slices" <| fun _ ->
             let inputDir = tempDirectory "chunk-tiff-input"
             let outputDir = tempDirectory "chunk-tiff-output"
             let suffix = ".tiff"
@@ -2524,11 +2524,11 @@ let stackProcessingSupportSuite =
 
                 let written =
                     source (2UL * 1024UL * 1024UL * 1024UL)
-                    |> readChunkSlices<uint8> inputDir suffix
-                    >=> writeChunkSlices<uint8> outputDir suffix
+                    |> read<uint8> inputDir suffix
+                    >=> write<uint8> outputDir suffix
                     |> drainList
 
-                Expect.hasLength written 2 "writeChunkSlices should emit one completion per consumed chunk."
+                Expect.hasLength written 2 "write should emit one completion per consumed chunk."
 
                 reread <-
                     source (2UL * 1024UL * 1024UL * 1024UL)

@@ -16,17 +16,17 @@ let main arg =
 
     let maskMaker = 
         src
-        |> chunkZero<uint8> width height depth
-        >=> chunkImageAddScalar 1uy
-        >=> chunkImageMulScalar 2uy
+        |> zero<uint8> width height depth
+        >=> addScalar 1uy
+        >=> mulScalar 2uy
 
     let imageMaker =
         src
-        |> chunkZero<uint8> width height depth
+        |> zero<uint8> width height depth
 
     (imageMaker, maskMaker) ||> zip
-    >=> chunkMulPair<uint8>
-    >=> writeChunkSlices output ".tiff"
+    >=> mulPair<uint8>
+    >=> write output ".tiff"
     |> sink
 
     0

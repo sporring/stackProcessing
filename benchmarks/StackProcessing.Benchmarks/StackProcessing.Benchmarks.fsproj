@@ -11,6 +11,7 @@
       <HintPath>../../lib/SimpleITKCSharpManaged.dll</HintPath>
       <Private>true</Private>
     </Reference>
+    <ProjectReference Include="../../src/Image/Image.fsproj" />
     <ProjectReference Include="../../src/StackProcessing/StackProcessing.fsproj" />
   </ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">

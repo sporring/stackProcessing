@@ -10,6 +10,7 @@ open System.Text.Json
 open System.Text.Json.Nodes
 open System.Threading.Tasks
 open BitMiracle.LibTiff.Classic
+open Image
 open StackProcessing
 open ZarrNET.Core
 open ZarrNET.Core.Nodes
@@ -59,8 +60,8 @@ Generate:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- generate --output DIR --shape 512x512x64 --pixel-type UInt8|UInt16|UInt32|Int32|Float32 [--pattern ramp|binary]
 
 Run:
-  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run --operation copy|threshold|convolve|median|median-native-nth|dilate|connectedComponents --pixel-type UInt8|UInt16|Int32|Float32 --input DIR --output DIR [--radius N] [--kernel-size N] [--threshold X] [--window N] [--available-memory BYTES]
-  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr --operation copy|threshold|convolve|median|dilate --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--radius N] [--kernel-size N] [--threshold X] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run --operation copy|threshold|median|median-native-nth|dilate|connectedComponents --pixel-type UInt8|UInt16|Int32|Float32 --input DIR --output DIR [--radius N] [--threshold X] [--window N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr --operation copy|threshold|dilate --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--radius N] [--threshold X] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-direct-copy --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-direct-threshold --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-direct-threshold-raw --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--threshold X]
@@ -1158,36 +1159,12 @@ let private generate opts =
     | Float32 -> generateFloat32 pattern shape output
     0
 
-let private runTyped<'T when 'T: equality> operation input output radius thresholdValue availableMemory =
-    ensureCleanDirectory output
-    let src = benchmarkSource availableMemory
-    match operation with
-    | "copy" ->
-        src
-        |> read<'T> input ".tiff"
-        >=> write output ".tiff"
-        |> sink
-    | "threshold" ->
-        src
-        |> read<'T> input ".tiff"
-        >=> threshold thresholdValue infinity
-        >=> write output ".tiff"
-        |> sink
-    | "median" ->
-        src
-        |> read<'T> input ".tiff"
-        >=> smoothWMedian<'T> radius None
-        >=> write output ".tiff"
-        |> sink
-    | _ -> failwith $"unsupported operation '{operation}'"
-    0
-
 let private runChunkCopyTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> input output availableMemory =
     ensureCleanDirectory output
     let src = benchmarkSource availableMemory
     src
-    |> readChunkSlices<'T> input ".tiff"
-    >=> writeChunkSlices<'T> output ".tiff"
+    |> read<'T> input ".tiff"
+    >=> write<'T> output ".tiff"
     |> sink
     0
 
@@ -1195,10 +1172,10 @@ let private runChunkThresholdTyped<'T when 'T: equality and 'T: (new: unit -> 'T
     ensureCleanDirectory output
     let src = benchmarkSource availableMemory
     src
-    |> readChunkSlices<'T> input ".tiff"
+    |> read<'T> input ".tiff"
     >=> ChunkFunctions.thresholdNative<'T> thresholdValue
     >=> ChunkFunctions.castToUInt8<'T>
-    >=> writeChunkSlices<uint8> output ".tiff"
+    >=> write<uint8> output ".tiff"
     |> sink
     0
 
@@ -1206,20 +1183,20 @@ let private runChunkThresholdParallelCollectTyped<'T when 'T: equality and 'T: (
     ensureCleanDirectory output
     let src = benchmarkSource availableMemory
     src
-    |> readChunkSlices<'T> input ".tiff"
+    |> read<'T> input ".tiff"
     >=> ChunkFunctions.thresholdNativeParallelCollect<'T> thresholdValue workers
     >=> ChunkFunctions.castToUInt8<'T>
-    >=> writeChunkSlices<uint8> output ".tiff"
+    >=> write<uint8> output ".tiff"
     |> sink
     0
 
-let private runBinaryDilateTyped<'T when 'T: equality> input output radius availableMemory =
+let private runBinaryDilateTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> input output radius availableMemory =
     ensureCleanDirectory output
     let src = benchmarkSource availableMemory
     src
     |> read<'T> input ".tiff"
-    >=> threshold 128.0 infinity
-    >=> dilateZonohedral radius None
+    >=> thresholdRange<'T> 128.0 infinity
+    >=> binaryDilate radius
     >=> write output ".tiff"
     |> sink
     0
@@ -1239,10 +1216,10 @@ let private runChunkBinaryDilate input output radius thresholdValue workers avai
             ChunkFunctions.binaryDilateZonohedralParallel radius workers
     let src = benchmarkSource availableMemory
     src
-    |> readChunkSlices<uint8> input ".tiff"
+    |> read<uint8> input ".tiff"
     >=> ChunkFunctions.thresholdBinary thresholdByte
     >=> dilation
-    >=> writeChunkSlices<uint8> output ".tiff"
+    >=> write<uint8> output ".tiff"
     |> sink
     0
 
@@ -1275,7 +1252,7 @@ let private runChunkConnectedComponents input output thresholdValue windowSize w
     let src = benchmarkSource availableMemory
     let labeled =
         src
-        |> readChunkSlices<uint8> input ".tiff"
+        |> read<uint8> input ".tiff"
         >=> ChunkFunctions.thresholdBinary thresholdByte
         >=> labelStage
 
@@ -1283,7 +1260,7 @@ let private runChunkConnectedComponents input output thresholdValue windowSize w
     | Some outputDir ->
         ensureCleanDirectory outputDir
         labeled
-        >=> writeChunkSlices<uint32> outputDir ".tiff"
+        >=> write<uint32> outputDir ".tiff"
         |> sink
     | None ->
         labeled
@@ -1294,32 +1271,10 @@ let private runChunkConnectedComponents input output thresholdValue windowSize w
         printfn "unreachable checksum guard: %d" checksum
     0
 
-let private uniformKernel3D (kernelSize: uint) =
-    let size = max 1u kernelSize
-    let value = 1.0 / float (size * size * size)
-    Array3D.create (int size) (int size) (int size) value
-    |> fun values -> Image<float>.ofArray3D(values, name = $"uniformKernel{size}")
-
 let private uniformKernel3DFloat32 (kernelSize: uint) =
     let size = max 1u kernelSize
     let value = 1.0f / float32 (size * size * size)
     Array3D.create (int size) (int size) (int size) value
-
-let private runConvolveTyped<'T when 'T: equality> input output kernelSize availableMemory =
-    ensureCleanDirectory output
-    let kernel = uniformKernel3D kernelSize
-    let src = benchmarkSource availableMemory
-    try
-        src
-        |> read<'T> input ".tiff"
-        >=> cast<'T, float>
-        >=> convolve kernel None None None
-        >=> cast<float, 'T>
-        >=> write output ".tiff"
-        |> sink
-    finally
-        kernel.decRefCount()
-    0
 
 let private runChunkConvolveTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     input
@@ -1349,9 +1304,9 @@ let private runChunkConvolveTyped<'T when 'T: equality and 'T: (new: unit -> 'T)
                     ChunkFunctions.convolveFixedKernelParallel<float32> kernel workers
 
         src
-        |> readChunkSlices<float32> input ".tiff"
+        |> read<float32> input ".tiff"
         >=> convolution
-        >=> writeChunkSlices<float32> output ".tiff"
+        >=> write<float32> output ".tiff"
         |> sink
     elif typeof<'T> = typeof<uint8> && native then
         let kernel = uniformKernel3DFloat32 kernelSize
@@ -1362,9 +1317,9 @@ let private runChunkConvolveTyped<'T when 'T: equality and 'T: (new: unit -> 'T)
                 ChunkFunctions.convolveFixedKernelNativeUInt8Parallel kernel workers
 
         src
-        |> readChunkSlices<uint8> input ".tiff"
+        |> read<uint8> input ".tiff"
         >=> convolution
-        >=> writeChunkSlices<uint8> output ".tiff"
+        >=> write<uint8> output ".tiff"
         |> sink
     else
         let kernel = uniformKernel3DFloat32 kernelSize
@@ -1381,11 +1336,11 @@ let private runChunkConvolveTyped<'T when 'T: equality and 'T: (new: unit -> 'T)
                     ChunkFunctions.convolveFixedKernelParallel<float32> kernel workers
 
         src
-        |> readChunkSlices<'T> input ".tiff"
+        |> read<'T> input ".tiff"
         >=> ChunkFunctions.castToFloat32<'T>
         >=> convolution
         >=> ChunkFunctions.castFromFloat32<'T>
-        >=> writeChunkSlices<'T> output ".tiff"
+        >=> write<'T> output ".tiff"
         |> sink
     0
 
@@ -1396,9 +1351,9 @@ let private runChunkMedianPhUInt8 input output radius availableMemory =
 
     let src = benchmarkSource availableMemory
     src
-    |> readChunkSlices<uint8> input ".tiff"
+    |> read<uint8> input ".tiff"
     >=> ChunkFunctions.medianPerreaultHebertUInt8DenseRolling (int radius)
-    >=> writeChunkSlices<uint8> output ".tiff"
+    >=> write<uint8> output ".tiff"
     |> sink
     0
 
@@ -1411,9 +1366,9 @@ let private runChunkMedianPhYBandsUInt8 input output radius workers availableMem
 
     let src = benchmarkSource availableMemory
     src
-    |> readChunkSlices<uint8> input ".tiff"
+    |> read<uint8> input ".tiff"
     >=> ChunkFunctions.medianPerreaultHebertUInt8DenseRollingYBands (int radius) workers
-    >=> writeChunkSlices<uint8> output ".tiff"
+    >=> write<uint8> output ".tiff"
     |> sink
     0
 
@@ -1424,9 +1379,9 @@ let private runChunkMedianPhXFirstUInt8 input output radius availableMemory =
 
     let src = benchmarkSource availableMemory
     src
-    |> readChunkSlices<uint8> input ".tiff"
+    |> read<uint8> input ".tiff"
     >=> ChunkFunctions.medianPerreaultHebertUInt8DenseXFirstMaterialized (int radius)
-    >=> writeChunkSlices<uint8> output ".tiff"
+    >=> write<uint8> output ".tiff"
     |> sink
     0
 
@@ -1437,9 +1392,9 @@ let private runChunkMedianPhXBlockUInt8 input output radius availableMemory =
 
     let src = benchmarkSource availableMemory
     src
-    |> readChunkSlices<uint8> input ".tiff"
+    |> read<uint8> input ".tiff"
     >=> ChunkFunctions.medianPerreaultHebertUInt8DenseXBlock (int radius)
-    >=> writeChunkSlices<uint8> output ".tiff"
+    >=> write<uint8> output ".tiff"
     |> sink
     0
 
@@ -1450,9 +1405,9 @@ let private runChunkMedianPhXTransposeUInt8 input output radius availableMemory 
 
     let src = benchmarkSource availableMemory
     src
-    |> readChunkSlices<uint8> input ".tiff"
+    |> read<uint8> input ".tiff"
     >=> ChunkFunctions.medianPerreaultHebertUInt8DenseRollingTransposedXBlock (int radius)
-    >=> writeChunkSlices<uint8> output ".tiff"
+    >=> write<uint8> output ".tiff"
     |> sink
     0
 
@@ -1463,9 +1418,9 @@ let private runChunkMedianPhTreeUInt8 input output radius availableMemory =
 
     let src = benchmarkSource availableMemory
     src
-    |> readChunkSlices<uint8> input ".tiff"
+    |> read<uint8> input ".tiff"
     >=> ChunkFunctions.medianPerreaultHebertUInt8DenseRollingTree (int radius)
-    >=> writeChunkSlices<uint8> output ".tiff"
+    >=> write<uint8> output ".tiff"
     |> sink
     0
 
@@ -1476,30 +1431,9 @@ let private runChunkMedianPhBlockedZUInt8 input output radius availableMemory =
 
     let src = benchmarkSource availableMemory
     src
-    |> readChunkSlices<uint8> input ".tiff"
+    |> read<uint8> input ".tiff"
     >=> ChunkFunctions.medianPerreaultHebertUInt8DenseRollingBlockedZ (int radius)
-    >=> writeChunkSlices<uint8> output ".tiff"
-    |> sink
-    0
-
-let private runChunkMedianItkWrappedTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
-    input
-    output
-    radius
-    workers
-    availableMemory
-    =
-    ensureCleanDirectory output
-    if radius > uint32 Int32.MaxValue then
-        invalidArg "radius" $"Chunk ITK-wrapped median radius must fit in Int32, got {radius}."
-    if workers < 1 then
-        invalidArg "workers" $"Chunk ITK-wrapped median worker count must be at least 1, got {workers}."
-
-    let src = benchmarkSource availableMemory
-    src
-    |> readChunkSlices<'T> input ".tiff"
-    >=> ChunkFunctions.medianItkWrappedParallelCollect<'T> (int radius) workers
-    >=> writeChunkSlices<'T> output ".tiff"
+    >=> write<uint8> output ".tiff"
     |> sink
     0
 
@@ -1512,9 +1446,9 @@ let private runChunkMedianQuickselectUInt16 input output radius workers availabl
 
     let src = benchmarkSource availableMemory
     src
-    |> readChunkSlices<uint16> input ".tiff"
+    |> read<uint16> input ".tiff"
     >=> ChunkFunctions.medianQuickselectUInt16ParallelCollect (int radius) workers
-    >=> writeChunkSlices<uint16> output ".tiff"
+    >=> write<uint16> output ".tiff"
     |> sink
     0
 
@@ -1527,9 +1461,9 @@ let private runChunkMedianSortUInt16 input output radius workers availableMemory
 
     let src = benchmarkSource availableMemory
     src
-    |> readChunkSlices<uint16> input ".tiff"
+    |> read<uint16> input ".tiff"
     >=> ChunkFunctions.medianSortUInt16ParallelCollect (int radius) workers
-    >=> writeChunkSlices<uint16> output ".tiff"
+    >=> write<uint16> output ".tiff"
     |> sink
     0
 
@@ -1542,9 +1476,9 @@ let private runChunkMedianNativeNthUInt16 input output radius workers availableM
 
     let src = benchmarkSource availableMemory
     src
-    |> readChunkSlices<uint16> input ".tiff"
+    |> read<uint16> input ".tiff"
     >=> ChunkFunctions.medianNativeNthElementUInt16ParallelCollect (int radius) workers
-    >=> writeChunkSlices<uint16> output ".tiff"
+    >=> write<uint16> output ".tiff"
     |> sink
     0
 
@@ -1557,9 +1491,9 @@ let private runChunkMedianNativeNthUInt8 input output radius workers availableMe
 
     let src = benchmarkSource availableMemory
     src
-    |> readChunkSlices<uint8> input ".tiff"
+    |> read<uint8> input ".tiff"
     >=> ChunkFunctions.medianNativeNthElementUInt8ParallelCollect (int radius) workers
-    >=> writeChunkSlices<uint8> output ".tiff"
+    >=> write<uint8> output ".tiff"
     |> sink
     0
 
@@ -1572,9 +1506,9 @@ let private runChunkMedianNativeNthInt32 input output radius workers availableMe
 
     let src = benchmarkSource availableMemory
     src
-    |> readChunkSlices<int32> input ".tiff"
+    |> read<int32> input ".tiff"
     >=> ChunkFunctions.medianNativeNthElementInt32ParallelCollect (int radius) workers
-    >=> writeChunkSlices<int32> output ".tiff"
+    >=> write<int32> output ".tiff"
     |> sink
     0
 
@@ -1587,9 +1521,9 @@ let private runChunkMedianNativeNthFloat32 input output radius workers available
 
     let src = benchmarkSource availableMemory
     src
-    |> readChunkSlices<float32> input ".tiff"
+    |> read<float32> input ".tiff"
     >=> ChunkFunctions.medianNativeNthElementFloat32ParallelCollect (int radius) workers
-    >=> writeChunkSlices<float32> output ".tiff"
+    >=> write<float32> output ".tiff"
     |> sink
     0
 
@@ -1599,59 +1533,7 @@ let private runChunkMedianStandardUInt8 input output radius availableMemory =
     else
         runChunkMedianPhYBandsUInt8 input output radius 3 availableMemory
 
-let private zarrChunkMedianSlab<'T when 'T: equality> radius chunkZ : Stage<Image<'T>, Image<'T>> =
-    let radius = max 0u radius
-    let kernelDepth = 2u * radius + 1u
-    let chunkDepth = max (max 1u chunkZ) kernelDepth
-    let inputDepth = chunkDepth + 2u * radius
-    let componentBytes =
-        if typeof<'T> = typeof<uint8> then 1UL
-        elif typeof<'T> = typeof<uint16> then 2UL
-        elif typeof<'T> = typeof<float32> then 4UL
-        else invalidArg "T" $"Zarr median benchmark supports UInt8, UInt16, and Float32; got {typeof<'T>.Name}."
-    let medianMemoryNeed nPixels =
-        2UL * nPixels * uint64 inputDepth * componentBytes
-
-    let medianStage =
-        SlimPipeline.Stage.map
-            "zarrChunkMedianSlab.median"
-            (fun _ (image: Image<'T>) ->
-                try
-                    ImageFunctions.median radius image
-                finally
-                    image.decRefCount())
-            medianMemoryNeed
-            id
-
-    let cropMiddleSlab =
-        let memoryNeed nPixels =
-            2UL * nPixels * uint64 chunkDepth * componentBytes
-
-        SlimPipeline.Stage.map
-            "zarrChunkMedianSlab.cropMiddle"
-            (fun _ (slab: Slab<'T>) ->
-                let image = slab.Image
-                try
-                    if image.GetDimensions() <> 3u then
-                        failwith $"zarrChunkMedianSlab expected a 3D slab, got {image.GetDimensions()}D."
-
-                    let size = image.GetSize()
-                    let outputDepth = min chunkDepth (image.GetDepth())
-                    let startZ = radius
-                    let stopZ = startZ + outputDepth - 1u
-                    ImageFunctions.extractSub [ 0u; 0u; startZ ] [ size[0] - 1u; size[1] - 1u; stopZ ] image
-                finally
-                    image.decRefCount())
-            memoryNeed
-            id
-
-    StackCore.window inputDepth radius chunkDepth
-    --> StackCore.requireWindowSize<'T> kernelDepth
-    --> StackCore.windowToSlabWithRange<'T>
-    --> StackCore.mapSlabWithStage medianStage
-    --> cropMiddleSlab
-
-let private runZarrTyped<'T when 'T: equality> operation shape input output radius kernelSize thresholdValue availableMemory =
+let private runZarrTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> operation shape input output radius kernelSize thresholdValue availableMemory =
     ensureCleanDirectory output
     let src = benchmarkSource availableMemory
     let zarrInfo = getZarrInfo input 0 0
@@ -1660,45 +1542,30 @@ let private runZarrTyped<'T when 'T: equality> operation shape input output radi
         | _t :: _c :: z :: y :: x :: _ -> max 1u (uint z), max 1u (uint y), max 1u (uint x)
         | z :: y :: x :: _ -> max 1u (uint z), max 1u (uint y), max 1u (uint x)
         | _ -> 16u, 256u, 256u
+    let depth = max 1u shape.Depth
     let readInput () =
         src
-        |> readZarrSlab<'T> input 0 0 0 0 0
-
-    let readInputSlabStacked () =
-        src
-        |> readZarrSlabStacked<'T> input 0 0 0 0 0
+        |> readZarrRange<'T> 0u 1 (depth - 1u) input 0 0 0 0 0
 
     match operation with
     | "copy" ->
-        readInputSlabStacked ()
-        |> writeZarrSlab output chunkX chunkY 1.0 1.0 1.0 0
+        readInput ()
+        >=> writeZarr<'T> output "benchmark" depth chunkX chunkY chunkDepth 1.0 1.0 1.0 0
         |> sink
     | "threshold" ->
-        readInputSlabStacked ()
-        >=> threshold thresholdValue infinity
-        |> writeZarrSlab output chunkX chunkY 1.0 1.0 1.0 0
+        readInput ()
+        >=> thresholdRange<'T> thresholdValue infinity
+        >=> writeZarr<uint8> output "benchmark" depth chunkX chunkY chunkDepth 1.0 1.0 1.0 0
         |> sink
     | "median" ->
-        readInput ()
-        >=> zarrChunkMedianSlab<'T> radius chunkDepth
-        |> writeZarrSlab output chunkX chunkY 1.0 1.0 1.0 0
-        |> sink
+        failwith "run-zarr median used the retired Image/Slab stage bridge; use the TIFF Chunk median benchmarks or add a Chunk-native Zarr median benchmark."
     | "convolve" ->
-        let kernel = uniformKernel3D kernelSize
-        try
-            readInput ()
-            >=> cast<'T, float>
-            >=> convolve kernel None None None
-            >=> cast<float, 'T>
-            >=> writeZarr output "benchmark" shape.Depth chunkX chunkY chunkDepth 1.0 1.0 1.0 0
-            |> sink
-        finally
-            kernel.decRefCount()
+        failwith "run-zarr convolve used the retired Image/Slab stage bridge; use a Chunk-native convolution benchmark."
     | "dilate" ->
         readInput ()
-        >=> threshold 128.0 infinity
-        >=> dilateZonohedral radius None
-        >=> writeZarr output "benchmark" shape.Depth chunkX chunkY chunkDepth 1.0 1.0 1.0 0
+        >=> thresholdRange<'T> 128.0 infinity
+        >=> binaryDilate radius
+        >=> writeZarr<uint8> output "benchmark" depth chunkX chunkY chunkDepth 1.0 1.0 1.0 0
         |> sink
     | _ -> failwith $"unsupported Zarr operation '{operation}'"
     0
@@ -2548,12 +2415,19 @@ let private runZarrDirectThresholdRaw opts =
     writeInternalSeconds stopwatch.Elapsed
     0
 
-let private runZarrChunkCopyTyped<'T when 'T: equality> shape input output availableMemory =
+let private runZarrChunkCopyTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> shape input output availableMemory =
     ensureCleanDirectory output
+    let zarrInfo = getZarrInfo input 0 0
+    let depth = max 1u (uint zarrInfo.size[2])
+    let chunkDepth, chunkY, chunkX =
+        match zarrInfo.chunks with
+        | _t :: _c :: z :: y :: x :: _ -> max 1u (uint z), max 1u (uint y), max 1u (uint x)
+        | z :: y :: x :: _ -> max 1u (uint z), max 1u (uint y), max 1u (uint x)
+        | _ -> 16u, 256u, 256u
     let src = benchmarkSource availableMemory
     src
-    |> readZarrSlabStacked<'T> input 0 0 0 0 0
-    |> writeZarrSlab output 256u 256u 1.0 1.0 1.0 0
+    |> readZarrRange<'T> 0u 1 (depth - 1u) input 0 0 0 0 0
+    >=> writeZarr<'T> output "benchmark" depth chunkX chunkY chunkDepth 1.0 1.0 1.0 0
     |> sink
     0
 
@@ -2574,10 +2448,12 @@ let private runZarrChunkCopy opts =
     writeInternalSeconds stopwatch.Elapsed
     exitCode
 
-let private runZarrReadOnlyTyped<'T when 'T: equality> input availableMemory =
+let private runZarrReadOnlyTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> input availableMemory =
+    let zarrInfo = getZarrInfo input 0 0
+    let depth = max 1u (uint zarrInfo.size[2])
     let src = benchmarkSource availableMemory
     src
-    |> readZarrSlab<'T> input 0 0 0 0 0
+    |> readZarrRange<'T> 0u 1 (depth - 1u) input 0 0 0 0 0
     |> sink
     0
 
@@ -2596,7 +2472,7 @@ let private runZarrReadOnly opts =
     writeInternalSeconds stopwatch.Elapsed
     exitCode
 
-let private runZarrWriteOnlyTyped<'T when 'T: equality> (shape: Shape) output chunkSize availableMemory =
+let private runZarrWriteOnlyTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (shape: Shape) output chunkSize availableMemory =
     ensureCleanDirectory output
     let src = benchmarkSource availableMemory
     let chunkSize = max 1u chunkSize
@@ -2637,7 +2513,7 @@ let private runChunkFftFloat32Zarr opts =
 
     src
     |> read<float32> input ".tiff"
-    >=> FFTFloat32<float32> chunkSize chunkSize chunkSize
+    >=> fft
     >=> writeZarrWithCompression compression output "fft" shape.Depth chunkSize chunkSize chunkSize 1.0 1.0 1.0 0
     |> sink
 
@@ -2658,7 +2534,7 @@ let private runChunkFftXYFloat32Zarr opts =
     let stopwatch = Stopwatch.StartNew()
 
     src
-    |> readChunkSlices<float32> input ".tiff"
+    |> read<float32> input ".tiff"
     >=> ChunkFunctions.fftXYFloat32ToComplex64InterleavedParallelCollect workers
     >=> writeZarrComplex64InterleavedFloat32 output "fft_xy" shape.Width shape.Height shape.Depth chunkSize chunkSize chunkSize 1.0 1.0 1.0 0
     |> sink
@@ -2713,7 +2589,7 @@ let private runChunkFftNativeFloat32Zarr opts =
     try
         let src = benchmarkSource availableMemory
         src
-        |> readChunkSlices<float32> input ".tiff"
+        |> read<float32> input ".tiff"
         >=> ChunkFunctions.fftXYFloat32ToComplex64InterleavedParallelCollect workers
         >=> writeZarrComplex64InterleavedFloat32 tempXY "fft_xy" shape.Width shape.Height shape.Depth chunkSize chunkSize chunkSize 1.0 1.0 1.0 0
         |> sink
@@ -2745,42 +2621,16 @@ let private runChunkFftNativeFloat32Zarr opts =
 let private runConnectedComponents input output windowSize availableMemory =
     ensureCleanDirectory output
     let window = max 1u windowSize
-    let _, _, depth = getStackSize input ".tiff"
     let src = benchmarkSource availableMemory
 
-    if depth <= window then
-        src
-        |> read<uint8> input ".tiff"
-        >=> threshold 128.0 infinity
-        >=> connectedComponentsLabels (Some depth)
-        >=> cast<uint64, uint8>
-        >=> writeSlabSlices output ".tiff" 1u
-        |> sink
-        0
-    else
-        let tmp = output + "-labels"
-        ensureCleanDirectory tmp
-        let tmpSuffix = ".mha"
-        try
-            let table =
-                src
-                |> read<uint8> input ".tiff"
-                >=> threshold 128.0 infinity
-                >=> connectedComponents (Some window)
-                >=> teeFst (writeSlabSlices tmp tmpSuffix window)
-                >=> makeConnectedComponentLabelTranslationTable (Some window)
-                |> drain
-
-            src
-            |> readRange<uint64> 0u 1 (depth - 1u) tmp tmpSuffix
-            >=> updateConnectedComponents (Some window) table
-            >=> cast<uint64, uint8>
-            >=> writeSlabSlices output ".tiff" 1u
-            |> sink
-            0
-        finally
-            if Directory.Exists tmp then
-                Directory.Delete(tmp, true)
+    src
+    |> read<uint8> input ".tiff"
+    >=> thresholdRange<uint8> 128.0 infinity
+    >=> connectedComponentsUInt32Windowed (int window) Environment.ProcessorCount
+    >=> cast<uint32, uint8>
+    >=> write<uint8> output ".tiff"
+    |> sink
+    0
 
 let private run opts =
     let operation = require "operation" opts
@@ -2816,9 +2666,7 @@ let private run opts =
         | "median-ph-tree", _ -> failwith "median-ph-tree benchmark is currently defined for UInt8 chunks only"
         | "median-ph-blockedz", UInt8 -> runChunkMedianPhBlockedZUInt8 input output radius availableMemory
         | "median-ph-blockedz", _ -> failwith "median-ph-blockedz benchmark is currently defined for UInt8 chunks only"
-        | "median-itk-chunk", UInt8 -> runChunkMedianItkWrappedTyped<uint8> input output radius (int windowSize) availableMemory
-        | "median-itk-chunk", UInt16 -> runChunkMedianItkWrappedTyped<uint16> input output radius (int windowSize) availableMemory
-        | "median-itk-chunk", Float32 -> runChunkMedianItkWrappedTyped<float32> input output radius (int windowSize) availableMemory
+        | "median-itk-chunk", _ -> failwith "median-itk-chunk used the retired ITK-wrapped median path; use median-native-nth or the direct Image benchmark instead."
         | "median-quickselect", UInt16 -> runChunkMedianQuickselectUInt16 input output radius (int windowSize) availableMemory
         | "median-quickselect", _ -> failwith "median-quickselect benchmark is currently defined for UInt16 chunks only"
         | "median-sort", UInt16 -> runChunkMedianSortUInt16 input output radius (int windowSize) availableMemory
@@ -2827,20 +2675,14 @@ let private run opts =
         | "median-native-nth", UInt16 -> runChunkMedianNativeNthUInt16 input output radius (int windowSize) availableMemory
         | "median-native-nth", Int32 -> runChunkMedianNativeNthInt32 input output radius (int windowSize) availableMemory
         | "median-native-nth", Float32 -> runChunkMedianNativeNthFloat32 input output radius (int windowSize) availableMemory
-        | "convolve", UInt8 -> runConvolveTyped<uint8> input output kernelSize availableMemory
-        | "convolve", UInt16 -> runConvolveTyped<uint16> input output kernelSize availableMemory
-        | "convolve", Int32 -> runConvolveTyped<int32> input output kernelSize availableMemory
-        | "convolve", Float32 -> runConvolveTyped<float32> input output kernelSize availableMemory
+        | "convolve", _ -> failwith "The old generic convolve benchmark used an Image-stage bridge; use run-chunk-convolve instead."
         | "dilate", UInt8 -> runBinaryDilateTyped<uint8> input output radius availableMemory
         | "dilate", UInt16 -> runBinaryDilateTyped<uint16> input output radius availableMemory
         | "dilate", Int32 -> runBinaryDilateTyped<int32> input output radius availableMemory
         | "dilate", Float32 -> runBinaryDilateTyped<float32> input output radius availableMemory
         | "connectedComponents", UInt8 -> runConnectedComponents input output windowSize availableMemory
         | "connectedComponents", _ -> failwith "connectedComponents benchmark is currently defined for UInt8 masks only"
-        | _, UInt8 -> runTyped<uint8> operation input output radius thresholdValue availableMemory
-        | _, UInt16 -> runTyped<uint16> operation input output radius thresholdValue availableMemory
-        | _, Int32 -> runTyped<int32> operation input output radius thresholdValue availableMemory
-        | _, Float32 -> runTyped<float32> operation input output radius thresholdValue availableMemory
+        | _ -> failwith $"unsupported benchmark operation '{operation}' for {pixelType}"
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
     exitCode
@@ -2852,7 +2694,7 @@ let private ensureNonEmptyHistogram<'T when 'T: comparison> label (histogram: St
 let private runChunkHistogramDenseTyped<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> input availableMemory windowSize =
     let histogram =
         benchmarkSource availableMemory
-        |> readChunkSlices<'T> input ".tiff"
+        |> read<'T> input ".tiff"
         >=> if windowSize > 1 then ChunkFunctions.histogramDenseReducerParallel<'T> windowSize else ChunkFunctions.histogramDenseReducer<'T> ()
         |> drain
 
@@ -2862,7 +2704,7 @@ let private runChunkHistogramDenseTyped<'T when 'T: equality and 'T: comparison 
 let private runChunkHistogramSparseTyped<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> input availableMemory windowSize =
     let histogram =
         benchmarkSource availableMemory
-        |> readChunkSlices<'T> input ".tiff"
+        |> read<'T> input ".tiff"
         >=> if windowSize > 1 then ChunkFunctions.histogramReducerParallel<'T> windowSize else ChunkFunctions.histogramReducer<'T> ()
         |> drain
 
@@ -2873,7 +2715,7 @@ let private runChunkHistogramLeftEdgesTyped<'T when 'T: equality and 'T: (new: u
     let leftEdges = [ for bin in 0 .. max 1 bins - 1 -> float bin ]
     let histogram =
         benchmarkSource availableMemory
-        |> readChunkSlices<'T> input ".tiff"
+        |> read<'T> input ".tiff"
         >=> ChunkFunctions.histogramLeftEdgesReducer<'T> leftEdges
         |> drain
 

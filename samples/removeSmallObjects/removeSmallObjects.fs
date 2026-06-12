@@ -14,9 +14,9 @@ let main args =
         | _ -> "../data/rotatingBoxes", "../tmp/removeSmallObjects", 1000UL
 
     src
-    |> readChunkSlices<uint8> input ".tiff"
-    >=> chunkRemoveSmallObjects maximumVolume ObjectConnectivity.TwentySix
-    >=> writeChunkSlices output ".tiff"
+    |> read<uint8> input ".tiff"
+    >=> removeSmallObjects maximumVolume ObjectConnectivity.TwentySix
+    >=> write output ".tiff"
     |> sink
 
     0

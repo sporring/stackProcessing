@@ -13,11 +13,11 @@ let main args =
         | _ -> "../data/volume", "../tmp/convolve"
 
     src
-    |> readChunkSlices<float32> input ".tiff"
-    >=> boxFilterNativeParallelCollectXYZ<float32> 1 1 1 4
-    >=> chunkIntensityWindow<float32> 0.0 255.0 0.0 255.0
-    >=> chunkCast<float32, uint8>
-    >=> writeChunkSlices output ".tiff"
+    |> read<float32> input ".tiff"
+    >=> boxFilterXYZ<float32> 1 1 1 4
+    >=> intensityWindow<float32> 0.0 255.0 0.0 255.0
+    >=> cast<float32, uint8>
+    >=> write output ".tiff"
     |> sink
 
     0

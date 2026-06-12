@@ -228,7 +228,7 @@ module BuiltInCatalog =
       "Changes the shape of a UInt8 binary mask using a spherical local neighborhood.\n\nBinary morphology expects a 0/1 UInt8 image: 0 is background and 1 is foreground. Erode removes foreground pixels near object boundaries and can break thin connections. Dilate expands foreground regions and can close small gaps. Opening is erosion followed by dilation and tends to remove small foreground objects. Closing is dilation followed by erosion and tends to fill small background gaps.\n\nThe radius controls the sphere size."
 
   let private connectedComponentsDescription =
-      "Labels connected foreground regions in a UInt8 binary mask with the Chunk SAUF implementation.\n\nThe output image stores UInt32 labels, with background left as zero. Use the optional window size when the stack should be processed through ParallelCollect chunks."
+      "Labels connected foreground regions in a UInt8 binary mask with the streaming SAUF implementation.\n\nThe output image stores UInt32 labels, with background left as zero. Use the optional window size when the stack should be processed in bounded z-windows."
 
   let private permuteAxesDescription =
       "Reorders the x, y, and z axes of a stack.\n\nUse this when detector data or intermediate results need a different orientation, for example turning z into x or swapping x and y. Axis permutation can require chunked access because changing the z-axis changes which pixels belong to each output slice.\n\nTile size controls the working block size used during the transpose."
@@ -1932,10 +1932,10 @@ module BuiltInCatalog =
           Parameters = [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32) ] }
 
         { Id = "DilateZonohedral"
-          DisplayName = "dilateZonohedral"
+          DisplayName = "binaryDilate"
           Category = "Binary Morphology"
-          Summary = "Dilate a binary UInt8 image using a streaming zonohedral approximation."
-          Description = "Approximate spherical binary dilation by composing 1D line dilations from a zonohedral decomposition. The implementation uses z-windows and only emits valid center slices, which avoids materializing whole slabs for the dilation step."
+          Summary = "Dilate a binary UInt8 image using a streaming spherical approximation."
+          Description = "Dilates foreground regions in a UInt8 binary mask. The implementation uses z-windows and only emits valid center slices."
           Aliases = [ "morphology"; "binary"; "mask"; "zonohedral"; "streaming"; "VHGW" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
@@ -1944,10 +1944,10 @@ module BuiltInCatalog =
                 makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "ErodeZonohedral"
-          DisplayName = "erodeZonohedral"
+          DisplayName = "binaryErode"
           Category = "Binary Morphology"
-          Summary = "Erode a binary UInt8 image using a streaming zonohedral approximation."
-          Description = "Approximate spherical binary erosion by composing 1D line erosions from a zonohedral decomposition. This follows the same streaming line-stage structure as dilateZonohedral."
+          Summary = "Erode a binary UInt8 image using a streaming spherical approximation."
+          Description = "Erodes foreground regions in a UInt8 binary mask using the same bounded z-window policy as binaryDilate."
           Aliases = [ "morphology"; "binary"; "mask"; "zonohedral"; "streaming"; "VHGW" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
@@ -1966,10 +1966,10 @@ module BuiltInCatalog =
           Parameters = [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32) ] }
 
         { Id = "OpeningZonohedral"
-          DisplayName = "openingZonohedral"
+          DisplayName = "binaryOpening"
           Category = "Binary Morphology"
-          Summary = "Open a binary UInt8 image using streaming zonohedral morphology."
-          Description = "Approximate spherical binary opening by composing erodeZonohedral followed by dilateZonohedral."
+          Summary = "Open a binary UInt8 image using streaming morphology."
+          Description = "Opens a UInt8 binary mask by eroding and then dilating with the same radius."
           Aliases = [ "morphology"; "binary"; "mask"; "zonohedral"; "streaming"; "VHGW" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
@@ -1988,10 +1988,10 @@ module BuiltInCatalog =
           Parameters = [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32) ] }
 
         { Id = "ClosingZonohedral"
-          DisplayName = "closingZonohedral"
+          DisplayName = "binaryClosing"
           Category = "Binary Morphology"
-          Summary = "Close a binary UInt8 image using streaming zonohedral morphology."
-          Description = "Approximate spherical binary closing by composing dilateZonohedral followed by erodeZonohedral."
+          Summary = "Close a binary UInt8 image using streaming morphology."
+          Description = "Closes a UInt8 binary mask by dilating and then eroding with the same radius."
           Aliases = [ "morphology"; "binary"; "mask"; "zonohedral"; "streaming"; "VHGW" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]

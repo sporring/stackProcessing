@@ -131,7 +131,7 @@ The current calibration ladder is:
 empty -> io -> io-cast -> sources -> singleton -> neighbourhood -> geometry -> fourier -> keypoints -> dependency -> reducers
 ```
 
-There is also a `window-chunk` family for measuring scaffolding such as window creation, valid-range emission, and `ParallelCollect` behaviour. It is useful for implementation experiments, but it is not part of the implicit `--up-to` fit ladder unless requested explicitly.
+There is also a `window-chunk` family for measuring scaffolding such as window creation, valid-range emission, and bounded-window worker behaviour. It is useful for implementation experiments, but it is not part of the implicit `--up-to` fit ladder unless requested explicitly.
 
 Typical families:
 
@@ -525,8 +525,8 @@ Important modelling details:
 The `io-cast` family compares:
 
 ```text
-readChunkSlices<T>
-readChunkSlices<diskT> --> chunkCast<diskT,T>
+read<T>
+read<diskT> --> cast<diskT,T>
 ```
 
 Implicit read-cast and explicit cast can have different mechanics and timings. The model should preserve that distinction rather than blindly rewriting one into the other.

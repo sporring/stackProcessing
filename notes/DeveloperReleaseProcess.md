@@ -131,13 +131,13 @@ The release should include one small graph and one tiny TIFF stack. The smoke te
 The smoke graph should use conservative operations:
 
 ```text
-readChunkSlices -> chunkThresholdRange -> writeChunkSlices
+read -> thresholdRange -> write
 ```
 
 A second optional smoke graph can exercise a small streaming window:
 
 ```text
-readChunkSlices -> chunkBinaryDilateZonohedral -> writeChunkSlices
+read -> binaryDilate -> write
 ```
 
 Keep these graphs tiny. Their job is to detect packaging and platform errors, not to benchmark performance.

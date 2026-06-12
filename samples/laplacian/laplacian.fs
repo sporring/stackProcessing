@@ -13,11 +13,11 @@ let main args =
         | _ -> "../data/volume", "../tmp/laplacian"
 
     src
-    |> readChunkSlices<float32> input ".tiff"
-    >=> laplacianNativeParallelCollect 1.0 3 4
-    >=> chunkIntensityWindow<float32> 0.0 255.0 0.0 255.0
-    >=> chunkCast<float32, uint8>
-    >=> writeChunkSlices output ".tiff"
+    |> read<float32> input ".tiff"
+    >=> laplacian 1.0 3 4
+    >=> intensityWindow<float32> 0.0 255.0 0.0 255.0
+    >=> cast<float32, uint8>
+    >=> write output ".tiff"
     |> sink
 
     0

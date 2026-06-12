@@ -115,127 +115,127 @@ let private canonicalGaussianWindowSize = 13u
 let private canonicalKernelSize = canonicalWindowSize
 
 let private zero<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    chunkZero<'T>
+    StackProcessing.zero<'T>
 
 let private read<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    readChunkSlices<'T>
+    StackProcessing.read<'T>
 
 let private write<'T when 'T: equality> =
-    writeChunkSlices<'T>
+    StackProcessing.write<'T>
 
 let private cast<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct and 'S :> ValueType
                           and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    chunkCast<'S, 'T>
+    StackProcessing.cast<'S, 'T>
 
 let private addNormalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    chunkAddNormalNoise<'T>
+    StackProcessing.addNormalNoise<'T>
 
 let private addSaltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    chunkAddSaltAndPepperNoise<'T>
+    StackProcessing.addSaltAndPepperNoise<'T>
 
 let private addShotNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    chunkAddShotNoise<'T>
+    StackProcessing.addShotNoise<'T>
 
 let private threshold<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (lower: double) (upper: double) =
-    chunkThresholdRange<'T> lower upper
+    thresholdRange<'T> lower upper
 
 let private imageAddScalar value =
-    chunkImageAddScalar value
+    addScalar value
 
 let private imageMulScalar value =
-    chunkImageMulScalar value
+    mulScalar value
 
 let private intensityStretch<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    chunkIntensityWindow<'T>
+    intensityWindow<'T>
 
 let private computeStats<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    chunkComputeStats<'T>
+    StackProcessing.computeStats<'T>
 
 let private sumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    chunkSumProjection<'T>
+    StackProcessing.sumProjection<'T>
 
 let private smoothWGauss<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> sigma _outputRegionMode _boundaryCondition windowSize =
     let radius =
         windowSize
         |> Option.map (fun w -> int ((w - 1u) / 2u))
         |> Option.defaultValue (int (Math.Ceiling(3.0 * sigma)))
-    gaussianFilterNativeParallelCollect<'T> sigma radius 1
+    gaussianFilter<'T> sigma radius 1
 
 let private gradientMagnitude<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> windowSize =
     let radius = windowSize |> Option.map (fun w -> int ((w - 1u) / 2u)) |> Option.defaultValue 3
-    chunkCast<'T, float32> --> gradientMagnitudeNativeParallelCollect 1.0 radius 1
+    cast<'T, float32> --> StackProcessing.gradientMagnitude 1.0 radius 1
 
 let private sobelEdge<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> _windowSize =
-    chunkCast<'T, float32> --> sobelMagnitudeNativeParallelCollect 1
+    cast<'T, float32> --> StackProcessing.sobelMagnitude 1
 
 let private laplacian<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> windowSize =
     let radius = windowSize |> Option.map (fun w -> int ((w - 1u) / 2u)) |> Option.defaultValue 3
-    chunkCast<'T, float32> --> laplacianNativeParallelCollect 1.0 radius 1
+    cast<'T, float32> --> StackProcessing.laplacian 1.0 radius 1
 
 let private sqrt<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
     if typeof<'T> = typeof<float32> then
         unbox (box ChunkFunctions.sqrtFloat32)
     else
-        chunkCast<'T, float32> --> ChunkFunctions.sqrtFloat32 --> chunkCast<float32, 'T>
+        cast<'T, float32> --> ChunkFunctions.sqrtFloat32 --> cast<float32, 'T>
 
 let private sqrtWindowed<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (_windowSize: uint) =
     sqrt<'T>
 
 let private erode radius =
-    chunkBinaryErodeZonohedral radius
+    StackProcessing.binaryErode radius
 
 let private dilate radius =
-    chunkBinaryDilateZonohedral radius
+    StackProcessing.binaryDilate radius
 
 let private opening radius =
-    chunkBinaryOpeningZonohedral radius
+    StackProcessing.binaryOpening radius
 
 let private closing radius =
-    chunkBinaryClosingZonohedral radius
+    StackProcessing.binaryClosing radius
 
 let private blackTopHat<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (radius: uint) (windowSize: int option) =
     match windowSize with
-    | Some w -> chunkBinaryBlackTopHatZonohedralParallel radius w
-    | None -> chunkBinaryBlackTopHatZonohedral radius
+    | Some w -> StackProcessing.binaryBlackTopHatWindowed radius w
+    | None -> StackProcessing.binaryBlackTopHat radius
 
 let private whiteTopHat<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (radius: uint) (windowSize: int option) =
     match windowSize with
-    | Some w -> chunkBinaryWhiteTopHatZonohedralParallel radius w
-    | None -> chunkBinaryWhiteTopHatZonohedral radius
+    | Some w -> StackProcessing.binaryWhiteTopHatWindowed radius w
+    | None -> StackProcessing.binaryWhiteTopHat radius
 
 let private morphologicalGradient<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (radius: uint) (windowSize: int option) =
     match windowSize with
-    | Some w -> chunkBinaryGradientZonohedralParallel radius w
-    | None -> chunkBinaryGradientZonohedral radius
+    | Some w -> StackProcessing.binaryGradientWindowed radius w
+    | None -> StackProcessing.binaryGradient radius
 
 let private binaryContour fullyConnected (windowSize: int option) =
     match windowSize with
-    | Some w -> chunkBinaryContourZonohedralParallel fullyConnected w
-    | None -> chunkBinaryContourZonohedral fullyConnected
+    | Some w -> StackProcessing.binaryContourWindowed fullyConnected w
+    | None -> StackProcessing.binaryContour fullyConnected
 
 let private fillSmallHoles maximumVolume connectivity =
-    chunkFillSmallHoles maximumVolume connectivity
+    StackProcessing.fillSmallHoles maximumVolume connectivity
 
 let private resize<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    chunkResize<'T>
+    StackProcessing.resize<'T>
 
 let private resample<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    chunkResample<'T>
+    StackProcessing.resample<'T>
 
 let private normalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> width height depth mean std pl =
     pl
-    |> chunkZero<'T> width height depth
-    >=> chunkAddNormalNoise<'T> mean std
+    |> zero<'T> width height depth
+    >=> addNormalNoise<'T> mean std
 
 let private saltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> width height depth probability pl =
     pl
-    |> chunkZero<'T> width height depth
-    >=> chunkAddSaltAndPepperNoise<'T> probability
+    |> zero<'T> width height depth
+    >=> addSaltAndPepperNoise<'T> probability
 
 let private shotNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> width height depth scale pl =
     pl
-    |> chunkZero<'T> width height depth
-    >=> chunkAddShotNoise<'T> scale
+    |> zero<'T> width height depth
+    >=> addShotNoise<'T> scale
 
 // Workflow-shape inspiration for realistic boilerplate probes:
 // - Robert Haase et al., Bio-image Analysis Notebooks

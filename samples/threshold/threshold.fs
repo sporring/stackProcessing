@@ -16,12 +16,12 @@ let main arg =
 
 
     src
-    |> chunkZero<float32> width height depth
-    >=> chunkAddNormalNoise<float32> 128.0 50.0
-    >=> chunkThresholdRange<float32> 128.0 infinity
-    >=> chunkImageMulScalar 255uy
+    |> zero<float32> width height depth
+    >=> addNormalNoise<float32> 128.0 50.0
+    >=> thresholdRange<float32> 128.0 infinity
+    >=> mulScalar 255uy
     //>=> ignoreImages ()
-    >=> writeChunkSlices output ".tiff"
+    >=> write output ".tiff"
     |> sink
 
     0

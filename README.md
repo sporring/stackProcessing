@@ -134,10 +134,10 @@ open StackProcessing
 let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
 
 source availableMemory
-|> readChunkSlices<float32> "../data/volume" ".tiff"
->=> gaussianFilterNativeParallelCollect<float32> 1.0 3 4
->=> chunkCast<float32,uint8>
->=> writeChunkSlices "../tmp/smoothedVolume" ".tiff"
+|> read<float32> "../data/volume" ".tiff"
+>=> gaussianFilter<float32> 1.0 3 4
+>=> cast<float32,uint8>
+>=> write "../tmp/smoothedVolume" ".tiff"
 |> sink
 ```
 
@@ -220,8 +220,8 @@ open StackProcessing;;
 let availableMemory = 2UL * 1024UL * 1024UL * 1024UL;;
 
 source availableMemory
-|> chunkZero<uint8> 64u 64u 8u
->=> writeChunkSlices "tmp/fsi-zero" ".tiff"
+|> zero<uint8> 64u 64u 8u
+>=> write "tmp/fsi-zero" ".tiff"
 |> sink;;
 ```
 

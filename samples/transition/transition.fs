@@ -15,13 +15,13 @@ let main arg =
             "../data/volume", "../tmp/transition"
 
     src
-    |> readChunkSlices<float32> input ".tiff"
-    >=> chunkSqrtFloat32
-    >=> gaussianFilterNativeParallelCollect<float32> sigma 3 4
-    >=> chunkSqrtFloat32
-    >=> gaussianFilterNativeParallelCollect<float32> sigma 3 4
-    >=> chunkCast<float32,uint8>
-    >=> writeChunkSlices output ".tiff"
+    |> read<float32> input ".tiff"
+    >=> sqrtFloat32
+    >=> gaussianFilter<float32> sigma 3 4
+    >=> sqrtFloat32
+    >=> gaussianFilter<float32> sigma 3 4
+    >=> cast<float32,uint8>
+    >=> write output ".tiff"
     |> sink
 
 

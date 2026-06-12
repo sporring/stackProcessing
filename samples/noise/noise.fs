@@ -8,11 +8,11 @@ let main args =
 
     let histogram =
         src
-        |> chunkZero<float32> 64u 64u 64u
-        >=> chunkAddNormalNoise<float32> 0.0 50.0
-        >=> gaussianFilterNativeParallelCollect<float32> 3.0 9 4
-        >=> chunkCast<float32, uint8>
-        >=> chunkHistogramFixedBins<uint8> 0.0 255.0 256u
+        |> zero<float32> 64u 64u 64u
+        >=> addNormalNoise<float32> 0.0 50.0
+        >=> gaussianFilter<float32> 3.0 9 4
+        >=> cast<float32, uint8>
+        >=> imageHistogramFixedBins<uint8> 0.0 255.0 256u
         >=> histogramCounts
         |> drain
 

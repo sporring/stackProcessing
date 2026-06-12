@@ -12,13 +12,13 @@ let main args =
         | _ -> "../tmp/fft"
 
     src
-    |> chunkZero<float32> 8u 8u 4u
-    >=> chunkAddNormalNoise<float32> 128.0 25.0
-    >=> chunkFftXYFloat32ToComplex64Interleaved
-    >=> chunkFftShift3DComplex64Interleaved
-    >=> chunkFftShift3DComplex64Interleaved
-    >=> chunkInvFftXYComplex64InterleavedToFloat32
-    >=> writeChunkSlices output ".tiff"
+    |> zero<float32> 8u 8u 4u
+    >=> addNormalNoise<float32> 128.0 25.0
+    >=> fft
+    >=> fftShift3D
+    >=> fftShift3D
+    >=> invFft
+    >=> write output ".tiff"
     |> sink
 
     0

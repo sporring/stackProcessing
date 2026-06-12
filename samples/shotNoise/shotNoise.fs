@@ -12,10 +12,10 @@ let main args =
         | _ -> "../tmp/shotNoise"
 
     src
-    |> chunkZero<float> 64u 64u 64u
-    >=> chunkAddShotNoise<float> 2.0
-    >=> chunkCast<float, uint8>
-    >=> writeChunkSlices output ".tiff"
+    |> zero<float> 64u 64u 64u
+    >=> addShotNoise<float> 2.0
+    >=> cast<float, uint8>
+    >=> write output ".tiff"
     |> sink
 
     0

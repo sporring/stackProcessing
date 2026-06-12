@@ -13,9 +13,9 @@ let main args =
 
     let voxelVolume =
         src
-        |> readChunkVolume<uint8> (volumeFilePath input ".tiff")
-        >=> chunkThresholdRange<uint8> 1 255
-        >=> chunkVolume 1.0 1.0 1.0
+        |> readVolume<uint8> (volumeFilePath input ".tiff")
+        >=> thresholdRange<uint8> 1 255
+        >=> volume 1.0 1.0 1.0
         |> drain
 
     printfn "Foreground volume: %.3f" voxelVolume

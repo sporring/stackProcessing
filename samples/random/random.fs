@@ -16,9 +16,9 @@ let main arg =
             64u, 64u, 64u, "../tmp/random"
             
     src
-    |> chunkZero<uint8> width height depth
-    >=> chunkAddNormalNoise<uint8> 128.0 50.0
-    >=> writeChunkSlices output ".tiff"
+    |> zero<uint8> width height depth
+    >=> addNormalNoise<uint8> 128.0 50.0
+    >=> write output ".tiff"
     |> sink
 
     0

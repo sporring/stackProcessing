@@ -13,15 +13,15 @@ let main args =
 
     let voxelVolume =
         src
-        |> readChunkSlices<uint8> input ".tiff"
-        >=> chunkThresholdRange<uint8> 1 255
-        >=> chunkVolume 1.0 1.0 1.0
+        |> read<uint8> input ".tiff"
+        >=> thresholdRange<uint8> 1 255
+        >=> volume 1.0 1.0 1.0
         |> drain
 
     let area =
         src
-        |> readChunkSlices<uint8> input ".tiff"
-        >=> marchingCubesChunk<uint8> 127.5
+        |> read<uint8> input ".tiff"
+        >=> marchingCubes<uint8> 127.5
         >=> surfaceArea 1.0 1.0 1.0
         |> drain
 

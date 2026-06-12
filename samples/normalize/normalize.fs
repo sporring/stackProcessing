@@ -16,18 +16,18 @@ let main arg =
     let Float640 = 255.0
     let ImageStats0 =
         src
-        |> readChunkSlicesRandom<float32> 20u input ".tiff"
-        >=> chunkComputeStats<float32> ()
+        |> readRandom<float32> 20u input ".tiff"
+        >=> computeStats<float32> ()
         |> drain
     let Float641 = (ImageStats0.Max - ImageStats0.Min)
     let Float642 = (Float640 / Float641)
 
     src
-    |> readChunkSlices<float32> input ".tiff"
-    >=> chunkImageSubScalar (float32 ImageStats0.Min)
-    >=> chunkImageMulScalar (float32 Float642)
-    >=> chunkCast<float32,uint8>
-    >=> writeChunkSlices output ".tiff"
+    |> read<float32> input ".tiff"
+    >=> subScalar (float32 ImageStats0.Min)
+    >=> mulScalar (float32 Float642)
+    >=> cast<float32,uint8>
+    >=> write output ".tiff"
     |> sink
 
     0

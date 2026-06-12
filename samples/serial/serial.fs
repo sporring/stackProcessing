@@ -13,8 +13,8 @@ let main args =
 
     let histogram =
         src
-        |> readChunkSlicesRandom<uint8> 16u input ".tiff"
-        >=> chunkHistogram<uint8> ()
+        |> readRandom<uint8> 16u input ".tiff"
+        >=> imageHistogram<uint8> ()
         |> drain
 
     printfn "Sampled histogram bins: %d" histogram.Counts.Count

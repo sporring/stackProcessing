@@ -15,28 +15,28 @@ let main args =
 
     let model =
         src
-        |> readChunkSlicesRange<float32> 0u 1 255u input ".tiff"
-        >=> fitBiasModelChunk<float32> 2 256u
+        |> readRange<float32> 0u 1 255u input ".tiff"
+        >=> fitBiasModel<float32> 2 256u
         |> drain
 
     src
-    |> readChunkSlicesRange<float32> 0u 1 255u input ".tiff"
-    >=> correctBiasChunk<float32> model
-    >=> chunkCast<float, uint8>
-    >=> writeChunkSlices (outputRoot + "/unmasked") ".tiff"
+    |> readRange<float32> 0u 1 255u input ".tiff"
+    >=> correctBias<float32> model
+    >=> cast<float, uint8>
+    >=> write (outputRoot + "/unmasked") ".tiff"
     |> sink
 
-    let image = src |> readChunkSlicesRange<float32> 0u 1 255u input ".tiff"
-    let maskStream = src |> readChunkSlices<uint8> mask ".tiff"
+    let image = src |> readRange<float32> 0u 1 255u input ".tiff"
+    let maskStream = src |> read<uint8> mask ".tiff"
     let maskedModel =
         zip image maskStream
-        >=> fitBiasModelChunkMasked<float32> 2 256u
+        >=> fitBiasModelMasked<float32> 2 256u
         |> drain
 
     zip image maskStream
-    >=> correctBiasChunkMasked<float32> maskedModel
-    >=> chunkCast<float, uint8>
-    >=> writeChunkSlices (outputRoot + "/masked") ".tiff"
+    >=> correctBiasMasked<float32> maskedModel
+    >=> cast<float, uint8>
+    >=> write (outputRoot + "/masked") ".tiff"
     |> sink
 
     0

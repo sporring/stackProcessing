@@ -16,11 +16,11 @@ let main args =
         | _ -> "../data/volume", "../tmp/structureTensorEigenvector0Color"
 
     src
-    |> readChunkSlices<float32> input ".tiff"
-    >=> chunkStructureTensorNativeParallelCollect 1.0 7 1.0 7 4
-    >=> chunkVectorRange<float32> 3u 3u
-    >=> chunkVector3ToColorFloat32 -1.0f 1.0f
-    >=> writeColorChunkSlices output ".tiff"
+    |> read<float32> input ".tiff"
+    >=> structureTensor 1.0 7 1.0 7 4
+    >=> vectorRange<float32> 3u 3u
+    >=> vector3ToColorFloat32 -1.0f 1.0f
+    >=> writeColor output ".tiff"
     |> sink
 
     printfn "Wrote the first structure-tensor eigenvector color slices to %s" (Path.GetFullPath output)

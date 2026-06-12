@@ -53,8 +53,8 @@ z-axis pass is added.
 
 ```text
 TIFF Float32 slices
-  -> readChunkSlices
-  -> fftXYFloat32ToComplex64InterleavedParallelCollect
+  -> read
+  -> fft
   -> temporary complex64 chunk storage
   -> z-axis FFT over chunk columns or reorganized tiles
   -> final complex64-interleaved chunks

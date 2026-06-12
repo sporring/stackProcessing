@@ -32,14 +32,14 @@ let main args =
           C = v3 32.0 32.0 4.0 }
 
     src
-    |> readChunkSlices<float32> input ".tiff"
-    >=> resampleAffineChunk
+    |> read<float32> input ".tiff"
+    >=> resampleAffine
             (fun a b t -> a + (b - a) * t)
             inputGeometry
             outputGeometry
             affine
             0.0f
-    >=> writeChunkSlices "../tmp/resampleAffine" ".tiff"
+    >=> write "../tmp/resampleAffine" ".tiff"
     |> sink
 
     0

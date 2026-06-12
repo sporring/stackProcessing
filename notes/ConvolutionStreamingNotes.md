@@ -55,10 +55,10 @@ right shape for smoothing the six structure-tensor outer-product components.
 
 ## Streaming Shape
 
-Convolution stages should expose their halo needs through windows and
-`ParallelCollect`, not by materializing full volumes. A stage may read a bounded
-z-window, emit only valid center slices, and release consumed chunks according
-to the window resource rules.
+Convolution stages should expose their halo needs through bounded windows, not
+by materializing full volumes. A stage may read a bounded z-window, emit only
+valid center slices, and release consumed chunks according to the window
+resource rules.
 
 For separable filters:
 

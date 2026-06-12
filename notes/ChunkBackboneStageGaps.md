@@ -42,7 +42,7 @@ errors or shelved capabilities.
   count.
 - Quantiles and histogram equalization using Chunk histogram states.
 - Histogram chart and histogram-data Studio lowering through Chunk reducers.
-- `ShowImage` lowers through `chunkShow`/`showChunkWithLabels`.
+- `ShowImage` lowers through `show`/`showChunkWithLabels`.
 
 ## Convolution, Derivatives, And Vector Chunks
 
@@ -55,13 +55,13 @@ errors or shelved capabilities.
   sigma/radius parameters.
 - Finite-difference 1D kernels exposed as `float32[]` and usable directly as
   convolution kernels.
-- `finiteDiffNativeX/Y/ZParallelCollect`
-- `sobelX/Y/ZNativeParallelCollect`
-- `gradientVectorNativeParallelCollect` and XYZ variants
-- `hessianUpperNativeParallelCollect` and XYZ variants
-- `laplacianNativeParallelCollect` and XYZ variants
-- `gradientMagnitudeNativeParallelCollect`, XYZ variants, and
-  `sobelMagnitudeNativeParallelCollect`
+- `finiteDiffX/Y/Z`
+- `sobelX/Y/Z`
+- `gradientVector` and XYZ variants
+- `hessianUpper` and XYZ variants
+- `laplacian` and XYZ variants
+- `gradientMagnitude`, XYZ variants, and
+  `sobelMagnitude`
 - Vector Chunk basis storage and operations: `toVectorImage`,
   `appendVectorElement`, `vectorElement`, `mapVectorElements`, `vectorDot`,
   `vectorMagnitude`, `vectorCross3D`, and `vectorAngleTo`
@@ -69,7 +69,7 @@ errors or shelved capabilities.
   `mapVectorElementsFloat32`, `vectorDotFloat32`, `vectorMagnitudeFloat32`,
   and `vectorAngleToFloat32`
 - Structure tensor:
-  `structureTensorNativeParallelCollect` builds the smoothed gradient,
+  `structureTensor` builds the smoothed gradient,
   6-component upper outer-product tensor, optional separable Gaussian tensor
   smoothing, and 12-component eigensystem vector Chunk
   `[eigenvalues; eigenvector0; eigenvector1; eigenvector2]`.
@@ -77,16 +77,15 @@ errors or shelved capabilities.
 
 ## Morphology, Labels, And Distance
 
-- Zonohedral binary dilation, erosion, opening, and closing.
+- Binary dilation, erosion, opening, and closing.
 - Binary white top-hat, black top-hat, morphological gradient, and binary
   contour.
 - UInt8 Perreault-Hebert dense median baseline with y-band workers.
-- Native nth-element median stages for `UInt8`, `UInt16`, `Int32`, and
-  `Float32`, including `ParallelCollect` variants.
+- Median stages for `UInt8`, `UInt16`, `Int32`, and `Float32`.
 - Connected-components SAUF stages for `UInt8` input with `UInt32` labels,
   including direct relabel/stitch output.
-- Native exact signed distance band for `UInt8` mask chunks, emitted as
-  `Float32` slices through `signedDistanceBandNativeParallelCollect`.
+- Exact signed distance band for `UInt8` mask chunks, emitted as `Float32`
+  slices through `signedDistanceBand`.
 - Fill-small-holes and remove-small-objects have Chunk flood-fill style stages.
 
 ## FFT And Complex Chunks
@@ -94,25 +93,24 @@ errors or shelved capabilities.
 - Complex64-interleaved Chunk construction and scalar operations:
   real/imaginary composition, polar composition, real, imaginary, modulus,
   argument, and conjugate.
-- XY FFT for `Float32` chunks to complex64-interleaved `Float32` chunks,
-  including a `ParallelCollect` variant.
+- XY FFT for `Float32` chunks to complex64-interleaved `Float32` chunks.
 - Inverse XY FFT sibling.
 - 3D `fftshift` using temporary chunk files rather than full-volume
   materialization.
 
 ## IO, Sources, And Workflow Stages
 
-- `readChunkSlices`, `writeChunkSlices`
-- `readChunkSlicesRandom`, `readChunkSlicesRange`
+- `read`, `write`
+- `readRandom`, `readRange`
 - Chunk-native scalar OME-Zarr range reads and slice writes for `uint8`,
   `uint16`, `float32`, and `float`
-- `chunkZero`, `chunkCoordinateX/Y/Z`, `chunkRepeat`, `chunkRepeatStage`
+- `zero`, `coordinateX/Y/Z`, `repeat`, `repeatStage`
 - scalar image math, image-pair math, comparisons, and mask logic
 - sum projection and volume reducers
-- streaming object workflow: `streamConnectedObjectsChunk`,
-  `paintObjectsChunk`, and cropped painting
+- streaming object workflow: `streamConnectedObjects`,
+  `paintObjects`, and cropped painting
 - polygon masks
-- bias correction: `fitBiasModelChunk*` and `correctBiasChunk*`
+- bias correction: `fitBiasModel*` and `correctBias*`
 - vector dot/cross/angle stages
 - `VectorChunk` PCA
 - marching cubes over Chunk slices
