@@ -110,9 +110,6 @@ module BuiltInCatalog =
   let private readFormatParameter =
       makeParameter "format" "Source" "Image stack" BasicType.String
 
-  let private readSlabFormatParameter =
-      makeParameter "format" "Source" "Chunked stack" BasicType.String
-
   let private writeFormatParameter =
       makeParameter "format" "Target" "Image stack" BasicType.String
 
@@ -231,13 +228,7 @@ module BuiltInCatalog =
       "Changes the shape of a UInt8 binary mask using a spherical local neighborhood.\n\nBinary morphology expects a 0/1 UInt8 image: 0 is background and 1 is foreground. Erode removes foreground pixels near object boundaries and can break thin connections. Dilate expands foreground regions and can close small gaps. Opening is erosion followed by dilation and tends to remove small foreground objects. Closing is dilation followed by erosion and tends to fill small background gaps.\n\nThe radius controls the sphere size."
 
   let private connectedComponentsDescription =
-      "Labels connected foreground regions in a binary mask.\n\nThe output image stores an integer label for each component, with background left as zero. The count output reports how many local components were found before any later global relabeling.\n\nUse componentTranslationTable and collapseComponentLabels when labels need to be made consistent across streamed slabs."
-
-  let private relabelComponentsDescription =
-      "Renumbers connected-component labels and removes components below a chosen size.\n\nThis is used after connectedComponents when small labeled objects should be discarded and the remaining labels should be compacted. The minimum object size is measured in voxels.\n\nFor direct cleanup of binary masks, removeSmallObjects is usually the simpler box."
-
-  let private collapseLabelsDescription =
-      "Applies a connected-component translation table to a labeled image stream.\n\nUse it after componentTranslationTable to turn slab-local labels into consistent whole-stack labels. Background remains zero, while labels that belong to the same physical object are mapped to the same final value.\n\nThis is part of the connected-component workflow for larger-than-memory stacks."
+      "Labels connected foreground regions in a UInt8 binary mask with the Chunk SAUF implementation.\n\nThe output image stores UInt32 labels, with background left as zero. Use the optional window size when the stack should be processed through ParallelCollect chunks."
 
   let private permuteAxesDescription =
       "Reorders the x, y, and z axes of a stack.\n\nUse this when detector data or intermediate results need a different orientation, for example turning z into x or swapping x and y. Axis permutation can require chunked access because changing the z-axis changes which pixels belong to each output slice.\n\nTile size controls the working block size used during the transpose."
@@ -493,34 +484,6 @@ module BuiltInCatalog =
             makeParameter "yAxis" "Y axis" "1" (BasicType.Numeric Int32)
             makeParameter "xAxis" "X axis" "2" (BasicType.Numeric Int32) ] }
 
-  let makeGenericReadSlab () =
-    { Id = "ReadSlab"
-      DisplayName = "readSlab"
-      Category = "Sources / Sinks"
-      Summary = "Read chunked stack files as a normal 2D slice stream."
-      Description = "Reads chunk files produced by writeChunks, then serves their 2D slices to the pipeline. Use the same format and suffix that were used when writing the chunk files; chunk filenames encode x/y/z chunk positions."
-      Aliases = [ "slab"; "chunks"; "input"; "tiff"; "file"; "UInt8"; "Float64"; "type" ]
-      Inputs = []
-      Outputs =
-          [ makePort "Float64" imageFloat64
-            makePort "ChunkInfo" chunkInfo ]
-      Parameters =
-          [ availableMemoryParameter
-            makeParameter "type" "Type" "Float64" BasicType.String
-            readSlabFormatParameter
-            makeParameter "input" "Input" "input" BasicType.String
-            suffixParameter ".tiff"
-            makeParameter "slabDepth" "Slab depth" "8" (BasicType.Numeric UInt32)
-            makeParameter "multiscaleIndex" "Multiscale index" "0" (BasicType.Numeric Int32)
-            makeParameter "datasetIndex" "Dataset index" "0" (BasicType.Numeric Int32)
-            makeParameter "timepoint" "Timepoint" "0" (BasicType.Numeric Int32)
-            makeParameter "channel" "Channel" "0" (BasicType.Numeric Int32)
-            makeParameter "maxParallelChunks" "Max parallel chunks" "0" (BasicType.Numeric Int32)
-            makeParameter "datasetPath" "Dataset path" "/entry/data/data" BasicType.String
-            makeParameter "frameAxis" "Frame axis" "0" (BasicType.Numeric Int32)
-            makeParameter "yAxis" "Y axis" "1" (BasicType.Numeric Int32)
-            makeParameter "xAxis" "X axis" "2" (BasicType.Numeric Int32) ] }
-
   let makeGenericCast () =
     { Id = "Cast"
       DisplayName = "cast"
@@ -749,8 +712,6 @@ module BuiltInCatalog =
 
         makeGenericReadRange()
 
-        makeGenericReadSlab()
-
         { Id = "ReadPointSet"
           DisplayName = "readPointSet"
           Category = "Sources / Sinks"
@@ -968,19 +929,6 @@ module BuiltInCatalog =
                 makeParameter "frameAxis" "Frame axis" "0" (BasicType.Numeric Int32)
                 makeParameter "yAxis" "Y axis" "1" (BasicType.Numeric Int32)
                 makeParameter "xAxis" "X axis" "2" (BasicType.Numeric Int32) ] }
-
-        { Id = "WriteSlabSlices"
-          DisplayName = "writeSlabSlices"
-          Category = "Sources / Sinks"
-          Summary = "Write connected-component label slabs slice-by-slice and pass labels plus object counts through unchanged."
-          Description = "Writes connected-component label slabs slice-by-slice and passes the labels plus object counts onward. MetaImage (.mha/.mhd) is the safest default for label data because it supports large integer scalar images."
-          Aliases = [ "output"; "save"; "slabs"; "labels"; "connected"; "components"; "side effect" ]
-          Inputs = [ makePort "Labels + count" connectedComponentLabels ]
-          Outputs = [ makePort "Labels + count" connectedComponentLabels ]
-          Parameters =
-              [ makeParameter "output" "Output" "tmp" BasicType.String
-                suffixParameter ".mha"
-                makeParameter "windowSize" "Window size" "8" (BasicType.Numeric UInt32) ] }
 
         { Id = "WriteChunks"
           DisplayName = "writeChunks"
@@ -1963,45 +1911,6 @@ module BuiltInCatalog =
                 makeParameter "lower" "Lower" "128.0" (BasicType.Numeric Float64)
                 makeParameter "upper" "Upper" "infinity" (BasicType.Numeric Float64) ] }
 
-        { Id = "WindowSlabRoundtrip"
-          DisplayName = "windowSlabRoundtrip"
-          Category = "Windowing"
-          Summary = "Pass an image stream through explicit window-to-slab and slab-to-window conversion."
-          Description = "Diagnostic/probing stage for measuring explicit window, slab, and flatten costs around z-agnostic image operations."
-          Aliases = [ "window"; "slab"; "roundtrip"; "identity"; "probe" ]
-          Inputs = [ makePort "Float64" imageFloat64 ]
-          Outputs = [ makePort "Float64" imageFloat64 ]
-          Parameters =
-              [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "windowSize" "Window size" "5u" (BasicType.Numeric UInt32) ] }
-
-        { Id = "WindowedCast"
-          DisplayName = "windowedCast"
-          Category = "Windowing"
-          Summary = "Cast an image stream while explicitly passing through a z-window slab."
-          Description = "Diagnostic/probing stage for comparing z-agnostic cast execution on slabs against slice-wise execution."
-          Aliases = [ "window"; "slab"; "cast"; "probe" ]
-          Inputs = [ makePort "Float64" imageFloat64 ]
-          Outputs = [ makePort "UInt8" imageUInt8 ]
-          Parameters =
-              [ makeParameter "sourceType" "Source type" "Float64" BasicType.String
-                makeParameter "targetType" "Target type" "UInt8" BasicType.String
-                makeParameter "windowSize" "Window size" "5u" (BasicType.Numeric UInt32) ] }
-
-        { Id = "WindowedThreshold"
-          DisplayName = "windowedThreshold"
-          Category = "Windowing"
-          Summary = "Threshold an image stream while explicitly passing through a z-window slab."
-          Description = "Diagnostic/probing stage for comparing z-agnostic threshold execution on slabs against slice-wise execution."
-          Aliases = [ "window"; "slab"; "threshold"; "probe" ]
-          Inputs = [ makePort "Float64" imageFloat64 ]
-          Outputs = [ makePort "UInt8" imageUInt8 ]
-          Parameters =
-              [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "lower" "Lower" "128.0" (BasicType.Numeric Float64)
-                makeParameter "upper" "Upper" "infinity" (BasicType.Numeric Float64)
-                makeParameter "windowSize" "Window size" "5u" (BasicType.Numeric UInt32) ] }
-
         { Id = "Erode"
           DisplayName = "erode"
           Category = "Binary Morphology"
@@ -2163,18 +2072,6 @@ module BuiltInCatalog =
           Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters = [] }
 
-        { Id = "RelabelComponents"
-          DisplayName = "relabelComponents"
-          Category = "Binary Morphology"
-          Summary = "Relabel connected-component labels and remove small components."
-          Description = relabelComponentsDescription
-          Aliases = [ "components"; "labels"; "relabel"; "size"; "filter" ]
-          Inputs = [ makePort "UInt64" imageUInt64 ]
-          Outputs = [ makePort "UInt64" imageUInt64 ]
-          Parameters =
-              [ makeParameter "minimumObjectSize" "Minimum object size" "1" (BasicType.Numeric UInt32)
-                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
-
         { Id = "MarchingCubes"
           DisplayName = "marchingCubes"
           Category = "Geometry"
@@ -2329,28 +2226,6 @@ module BuiltInCatalog =
           Outputs = [ makePort "Threshold: Float64" (Scalar(BasicType.Numeric Float64)) ]
           Parameters =
               [ makeParameter "histogram" "Histogram" "" BasicType.Map ] }
-
-        { Id = "ComponentTranslationTable"
-          DisplayName = "componentTranslationTable"
-          Category = "Binary Morphology"
-          Summary = "Reduce connected-component label slabs to a translation table with streaming component statistics."
-          Description = "Consumes connected-component label slabs and their local object counts. It records label equivalences across slab boundaries, accumulates per-slab voxel counts and bounding boxes on the fly, then reduces both the label mapping and statistics to the final whole-stack component labels. The resulting table can be used by collapseComponentLabels and also contains global component statistics."
-          Aliases = [ "connected"; "components"; "translation"; "table"; "statistics"; "stats"; "reducer"; "labels" ]
-          Inputs = [ makePort "Labels + count" connectedComponentLabels ]
-          Outputs = [ makePort "TranslationTable" translationTable ]
-          Parameters = [ makeParameter "windowSize" "Window size" "None" BasicType.String ] }
-
-        { Id = "CollapseComponentLabels"
-          DisplayName = "collapseComponentLabels"
-          Category = "Binary Morphology"
-          Summary = "Collapse chunk-local component labels using a translation table."
-          Description = collapseLabelsDescription
-          Aliases = [ "connected"; "components"; "translation"; "table"; "update"; "labels" ]
-          Inputs = [ makePort "UInt64" imageUInt64 ]
-          Outputs = [ makePort "UInt64" imageUInt64 ]
-          Parameters =
-              [ makeParameter "windowSize" "Window size" "None" BasicType.String
-                makeParameter "translationTable" "Translation table" "" BasicType.String ] }
 
         { Id = "LabelContour"
           DisplayName = "labelContour"

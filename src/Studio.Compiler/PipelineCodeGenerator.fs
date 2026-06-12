@@ -460,9 +460,6 @@ module PipelineCodeGenerator =
            $"{bindingName}.size[2]" |]
         |> Array.tryItem portIndex
 
-    let private isTranslationTableNode (node: SavedNode) =
-        node.FunctionId = "ComponentTranslationTable"
-
     let private isHistogramDataNode (node: SavedNode) =
         node.FunctionId = "Histogram"
         || node.FunctionId = "ImHistogramData"
@@ -505,7 +502,6 @@ module PipelineCodeGenerator =
         | "Read"
         | "ReadRandom"
         | "ReadRange" -> readFormat node = "OME-Zarr" || readFormat node = "NeXus/HDF5"
-        | "ReadSlab" -> true
         | _ -> false
 
     let private quantileFieldExpression bindingName portIndex =
@@ -1205,29 +1201,6 @@ module PipelineCodeGenerator =
                 $"|> readNexusRange<{pixelType}> {first} {step} {last} {input} {datasetPath} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
             | _ ->
                 $"|> readChunkSlicesRange<{pixelType}> {first} {step} {last} {input} {suffix}" |> sourcePrefix availableMemory
-        | "ReadSlab" ->
-            let availableMemory = parameterValue "availableMemory"
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let format = savedParamValue "format" node
-            let input = quotedParameter "input"
-            let suffix = quotedParameterOrDefault "suffix" ".tiff"
-            let slabDepth = parameterValue "slabDepth"
-            let multiscaleIndex = parameterValue "multiscaleIndex"
-            let datasetIndex = parameterValue "datasetIndex"
-            let timepoint = parameterValue "timepoint"
-            let channel = parameterValue "channel"
-            let maxParallelChunks = parameterValue "maxParallelChunks"
-            let datasetPath = quotedParameter "datasetPath"
-            let frameAxis = parameterValue "frameAxis"
-            let yAxis = parameterValue "yAxis"
-            let xAxis = parameterValue "xAxis"
-            match format with
-            | "OME-Zarr" ->
-                $"|> readZarrSlab<{pixelType}> {input} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
-            | "NeXus/HDF5" ->
-                $"|> readNexusSlab<{pixelType}> {input} {datasetPath} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
-            | _ ->
-                $"|> readSlab<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
         | "ReadPointSet" ->
             let availableMemory = parameterValue "availableMemory"
             let input = quotedParameter "input"
@@ -1338,11 +1311,6 @@ module PipelineCodeGenerator =
             $">=> writeThrough {output} {suffix}"
         | "Ignore" ->
             ""
-        | "WriteSlabSlices" ->
-            let output = quotedParameter "output"
-            let suffix = quotedParameter "suffix"
-            let windowSize = parameterValue "windowSize" |> uintWindowOrDefault "1u"
-            $">=> teeFst (writeSlabSlices {output} {suffix} {windowSize})"
         | "Tap" ->
             let tapPrintNode =
                 graph.Edges
@@ -1779,21 +1747,6 @@ module PipelineCodeGenerator =
             let lower = parameterValue "lower"
             let upper = parameterValue "upper"
             $">=> chunkThresholdRange<{pixelType}> {lower} {upper}"
-        | "WindowSlabRoundtrip" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let windowSize = parameterValue "windowSize"
-            $">=> windowSlabRoundtrip<{pixelType}> {windowSize}"
-        | "WindowedCast" ->
-            let sourceType = pixelTypeNameFromParameter "sourceType" "Float64" node
-            let targetType = pixelTypeNameFromParameter "targetType" "UInt8" node
-            let windowSize = parameterValue "windowSize"
-            $">=> windowedCast<{sourceType}, {targetType}> {windowSize}"
-        | "WindowedThreshold" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let lower = parameterValue "lower"
-            let upper = parameterValue "upper"
-            let windowSize = parameterValue "windowSize"
-            $">=> windowedThreshold<{pixelType}> {windowSize} {lower} {upper}"
         | "Erode" ->
             let radius = parameterValue "radius"
             $">=> erode {radius}"
@@ -1825,10 +1778,6 @@ module PipelineCodeGenerator =
             else
                 let windowSize = numericLiteral Int32 windowSize
                 $">=> chunkConnectedComponentsSauf3DUInt8UInt32ParallelCollect {windowSize} System.Environment.ProcessorCount"
-        | "RelabelComponents" ->
-            let minimumObjectSize = parameterValue "minimumObjectSize"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> relabelComponents {minimumObjectSize} {windowSize}"
         | "MarchingCubes" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let surfaceValue = parameterValue "surfaceValue"
@@ -1902,13 +1851,6 @@ module PipelineCodeGenerator =
             let bandRadius = parameterValue "bandRadius"
             let stride = parameterValue "stride"
             $">=> chunkSignedDistanceBandNativeParallelCollect {bandRadius} {stride} 1"
-        | "ComponentTranslationTable" ->
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> makeConnectedComponentTranslationTable {windowSize}"
-        | "CollapseComponentLabels" ->
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            let translationTable = parameterValue "translationTable"
-            $">=> updateConnectedComponents {windowSize} {translationTable}"
         | "PermuteAxes" ->
             let axes = parameterValue "axes" |> intArray3Literal
             $">=> chunkPermuteAxes {axes}"
@@ -2002,20 +1944,8 @@ module PipelineCodeGenerator =
             Array.concat [ producerNames; singleValueNames; expandNames ]
             |> Map.ofArray
 
-        let translationTableNodesWithLinkedOutputs =
-            graph.Edges
-            |> Array.choose (fun edge ->
-                if edge.FromKind = "reducerOutput" && edge.ToKind = "parameterInput" then
-                    nodesById |> Map.tryFind edge.FromNode
-                else
-                    None)
-            |> Array.filter isTranslationTableNode
-            |> Array.distinctBy _.Id
-
         let translationTableNamesByNodeId =
-            translationTableNodesWithLinkedOutputs
-            |> Array.mapi (fun index node -> node.Id, $"TranslationTable{index}")
-            |> Map.ofArray
+            Map.empty<string, string>
 
         let histogramNodesWithLinkedOutputs =
             graph.Edges
@@ -2244,7 +2174,6 @@ module PipelineCodeGenerator =
         let validationError =
             let isReducerOutputNode (node: SavedNode) =
                 isSingleValueReducerNode node
-                || isTranslationTableNode node
                 || isHistogramDataNode node
                 || isQuantilesNode node
                 || isSerialVolumeGeometryNode node
@@ -2473,8 +2402,6 @@ module PipelineCodeGenerator =
                     | "AffineRegistration"
                     | "SerialEstBoundingBox" ->
                         $"{expression}{newLine}|> drain"
-                    | "ComponentTranslationTable" ->
-                        $"{expression}{newLine}|> drain"
                     | "Histogram" ->
                         $"{expression}{newLine}|> drain"
                     | "ImHistogramData" ->
@@ -2646,15 +2573,7 @@ module PipelineCodeGenerator =
                       Text = text })
 
             let translationTableBindings =
-                translationTableNodesWithLinkedOutputs
-                |> Array.map (fun node ->
-                    let name = translationTableNamesByNodeId |> Map.find node.Id
-                    let expression = pipelineExpression Set.empty node
-                    let body = indentBlock 4 $"{expression}{newLine}|> drain"
-
-                    { Name = name
-                      Dependencies = pipelineBindingDependencies Set.empty node |> Set.remove name
-                      Text = $"let {name} ={newLine}{body}" })
+                Array.empty
 
             let histogramBindings =
                 histogramNodesWithLinkedOutputs
@@ -2855,8 +2774,7 @@ module PipelineCodeGenerator =
                               Dependencies = parameterBindingDependencies node |> Set.remove name
                               Text = text }
                         | "Read"
-                        | "ReadRandom"
-                        | "ReadSlab" ->
+                        | "ReadRandom" ->
                             let name = chunkInfoNamesByNodeId |> Map.find node.Id
                             let input = stringArgument "input"
                             let suffix = stringArgument "suffix"

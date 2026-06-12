@@ -74,7 +74,7 @@ let catalogSuite =
     testList "Studio.Graph catalog" [
         testCase "catalog exposes expected generic functions" <| fun _ ->
             let ids = BuiltInCatalog.orderedFunctions |> List.map _.Id
-            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "ReadRandom"; "EstimateHistogram"; "ReadRange"; "ReadSlab"; "ReadPointSet"; "Zero"; "CoordinateX"; "CoordinateY"; "CoordinateZ"; "NormalNoise"; "SaltAndPepperNoise"; "ShotNoise"; "Write"; "WriteChunks"; "WriteMesh"; "WritePointSet"; "WriteMatrix"; "Expand"; "GetChunkInfo"; "GetZarrInfo"; "GetNexusInfo"; "Resize"; "Resample"; "CreatePadding"; "Crop"; "MarchingCubes"; "SurfaceArea"; "DogKeypoints"; "SiftKeypoints"; "LogBlobKeypoints"; "HessianKeypoints"; "Forstner3DKeypoints"; "PhaseCongruencyKeypoints"; "PointPairDistances"; "AffineRegistration"; "StreamConnectedObjects"; "MeasureObjects"; "ObjectSizes"; "ObjectSizeStats"; "PaintObjects"; "PaintObjectsCropped"; "ImageOpImage"; "ComputeStats"; "FitBiasModel"; "FitBiasModelMasked"; "CorrectBias"; "CorrectBiasMasked"; "SerialPolynomialBiasCorrect"; "SerialEstTrans"; "SerialApplyTrans"; "SerialEstBoundingBox"; "Volume"; "Quantiles"; "Chart"; "SumProjection"; "ImHistogram"; "ImHistogramData"; "Histogram"] "Important Studio functions should be in the palette catalog."
+            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "ReadRandom"; "EstimateHistogram"; "ReadRange"; "ReadPointSet"; "Zero"; "CoordinateX"; "CoordinateY"; "CoordinateZ"; "NormalNoise"; "SaltAndPepperNoise"; "ShotNoise"; "Write"; "WriteChunks"; "WriteMesh"; "WritePointSet"; "WriteMatrix"; "Expand"; "GetChunkInfo"; "GetZarrInfo"; "GetNexusInfo"; "Resize"; "Resample"; "CreatePadding"; "Crop"; "MarchingCubes"; "SurfaceArea"; "DogKeypoints"; "SiftKeypoints"; "LogBlobKeypoints"; "HessianKeypoints"; "Forstner3DKeypoints"; "PhaseCongruencyKeypoints"; "PointPairDistances"; "AffineRegistration"; "StreamConnectedObjects"; "MeasureObjects"; "ObjectSizes"; "ObjectSizeStats"; "PaintObjects"; "PaintObjectsCropped"; "ImageOpImage"; "ComputeStats"; "FitBiasModel"; "FitBiasModelMasked"; "CorrectBias"; "CorrectBiasMasked"; "SerialPolynomialBiasCorrect"; "SerialEstTrans"; "SerialApplyTrans"; "SerialEstBoundingBox"; "Volume"; "Quantiles"; "Chart"; "SumProjection"; "ImHistogram"; "ImHistogramData"; "Histogram"] "Important Studio functions should be in the palette catalog."
             Expect.isFalse (ids |> List.contains "WriteVolume") "Volume-file writing should be selected from the combined Write box."
             Expect.isFalse (ids |> List.contains "WriteZarr") "Zarr writing should be selected from the combined Write box."
             Expect.isFalse (ids |> List.contains "WriteNexus") "NeXus writing should be selected from the combined Write box."
@@ -85,7 +85,11 @@ let catalogSuite =
             Expect.equal (BuiltInCatalog.find "CoordinateX").Outputs.[0].Type (PortType.Image NumericType.Float64) "coordinateX should expose its fixed Float64 image output."
             Expect.equal (BuiltInCatalog.find "CoordinateY").Outputs.[0].Type (PortType.Image NumericType.Float64) "coordinateY should expose its fixed Float64 image output."
             Expect.equal (BuiltInCatalog.find "CoordinateZ").Outputs.[0].Type (PortType.Image NumericType.Float64) "coordinateZ should expose its fixed Float64 image output."
-            Expect.containsAll ids ["Convolve"; "RelabelComponents"; "SignedDistanceBand"; "OtsuThresholdFromHistogram"; "MomentsThresholdFromHistogram"; "ResampleAffine"] "The StackProcessing DSL algorithms requested for Studio should be in the palette catalog."
+            Expect.containsAll ids ["Convolve"; "SignedDistanceBand"; "OtsuThresholdFromHistogram"; "MomentsThresholdFromHistogram"; "ResampleAffine"] "The StackProcessing DSL algorithms requested for Studio should be in the palette catalog."
+            Expect.isFalse (ids |> List.contains "ReadSlab") "ReadSlab is retired from the Chunk Studio surface."
+            Expect.isFalse (ids |> List.contains "RelabelComponents") "Legacy connected-component relabeling is retired from the Chunk Studio surface."
+            Expect.isFalse (ids |> List.contains "ComponentTranslationTable") "Legacy connected-component translation tables are retired from the Chunk Studio surface."
+            Expect.isFalse (ids |> List.contains "CollapseComponentLabels") "Legacy connected-component label collapse is retired from the Chunk Studio surface."
             Expect.isFalse (ids |> List.contains "BinaryFillHoles") "binaryFillHoles is a whole-stack SimpleITK operation and should not be exposed as an LMIP Studio box."
             Expect.isFalse (ids |> List.contains "SignedDistanceMap") "signedDistanceMap is the lower-level whole-image name; Studio should expose signedDistanceBand."
             Expect.isFalse (ids |> List.contains "Watershed") "watershed is not exposed as an LMIP Studio box because basin labels are not local to independent z-windows."
@@ -188,26 +192,26 @@ let catalogSuite =
 
             Expect.equal fromReIm.Inputs.[0].Type (PortType.Image Float64) "toComplex should consume a Float64 real image."
             Expect.equal fromReIm.Inputs.[1].Type (PortType.Image Float64) "toComplex should consume a Float64 imaginary image."
-            Expect.equal fromReIm.Outputs.[0].Type (PortType.Image Complex) "toComplex should emit a native complex image."
-            Expect.equal polar.Outputs.[0].Type (PortType.Image Complex) "polarToComplex should emit a native complex image."
+            Expect.equal fromReIm.Outputs.[0].Type (PortType.Image Complex64) "toComplex should emit a compact Complex64 image."
+            Expect.equal polar.Outputs.[0].Type (PortType.Image Complex64) "polarToComplex should emit a compact Complex64 image."
             Expect.equal re.Outputs.[0].Type (PortType.Image Float64) "Re should emit Float64."
             Expect.equal im.Outputs.[0].Type (PortType.Image Float64) "Im should emit Float64."
             Expect.equal modulus.Outputs.[0].Type (PortType.Image Float64) "modulus should emit Float64."
             Expect.equal arg.Outputs.[0].Type (PortType.Image Float64) "arg should emit Float64."
-            Expect.equal conjugate.Inputs.[0].Type (PortType.Image Complex) "conjugate should consume Complex."
-            Expect.equal conjugate.Outputs.[0].Type (PortType.Image Complex) "conjugate should emit Complex."
+            Expect.equal conjugate.Inputs.[0].Type (PortType.Image Complex64) "conjugate should consume Complex64."
+            Expect.equal conjugate.Outputs.[0].Type (PortType.Image Complex64) "conjugate should emit Complex64."
 
         testCase "fourier catalog uses scalar complex and chunk parameters" <| fun _ ->
             let fft = BuiltInCatalog.find "FFT"
             let invFFT = BuiltInCatalog.find "InvFFT"
             let shiftFFT = BuiltInCatalog.find "ShiftFFT"
 
-            Expect.equal fft.Inputs.[0].Type (PortType.Image Number) "FFT should consume scalar numeric images."
-            Expect.equal fft.Outputs.[0].Type (PortType.Image Complex) "FFT should emit complex slices."
-            Expect.equal invFFT.Inputs.[0].Type (PortType.Image Complex) "invFFT should consume complex slices."
-            Expect.equal invFFT.Outputs.[0].Type (PortType.Image Float64) "invFFT should emit Float64 slices."
-            Expect.equal shiftFFT.Inputs.[0].Type (PortType.Image Complex) "shiftFFT should consume complex slices."
-            Expect.equal shiftFFT.Outputs.[0].Type (PortType.Image Complex) "shiftFFT should emit complex slices."
+            Expect.equal fft.Inputs.[0].Type (PortType.Image Float32) "FFT should consume Float32 chunk slices."
+            Expect.equal fft.Outputs.[0].Type (PortType.Image Complex64) "FFT should emit compact Complex64 slices."
+            Expect.equal invFFT.Inputs.[0].Type (PortType.Image Complex64) "invFFT should consume Complex64 slices."
+            Expect.equal invFFT.Outputs.[0].Type (PortType.Image Float32) "invFFT should emit Float32 slices."
+            Expect.equal shiftFFT.Inputs.[0].Type (PortType.Image Complex64) "shiftFFT should consume Complex64 slices."
+            Expect.equal shiftFFT.Outputs.[0].Type (PortType.Image Complex64) "shiftFFT should emit Complex64 slices."
             Expect.containsAll (fft.Parameters |> List.map _.Key) [ "type"; "chunkX"; "chunkY"; "chunkZ" ] "FFT should expose type and chunk controls."
 
         testCase "file directory source emits a string scalar" <| fun _ ->
@@ -237,11 +241,9 @@ let catalogSuite =
 
         testCase "connected component catalog exposes direct Chunk label images" <| fun _ ->
             let connected = BuiltInCatalog.find "ConnectedComponents"
-            let table = BuiltInCatalog.find "ComponentTranslationTable"
 
             Expect.equal connected.Outputs.[0].Type (Image UInt32) "Connected components should stream compact UInt32 label slices directly."
-            Expect.equal table.Inputs.[0].Type (Tuple(Image UInt64, Scalar(BasicType.Numeric UInt64))) "The legacy translation-table reducer still consumes connected-component pairs."
-            Expect.equal table.Outputs.[0].Type (Custom "TranslationTable") "Translation-table output should be a custom parameter value."
+            Expect.throws (fun () -> BuiltInCatalog.find "ComponentTranslationTable" |> ignore) "The legacy translation-table reducer should not be exposed."
 
         testCase "find fails clearly for missing function" <| fun _ ->
             Expect.throws (fun () -> BuiltInCatalog.find "MissingFunction" |> ignore) "Missing function lookup should fail."

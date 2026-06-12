@@ -18,8 +18,6 @@ type StageTimeCoefficients = SlimPipeline.StageTimeCoefficients
 
 type Window<'T> = SlimPipeline.Window<'T>
 
-type Slab<'T when 'T: equality> = StackCore.Slab<'T>
-
 type ChunkIndex = StackCore.ChunkIndex
 
 type ChunkLayout = StackCore.ChunkLayout
@@ -317,24 +315,6 @@ val getZarrInfo: (string -> int -> int -> StackIO.ChunkInfo)
 val getNexusInfo: (string -> string -> int -> int -> int -> StackIO.ChunkInfo)
 
 val getChunkFilename: (string -> string -> int -> int -> int -> string)
-
-val readSlabStacked<'T when 'T: equality> :
-  (string ->
-     string ->
-     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
-    when 'T: equality
-
-val readSlabAsWindows<'T when 'T: equality> :
-  (string ->
-     string ->
-     SlimPipeline.Plan<unit,unit> ->
-     SlimPipeline.Plan<unit,StackCore.Image<'T> list>) when 'T: equality
-
-val readSlab<'T when 'T: equality> :
-  (string ->
-     string ->
-     SlimPipeline.Plan<unit,unit> -> SlimPipeline.Plan<unit,StackCore.Image<'T>>)
-    when 'T: equality
 
 val readChunkSlices<'T
                       when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
@@ -1528,11 +1508,6 @@ val writeChunks:
      uint -> uint -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
 
-val writeSlabSlices<'T when 'T: equality> :
-  (string ->
-     string -> uint -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
-    when 'T: equality
-
 val writePointSet:
   (string -> string -> StackCore.Stage<StackPoints.PointSet,unit>)
 
@@ -2667,61 +2642,9 @@ val threshold:
   (float -> float -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<uint8>>)
     when 'a: equality
 
-val slicesToSlabs:
-  chunkDepth: uint ->
-    SlimPipeline.Stage<StackCore.Image<'T>,StackCore.Image<'T>>
-    when 'T: equality
-
-val windowToSlab<'T when 'T: equality> :
-  StackCore.Stage<StackCore.Window<StackCore.Image<'T>>,StackCore.Image<'T>>
-    when 'T: equality
-
-val windowToSlabWithRange<'T when 'T: equality> :
-  StackCore.Stage<StackCore.Window<StackCore.Image<'T>>,StackCore.Slab<'T>>
-    when 'T: equality
-
-val mapSlabWithStage<'S,'T when 'S: equality and 'T: equality> :
-  (StackCore.Stage<StackCore.Image<'S>,StackCore.Image<'T>> ->
-     StackCore.Stage<StackCore.Slab<'S>,StackCore.Slab<'T>>)
-    when 'S: equality and 'T: equality
-
-val slabToWindow<'T when 'T: equality> :
-  StackCore.Stage<StackCore.Image<'T>,StackCore.Window<StackCore.Image<'T>>>
-    when 'T: equality
-
-val slabWithRangeToWindow<'T when 'T: equality> :
-  StackCore.Stage<StackCore.Slab<'T>,StackCore.Window<StackCore.Image<'T>>>
-    when 'T: equality
-
 val windowSkipTakeM:
   outputStart: uint ->
     outputCount: uint32 -> StackCore.Stage<StackCore.Window<'a>,'a list>
-
-val slabSkipTakeM<'T when 'T: equality> :
-  (uint ->
-     uint32 ->
-     StackCore.Stage<StackCore.Window<StackCore.Image<'T>>,
-                     StackCore.Image<'T> list>) when 'T: equality
-
-val windowedViaSlab<'S,'T when 'S: equality and 'T: equality> :
-  (uint ->
-     StackCore.Stage<StackCore.Image<'S>,StackCore.Image<'T>> ->
-     StackCore.Stage<StackCore.Image<'S>,StackCore.Image<'T>>)
-    when 'S: equality and 'T: equality
-
-val windowSlabRoundtrip<'T when 'T: equality> :
-  (uint -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
-    when 'T: equality
-
-val windowedCast<'S,'T when 'S: equality and 'T: equality> :
-  (uint -> StackCore.Stage<StackCore.Image<'S>,StackCore.Image<'T>>)
-    when 'S: equality and 'T: equality
-
-val windowedThreshold<'T when 'T: equality> :
-  (uint ->
-     float ->
-     float -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<uint8>>)
-    when 'T: equality
 
 val addNormalNoise:
   (float -> float -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
@@ -2843,3 +2766,4 @@ val permuteAxes:
   (uint * uint * uint ->
      uint -> StackCore.Stage<StackCore.Image<'a>,StackCore.Image<'a>>)
     when 'a: equality
+

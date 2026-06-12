@@ -230,9 +230,9 @@ let fftShiftZComplex64InterleavedViaTempChunks : Stage<Chunk<float32>, Chunk<flo
                             yield output
                             File.Delete(path)
                         with
-                        | _ ->
+                        | ex ->
                             Chunk.decRef output
-                            reraise()
+                            raise ex
             finally
                 cleanup()
         }

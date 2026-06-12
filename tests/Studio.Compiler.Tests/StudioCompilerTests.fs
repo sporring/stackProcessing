@@ -508,12 +508,13 @@ let generatorSuite =
             Expect.stringContains code ">=> addShotNoise 2.0" "AddShotNoise should lower with scale."
             Expect.stringContains code ">=> addSpeckleNoise 0.5" "AddSpeckleNoise should lower with std."
 
-        testCase "chunk read and write boxes lower to chunk DSL functions" <| fun _ ->
+        testCase "slice read and chunk write boxes lower to chunk DSL functions" <| fun _ ->
             let read =
-                node "read" "ReadSlab"
+                node "read" "Read"
                     [ p "availableMemory" "1073741824" false
                       p "type" "UInt8" false
-                      p "input" "chunks" false
+                      p "format" "Image stack" false
+                      p "input" "input" false
                       p "suffix" ".mha" false ]
 
             let write =
@@ -528,7 +529,7 @@ let generatorSuite =
                 graph [ read; write ] [ edge "read" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code "|> readSlab<uint8> \"chunks\" \".mha\"" "ReadSlab should generate the slab reader."
+            Expect.stringContains code "|> readChunkSlices<uint8> \"input\" \".mha\"" "Read should generate the Chunk slice reader."
             Expect.stringContains code ">=> writeChunks \"chunks-out\" \".mha\" 12u 13u 14u" "WriteChunks should generate the chunk writer wrapper."
 
             let expand =
@@ -1466,10 +1467,6 @@ let generatorSuite =
                       p "input" "input" false
                       p "suffix" ".tiff" false ]
 
-            let relabel =
-                node "relabel" "RelabelComponents"
-                    [ p "minimumObjectSize" "10" false
-                      p "windowSize" "5" false ]
             let signed =
                 node "signed" "SignedDistanceBand"
                     [ p "bandRadius" "9" false
@@ -1481,14 +1478,12 @@ let generatorSuite =
 
             let code =
                 graph
-                    [ read; relabel; signed; write ]
-                    [ edge "read" "output" 0 "relabel" "input" 0
-                      edge "relabel" "output" 0 "signed" "input" 0
+                    [ read; signed; write ]
+                    [ edge "read" "output" 0 "signed" "input" 0
                       edge "signed" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> relabelComponents 10u (Some 5u)" "relabelComponents should lower with size threshold and window size."
-            Expect.stringContains code ">=> signedDistanceBand 9u 5u" "signedDistanceBand should lower with band radius and stride."
+            Expect.stringContains code ">=> chunkSignedDistanceBandNativeParallelCollect 9u 5u 1" "signedDistanceBand should lower with band radius and stride."
 
         testCase "convolve lowers to StackProcessing stage" <| fun _ ->
             let readImage =

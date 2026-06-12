@@ -127,35 +127,14 @@ implementation before Chunk can act as the regular StackProcessing backbone.
 
 - Stack-level facade functions that still expose only `Image<>` stages should
   gain Chunk-facing names or overloads once the API shape is clearer.
-- Studio-flush smoke test currently exposes these Image-only islands when the
-  default source/sink is switched to Chunk:
-  - slab TIFF readers (`readSlab`) and a Chunk-native policy for formerly
-    slab-shaped workflows
-  - image stats, volume reducers, histogram quantiles/equalization, and the
-    remaining scalar/vector chart or display policies
-  - connected-components relabel/update translation-table Studio paths still
-    use Image stages; the direct Chunk SAUF label stage exists, but the old
-    labels-plus-object-count tuple shape is intentionally not recreated yet
-  - full 3D FFT composition and complex IO/write decisions still need Chunk
-    policy beyond the current low-level XY FFT round-trip, temp-chunk-backed
-    3D FFT shift, and complex64-interleaved scalar helpers
-  - speckle noise, bilateral filtering, grayscale morphology, label contour,
-    and change-label are shelved and not being ported for now.
-- Slab bridges: `ofSlab` and `toSlab` need a Chunk-native shape. The current
-  `Slab<'T>` record contains an `Image<'T>`, so either the record should become
-  storage-polymorphic or a parallel `ChunkSlab<'T>` should be introduced.
-- Some geometric and resampling operations remain Image/ITK paths for now.
-  Affine resampling has a first simple Chunk-slice stage, but it still needs
-  optimization before it should be considered final.
-- The `samples/fft` round trip now uses the native Chunk XY FFT, temp-chunk-
-  backed 3D FFT shift, and inverse XY FFT for `Float32` chunks to
-  complex64-interleaved `Float32` storage. Full 3D FFT composition and complex
-  IO/write decisions still need Chunk policy.
-- Exact or ITK-backed neighbourhood filters still need either native Chunk
-  versions or explicit bridge decisions:
-  label contour and exact spherical morphology.
-- Stack/unstack still need a Chunk policy. The simple structural single-Chunk
-  transforms now live in `ChunkFunctions`.
+
+## Known Errors
+
+- `FFT`/`InvFFT` are currently experimental XY-only stages. The surrounding
+  Chunk plumbing, complex64-interleaved representation, 3D `fftshift`, and
+  sample graph are in place, but the actual transform is not a full 3D FFT
+  until the missing z-axis FFT pass is added after the current optimization
+  experiment.
 
 ## Sample And Graph Status
 
@@ -183,7 +162,7 @@ Chunk-upgraded DSL samples now include:
 - `samples/objectsMarchingCubes`
 - `samples/connectedComponents` for the hand-written DSL path. It now uses the
   Chunk SAUF relabel/stitch phase directly and writes relabelled `uint32`
-  label slices without `WriteSlabSlices` or a temporary MHA stack.
+  label slices without slab staging or a temporary MHA stack.
 - `samples/sumProjection`
 - `samples/signedDistanceBand`
 - `samples/laplacian`
@@ -209,17 +188,12 @@ Chunk-upgraded DSL samples now include:
 - `samples/serialBiasCorrect`
 - `samples/fillSmallHoles`
 - `samples/removeSmallObjects`
-- `samples/fft` for the first native Chunk XY FFT, temp-chunk-backed 3D
-  `fftshift`, and inverse XY FFT round trip.
+- `samples/fft` for the first native Chunk XY FFT, 3D `fftshift` through
+  temporary chunk files, and inverse XY FFT round trip.
 
 Studio JSON graphs that use the corresponding boxes lower through the new
 Chunk stages automatically; their box IDs are mostly unchanged because the
 compiler now selects Chunk-backed stages for those boxes.
-
-Deferred Chunk capabilities:
-
-- Full 3D FFT composition remains intentionally deferred; the `samples/fft`
-  JSON graph now covers the current Chunk XY FFT plus 3D `fftshift` round trip.
 
 ## Design Notes
 
@@ -233,4 +207,7 @@ Deferred Chunk capabilities:
   to vector lanes.
 - The bridge functions copy by design. They should be used at ITK or legacy
   Image boundaries, not inside hot chunk pipelines.
-- We are for the moment not porting recursive gaussian filter, speckle noise, bilateral filters
+- We are for the moment not porting recursive gaussian filter, speckle noise, bilateral filters, graylevel morphology
+- speckle noise, bilateral filtering, grayscale morphology, label contour,
+  exact spherical morphology, and change-label are shelved and not being
+  ported for now.

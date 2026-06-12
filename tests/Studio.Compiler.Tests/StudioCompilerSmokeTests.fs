@@ -191,14 +191,7 @@ let rec private sourceFor caseId portType =
           Kind = "output"
           Port = 0 }
     | PortType.Custom "TranslationTable" ->
-        let labels = sourceFor $"{caseId}_labels" BuiltInCatalog.connectedComponentLabels
-        let table = node $"source_{caseId}_table" "ComponentTranslationTable" [ p "windowSize" "3" false ]
-
-        { Nodes = labels.Nodes @ [ table ]
-          Edges = labels.Edges @ [ edge labels.NodeId labels.Kind labels.Port table.Id "input" 0 ]
-          NodeId = table.Id
-          Kind = "reducerOutput"
-          Port = 0 }
+        failwith "TranslationTable ports are not part of the Chunk Studio surface."
     | PortType.Custom "BiasModel" ->
         let image = imageSource $"{caseId}_bias_image" NumericType.Float64
         let model =
@@ -271,7 +264,7 @@ let rec private sourceFor caseId portType =
           Port = 0 }
     | PortType.Custom "ChunkInfo" ->
         let read =
-            node $"source_{caseId}_chunk_info_read" "ReadSlab"
+            node $"source_{caseId}_chunk_info_read" "Read"
                 [ p "availableMemory" "1073741824" false
                   p "type" "UInt8" false
                   p "format" "OME-Zarr" false
@@ -355,7 +348,6 @@ let private outputKindFor functionId portType =
     | "GetChunkInfo"
     | "GetZarrInfo"
     | "GetNexusInfo"
-    | "ComponentTranslationTable"
     | "SerialEstBoundingBox"
     | "ImHistogramData"
     | "EstimateHistogram"
@@ -446,8 +438,8 @@ let private sinkFor caseId functionId portType =
         [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_apply" "input" 0
           edge $"sink_{caseId}_apply" "output" 0 $"sink_{caseId}_write" "input" 0 ]
     | PortType.Tuple _ ->
-        [ node $"sink_{caseId}_table" "ComponentTranslationTable" [ p "windowSize" "3" false ] ],
-        [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_table" "input" 0 ]
+        [ node $"sink_{caseId}_print" "Print" [ p "format" "{input1}" false; p "input1" "" true ] ],
+        [ edge $"target_{caseId}" targetKind 0 $"sink_{caseId}_print" "parameterInput" 1 ]
     | PortType.Scalar _
     | PortType.Custom _ ->
         [ node $"sink_{caseId}_print" "Print" [ p "format" "{input1}" false; p "input1" "" true ] ],
@@ -496,7 +488,6 @@ let private graphForDefinition caseIndex (definition: Function) =
         match definition.Id with
         | "CorrectBias"
         | "CorrectBiasMasked" -> [ "model" ]
-        | "CollapseComponentLabels" -> [ "translationTable" ]
         | "HistogramEqualization"
         | "Quantiles"
         | "OtsuThresholdFromHistogram"
