@@ -17,14 +17,14 @@ let main arg =
             64u, 64u, 64u, "../tmp/erode"
 
     src
-    |> zero<uint8> width height depth
-    >=> addNormalNoise 128.0 50.0
-    >=> threshold 128.0 infinity
-    >=> erode radius 
+    |> chunkZero<float32> width height depth
+    >=> chunkAddNormalNoise<float32> 128.0 50.0
+    >=> chunkThresholdRange<float32> 128.0 infinity
+    >=> chunkBinaryErodeZonohedral radius
     //>=> dilate radius
     //>=> opening radius
     //>=> closing radius
-    >=> write output ".tiff"
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     0

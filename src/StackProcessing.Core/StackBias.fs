@@ -4,8 +4,6 @@ open System
 open System.Globalization
 open System.Runtime.InteropServices
 open FSharp.Control
-open Image
-open Image.InternalHelpers
 open SlimPipeline
 open StackCore
 
@@ -206,22 +204,6 @@ let private observePixelValues state (values: float[]) value =
 
     state.Count <- state.Count + 1UL
 
-let private ensureShape state (image: Image<'T>) =
-    let width = image.GetWidth()
-    let height = image.GetHeight()
-
-    match state.Width, state.Height with
-    | None, None ->
-        state.Width <- Some width
-        state.Height <- Some height
-    | Some expectedWidth, Some expectedHeight when expectedWidth = width && expectedHeight = height -> ()
-    | Some expectedWidth, Some expectedHeight ->
-        invalidOp $"Bias model fit expected {expectedWidth}x{expectedHeight} slices, got {width}x{height} at slice {image.index}."
-    | _ ->
-        invalidOp "Bias model fit has inconsistent shape state."
-
-    width, height
-
 let private ensureChunkShape state (chunk: Chunk<'T>) =
     let width, height, chunkDepth = chunk.Size
     if chunkDepth <> 1UL then
@@ -241,38 +223,6 @@ let private ensureChunkShape state (chunk: Chunk<'T>) =
         invalidOp "Bias model fit has inconsistent shape state."
 
     width, height
-
-let private addImageObservations state (image: Image<'T>) mask =
-    try
-        let width, height = ensureShape state image
-        let z = uint (max 0 image.index)
-
-        if z >= state.Depth then
-            invalidOp $"Bias model fit got slice index {image.index}, outside declared depth {state.Depth}."
-
-        let pixels = image.toFlatArray()
-        let maskPixels = mask |> Option.map (fun (maskImage: Image<uint8>) -> maskImage.toFlatArray())
-        let terms = state.Terms |> List.toArray
-        let xPowers = coordinatePowers width state.Order
-        let yPowers = coordinatePowers height state.Order
-        let zPowers = coordinatePowers state.Depth state.Order
-        let zIndex = int z
-
-        for y in 0 .. int height - 1 do
-            for x in 0 .. int width - 1 do
-                let includePixel =
-                    match maskPixels with
-                    | None -> true
-                    | Some maskValues -> maskValues[flatIndex2 (int width) x y] <> 0uy
-
-                if includePixel then
-                    let values = basisValues terms xPowers yPowers zPowers x y zIndex
-                    observePixelValues state values (pixels[flatIndex2 (int width) x y] |> toDouble)
-    finally
-        image.decRefCount()
-        mask |> Option.iter (fun (maskImage: Image<uint8>) -> maskImage.decRefCount())
-
-    state
 
 let private addChunkObservationsAt<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     z
@@ -333,25 +283,6 @@ let private stateToModel state =
       Terms = state.Terms
       Coefficients = coefficients }
 
-let fitBiasModel<'T when 'T: equality> order depth : Stage<Image<'T>, BiasPolynomialModel> =
-    let folder (state: BiasFitState) (image: Image<'T>) =
-        addImageObservations state image None
-
-    Stage.fold "fitBiasModel" folder (emptyFitState order depth) id (fun _ -> 1UL)
-    --> Stage.map "fitBiasModel: solve" (fun _ state -> stateToModel state) id id
-
-let fitBiasModelMasked<'T when 'T: equality> order depth : Stage<Image<'T> * Image<uint8>, BiasPolynomialModel> =
-    let folder (state: BiasFitState) ((image, mask): Image<'T> * Image<uint8>) =
-        let imageWidth = image.GetWidth()
-        let imageHeight = image.GetHeight()
-        if mask.GetWidth() <> imageWidth || mask.GetHeight() <> imageHeight then
-            invalidOp $"fitBiasModelMasked expects image and mask slices with the same shape at slice {image.index}."
-
-        addImageObservations state image (Some mask)
-
-    Stage.fold "fitBiasModelMasked" folder (emptyFitState order depth) id (fun _ -> 1UL)
-    --> Stage.map "fitBiasModelMasked: solve" (fun _ state -> stateToModel state) id id
-
 let fitBiasModelChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     order
     depth
@@ -399,48 +330,6 @@ let fitBiasModelChunkMasked<'T when 'T: equality and 'T: (new: unit -> 'T) and '
 
     Stage.fromPipe name (ProfileTransition.create Streaming Streaming) memoryNeed (fun _ -> 1UL) pipe
     |> Stage.withSliceCardinality (SliceCardinality.reduceTo 1UL)
-
-let private correctedImage (model: BiasPolynomialModel) (image: Image<'T>) mask =
-    try
-        let width = image.GetWidth()
-        let height = image.GetHeight()
-
-        if model.Width <> width || model.Height <> height then
-            invalidOp $"Bias correction model expects {model.Width}x{model.Height} slices, got {width}x{height} at slice {image.index}."
-
-        let z = uint (max 0 image.index)
-        if z >= model.Depth then
-            invalidOp $"Bias correction got slice index {image.index}, outside model depth {model.Depth}."
-
-        let widthI = int width
-        let heightI = int height
-        let output = Array.zeroCreate<float> (widthI * heightI)
-        let pixels = image.toFlatArray()
-        let maskPixels = mask |> Option.map (fun (maskImage: Image<uint8>) -> maskImage.toFlatArray())
-        let terms = model.Terms |> List.toArray
-        let coefficients = model.Coefficients |> List.toArray
-        let xPowers = coordinatePowers width model.Order
-        let yPowers = coordinatePowers height model.Order
-        let zPowers = coordinatePowers model.Depth model.Order
-        let zIndex = int z
-
-        for y in 0 .. heightI - 1 do
-            for x in 0 .. widthI - 1 do
-                let i = flatIndex2 widthI x y
-                let input = pixels[i] |> toDouble
-                let includePixel =
-                    match maskPixels with
-                    | None -> true
-                    | Some maskValues -> maskValues[i] <> 0uy
-                let value =
-                    if includePixel then input - evaluateValues terms coefficients xPowers yPowers zPowers x y zIndex
-                    else input
-                output[i] <- value
-
-        Image<float>.ofFlatArray([ width; height ], output, "correctBias", image.index)
-    finally
-        image.decRefCount()
-        mask |> Option.iter (fun (maskImage: Image<uint8>) -> maskImage.decRefCount())
 
 let private correctedChunkAt<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     z
@@ -503,12 +392,6 @@ let private correctedChunkAt<'T when 'T: equality and 'T: (new: unit -> 'T) and 
     finally
         Chunk.decRef chunk
         mask |> Option.iter Chunk.decRef
-
-let correctBias<'T when 'T: equality> model : Stage<Image<'T>, Image<float>> =
-    Stage.map "correctBias" (fun _ image -> correctedImage model image None) id id
-
-let correctBiasMasked<'T when 'T: equality> model : Stage<Image<'T> * Image<uint8>, Image<float>> =
-    Stage.map "correctBiasMasked" (fun _ (image, mask) -> correctedImage model image (Some mask)) id id
 
 let correctBiasChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     model

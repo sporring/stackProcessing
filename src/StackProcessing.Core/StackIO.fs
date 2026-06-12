@@ -10,7 +10,6 @@ open System.Threading
 open System.Threading.Tasks
 open BitMiracle.LibTiff.Classic
 open FSharp.Control
-open Image.InternalHelpers
 open StackCore
 open PureHDF
 open PureHDF.Selections
@@ -18,8 +17,32 @@ open ZarrNET.Core
 open ZarrNET.Core.Nodes
 open ZarrNET.Core.OmeZarr.Coordinates
 
-type FileInfo = ImageFunctions.FileInfo
+type FileInfo =
+    { dimensions: uint
+      size: uint64 list
+      componentType: string
+      numberOfComponents: uint }
+
 type ChunkInfo = { chunks: int list; size: uint64 list; topLeftInfo: FileInfo}
+
+let private fromVectorUInt64 (v: itk.simple.VectorUInt64) : uint64 list =
+    v |> Seq.map uint64 |> Seq.toList
+
+let private pixelIdToString (id: itk.simple.PixelIDValueEnum) : string =
+    let text = id.ToString()
+    if text.StartsWith("sitk", StringComparison.Ordinal) then
+        text.Substring(4)
+    else
+        text
+
+let getFileInfo (filename: string) : FileInfo =
+    use reader = new itk.simple.ImageFileReader()
+    reader.SetFileName(filename)
+    reader.ReadImageInformation()
+    { dimensions = reader.GetDimension()
+      size = reader.GetSize() |> fromVectorUInt64
+      componentType = reader.GetPixelID() |> pixelIdToString
+      numberOfComponents = reader.GetNumberOfComponents() }
 
 let private inputValue input =
     input |> SingleOrPair.sum |> SingleOrPair.fst
@@ -38,23 +61,8 @@ let private friendlyScalarTypeName (t: Type) =
     elif t = typeof<int64> then "Int64"
     elif t = typeof<float32> then "Float32"
     elif t = typeof<float> then "Float64"
-    elif t = typeof<Image.ComplexFloat32> then "ComplexFloat32"
     elif t = typeof<System.Numerics.Complex> then "ComplexFloat64"
     else t.Name
-
-let private friendlyImageTypeName (image: Image<'T>) =
-    let t = typeof<'T>
-    if t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<list<_>> then
-        let elementType = t.GetGenericArguments()[0]
-        let elementName = friendlyScalarTypeName elementType
-        let components = image.GetNumberOfComponentsPerPixel()
-
-        if elementType = typeof<uint8> && components = 3u then
-            "Color"
-        else
-            $"{elementName} vector[{components}]"
-    else
-        friendlyScalarTypeName t
 
 let private imageIoCost<'T> kind evaluation calibrationKey bytes ops : StageTimeCostModel =
     StackProcessingCost.imageIoCost<'T> kind evaluation calibrationKey bytes ops
@@ -134,10 +142,85 @@ let private isTiffStackSuffix (suffix: string) =
     || String.Equals(normalized, ".tiff", StringComparison.OrdinalIgnoreCase)
 
 let private canReadDirectTiffStack<'T> suffix =
-    isTiffStackSuffix suffix && ImageIO.supportsDirectTiffRead<'T>
+    let t = typeof<'T>
+    isTiffStackSuffix suffix
+    && (t = typeof<uint8>
+        || t = typeof<int8>
+        || t = typeof<uint16>
+        || t = typeof<int16>
+        || t = typeof<uint32>
+        || t = typeof<int32>
+        || t = typeof<float32>)
 
 let private canWriteDirectTiffStack<'T> suffix =
-    isTiffStackSuffix suffix && ImageIO.supportsDirectTiffWrite<'T>
+    let t = typeof<'T>
+    isTiffStackSuffix suffix
+    && (t = typeof<uint8>
+        || t = typeof<int8>
+        || t = typeof<uint16>
+        || t = typeof<int16>
+        || t = typeof<uint32>
+        || t = typeof<int32>
+        || t = typeof<float32>
+        || t = typeof<float>)
+
+let private tiffPixelLayout<'T> () =
+    let t = typeof<'T>
+    if t = typeof<uint8> then 8, SampleFormat.UINT, 1
+    elif t = typeof<int8> then 8, SampleFormat.INT, 1
+    elif t = typeof<uint16> then 16, SampleFormat.UINT, 2
+    elif t = typeof<int16> then 16, SampleFormat.INT, 2
+    elif t = typeof<uint32> then 32, SampleFormat.UINT, 4
+    elif t = typeof<int32> then 32, SampleFormat.INT, 4
+    elif t = typeof<float32> then 32, SampleFormat.IEEEFP, 4
+    elif t = typeof<float> then 64, SampleFormat.IEEEFP, 8
+    else
+        invalidArg "T" $"TIFF scalar IO currently supports UInt8, Int8, UInt16, Int16, UInt32, Int32, Float32, and Float64 chunks; got {t.Name}."
+
+let private tiffWriteMode (filename: string) =
+    let ext = Path.GetExtension(filename).ToLowerInvariant()
+    if ext = ".btf" || ext = ".bigtiff" then "w8" else "w"
+
+let private tiffFieldInt (tiff: Tiff) tag fallback =
+    let field = tiff.GetField(tag)
+    if isNull field || field.Length = 0 then fallback else field[0].ToInt()
+
+let private tiffFieldIntDefaulted (tiff: Tiff) tag fallback =
+    let field = tiff.GetFieldDefaulted(tag)
+    if isNull field || field.Length = 0 then fallback else field[0].ToInt()
+
+let private tiffDirectoryCount (filename: string) =
+    use tiff = Tiff.Open(filename, "r")
+    if isNull tiff then
+        invalidOp $"Could not open '{filename}' for TIFF volume reading."
+
+    let mutable count = 0u
+    let mutable keepGoing = true
+    while keepGoing do
+        count <- count + 1u
+        keepGoing <- tiff.ReadDirectory()
+
+    if count = 0u then
+        invalidOp $"TIFF volume '{filename}' contains no readable pages."
+
+    count
+
+let private tiffBytesPerSample bitsPerSample sampleFormat =
+    match sampleFormat, bitsPerSample with
+    | SampleFormat.UINT, 8
+    | SampleFormat.INT, 8 -> 1
+    | SampleFormat.UINT, 16
+    | SampleFormat.INT, 16 -> 2
+    | SampleFormat.UINT, 32
+    | SampleFormat.INT, 32
+    | SampleFormat.IEEEFP, 32 -> 4
+    | SampleFormat.IEEEFP, 64 -> 8
+    | _ ->
+        invalidOp $"TIFF scalar IO currently supports UInt8, Int8, UInt16, Int16, UInt32, Int32, Float32, and Float64 pages; got {bitsPerSample}-bit {sampleFormat}."
+
+let private validateTiffSamples samplesPerPixel =
+    if samplesPerPixel <> 1 then
+        invalidOp $"TIFF scalar IO expects one sample per pixel; got {samplesPerPixel} samples per pixel."
 
 let private ensureDirectTiffChunkRead<'T> suffix =
     if not (canReadDirectTiffStack<'T> suffix) then
@@ -148,22 +231,22 @@ let private ensureDirectTiffChunkWrite<'T> suffix =
         invalidArg "suffix" $"writeChunkSlices currently supports direct scalar TIFF stack output for UInt8, Int8, UInt16, Int16, UInt32, Int32, and Float32; got suffix '{suffix}' and type {typeof<'T>.Name}."
 
 let private inspectChunkTiffSlice<'T> fileName =
-    let expectedBits, expectedFormat, expectedBytesPerSample = ImageIO.tiffPixelLayout<'T> ()
+    let expectedBits, expectedFormat, expectedBytesPerSample = tiffPixelLayout<'T> ()
     use tiff = Tiff.Open(fileName, "r")
     if isNull tiff then
         invalidOp $"Could not open '{fileName}' for TIFF reading."
 
-    let width = uint (ImageIO.tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
-    let height = uint (ImageIO.tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
+    let width = uint (tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
+    let height = uint (tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
     if width = 0u || height = 0u then
         invalidOp $"TIFF slice '{fileName}' has invalid page dimensions {width}x{height}."
 
-    let bitsPerSample = ImageIO.tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 1
-    let samplesPerPixel = ImageIO.tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 1
-    ImageIO.validateTiffSamples samplesPerPixel
+    let bitsPerSample = tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 1
+    let samplesPerPixel = tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 1
+    validateTiffSamples samplesPerPixel
 
     let sampleFormat =
-        ImageIO.tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
+        tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
         |> enum<SampleFormat>
 
     if bitsPerSample <> expectedBits || sampleFormat <> expectedFormat then
@@ -176,18 +259,18 @@ let private readChunkTiffSlice<'T when 'T: equality and 'T: (new: unit -> 'T) an
     if isNull tiff then
         invalidOp $"Could not open '{fileName}' for TIFF reading."
 
-    let expectedBits, expectedFormat, expectedBytesPerSample = ImageIO.tiffPixelLayout<'T> ()
-    let width = uint (ImageIO.tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
-    let height = uint (ImageIO.tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
+    let expectedBits, expectedFormat, expectedBytesPerSample = tiffPixelLayout<'T> ()
+    let width = uint (tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
+    let height = uint (tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
     if width = 0u || height = 0u then
         invalidOp $"TIFF slice '{fileName}' has invalid page dimensions {width}x{height}."
 
-    let bitsPerSample = ImageIO.tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 1
-    let samplesPerPixel = ImageIO.tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 1
-    ImageIO.validateTiffSamples samplesPerPixel
+    let bitsPerSample = tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 1
+    let samplesPerPixel = tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 1
+    validateTiffSamples samplesPerPixel
 
     let sampleFormat =
-        ImageIO.tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
+        tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
         |> enum<SampleFormat>
 
     if bitsPerSample <> expectedBits || sampleFormat <> expectedFormat then
@@ -217,7 +300,7 @@ let private readChunkTiffSlice<'T when 'T: equality and 'T: (new: unit -> 'T) an
         reraise()
 
 let private writeChunkTiffSlice<'T when 'T: equality> fileName (chunk: Chunk<'T>) =
-    let bitsPerSample, sampleFormat, bytesPerSample = ImageIO.tiffPixelLayout<'T> ()
+    let bitsPerSample, sampleFormat, bytesPerSample = tiffPixelLayout<'T> ()
     let width, height, depth = chunk.Size
     if depth <> 1UL then
         invalidArg "chunk" $"writeChunkSlices expects 2D slice chunks with depth 1, got {chunk.Size}."
@@ -226,7 +309,7 @@ let private writeChunkTiffSlice<'T when 'T: equality> fileName (chunk: Chunk<'T>
     if chunk.ByteLength < rowBytes * int height then
         invalidArg "chunk" $"Chunk byte length {chunk.ByteLength} is smaller than the TIFF page payload {rowBytes * int height}."
 
-    use tiff = Tiff.Open(fileName, ImageIO.tiffWriteMode fileName)
+    use tiff = Tiff.Open(fileName, tiffWriteMode fileName)
     if isNull tiff then
         invalidOp $"Could not open '{fileName}' for TIFF writing."
 
@@ -252,18 +335,18 @@ let private inspectColorChunkTiffSlice fileName =
     if isNull tiff then
         invalidOp $"Could not open '{fileName}' for RGB TIFF reading."
 
-    let width = uint (ImageIO.tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
-    let height = uint (ImageIO.tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
+    let width = uint (tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
+    let height = uint (tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
     if width = 0u || height = 0u then
         invalidOp $"RGB TIFF slice '{fileName}' has invalid page dimensions {width}x{height}."
 
-    let bitsPerSample = ImageIO.tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 8
-    let samplesPerPixel = ImageIO.tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 3
+    let bitsPerSample = tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 8
+    let samplesPerPixel = tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 3
     let sampleFormat =
-        ImageIO.tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
+        tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
         |> enum<SampleFormat>
     let planarConfig =
-        ImageIO.tiffFieldIntDefaulted tiff TiffTag.PLANARCONFIG (int PlanarConfig.CONTIG)
+        tiffFieldIntDefaulted tiff TiffTag.PLANARCONFIG (int PlanarConfig.CONTIG)
         |> enum<PlanarConfig>
 
     if bitsPerSample <> 8 || sampleFormat <> SampleFormat.UINT || samplesPerPixel <> 3 || planarConfig <> PlanarConfig.CONTIG then
@@ -316,7 +399,7 @@ let private writeColorChunkTiffSlice fileName (vector: VectorChunk<uint8>) =
     if vector.Chunk.ByteLength < rowBytes * int height then
         invalidArg "vector" $"RGB vector chunk byte length {vector.Chunk.ByteLength} is smaller than the TIFF page payload {rowBytes * int height}."
 
-    use tiff = Tiff.Open(fileName, ImageIO.tiffWriteMode fileName)
+    use tiff = Tiff.Open(fileName, tiffWriteMode fileName)
     if isNull tiff then
         invalidOp $"Could not open '{fileName}' for RGB TIFF writing."
 
@@ -386,12 +469,20 @@ let private zarrDataType<'T> () =
         "float32"
     elif typeof<'T> = typeof<float> then
         "float64"
-    elif typeof<'T> = typeof<Image.ComplexFloat32> then
-        "complex64"
     elif typeof<'T> = typeof<System.Numerics.Complex> then
         "complex128"
     else
         failwith $"ZarrNET image IO currently supports UInt8, UInt16, Float32, Float64, Complex64, and Complex128 images, but was {typeof<'T>.Name}."
+
+let private zarrScalarElementBytes<'T> () =
+    let t = typeof<'T>
+    if t = typeof<uint8> then 1
+    elif t = typeof<uint16> then 2
+    elif t = typeof<float32> then 4
+    elif t = typeof<float> then 8
+    else
+        zarrDataType<'T> () |> ignore
+        failwith "unreachable"
 
 let private isSupportedZarrDataType (dataType: string) =
     [ "uint8"; "uint16"; "float32"; "float64"; "complex64"; "complex128" ]
@@ -434,6 +525,7 @@ let private flatArrayOfZarrBytes<'T> (width: int) (height: int) (depth: int) (by
         zarrDataType<'T> () |> ignore
         failwith "unreachable"
 
+#if LEGACY_IMAGE
 let private complexFloat32ImageOfZarrBytes width height depth (bytes: byte[]) name =
     let elementCount = width * height * depth
     let components = blockCopyZarrBytes<float32> (elementCount * 2) (elementCount * 8) bytes
@@ -500,6 +592,7 @@ let private zarrSlabImageAs<'T when 'T: equality> (dataType: string) width heigh
         |> castNative
     else
         failwith $"ZarrNET image IO currently supports UInt8, UInt16, Float32, Float64, Complex64, and Complex128 datasets, but dataset type was {dataType}."
+#endif
 
 let private openZarrResolutionLevel (path: string) multiscaleIndex datasetIndex : ResolutionLevelNode =
     suppressZarrNetDebugLogging ()
@@ -522,6 +615,28 @@ let private zarrShapeTCZYX (shape: int64[]) =
         failwith $"Expected a 5D OME-Zarr array with t,c,z,y,x axes, but shape was {shapeText}."
 
     int shape[0], int shape[1], int shape[2], int shape[3], int shape[4]
+
+let private validateZarrScalarChunkType<'T> (dataType: string) =
+    let expected = zarrDataType<'T> ()
+    if not (String.Equals(dataType, expected, StringComparison.OrdinalIgnoreCase)) then
+        invalidOp $"Expected Zarr data type {expected} for Chunk<{typeof<'T>.Name}>, got {dataType}."
+
+let private zarrPlaneChunkAs<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (dataType: string)
+    width
+    height
+    (bytes: byte[])
+    =
+
+    validateZarrScalarChunkType<'T> dataType
+    let elementBytes = zarrScalarElementBytes<'T> ()
+    let expectedBytes = width * height * elementBytes
+    if bytes.Length < expectedBytes then
+        invalidArg "bytes" $"Zarr byte payload is too short for a {width}x{height} {typeof<'T>.Name} plane: expected {expectedBytes}, got {bytes.Length}."
+
+    let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+    Buffer.BlockCopy(bytes, 0, chunk.Bytes, 0, expectedBytes)
+    chunk
 
 let private hdfDataType<'T> () =
     let t = typeof<'T>
@@ -567,6 +682,7 @@ let private hdfDatasetChunks (dataset: IH5Dataset) =
         |> Array.map int
         |> Array.toList
 
+#if LEGACY_IMAGE
 let private flatArrayOfHdfSource<'Native> rank frameAxis yAxis xAxis sizeX sizeY zCount (source: 'Native[,,]) =
     let elementCount = sizeX * sizeY * zCount
 
@@ -647,6 +763,7 @@ let private hdfSlabImageAs<'T when 'T: equality>
         readHdfSlabNative<float, 'T> dataset rank starts blocks sizeX sizeY zCount frameAxis yAxis xAxis name
     | dataClass, size ->
         failwith $"HDF5/NeXus image IO supports scalar numeric datasets UInt8, Int8, UInt16, Int16, UInt32, Int32, Float32, and Float64; dataset class was {dataClass} with size {size} bytes."
+#endif
 
 let private validateHdfAxes rank frameAxis yAxis xAxis =
     let axes = [ frameAxis; yAxis; xAxis ]
@@ -743,7 +860,7 @@ let getStackInfo (inputDir: string) (suffix: string) : FileInfo =
     let depth = files.Length |> uint64
     if depth = 0uL then
         stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
-    let fi = ImageFunctions.getFileInfo(files[0])
+    let fi = getFileInfo(files[0])
     {fi with dimensions = fi.dimensions+1u; size = fi.size @ [depth]}
 
 let getStackSize (inputDir: string) (suffix: string) : uint*uint*uint =
@@ -1035,6 +1152,7 @@ let private isTiffVolumePath (filename: string) =
     | ".bigtiff" -> true
     | _ -> false
 
+#if LEGACY_IMAGE
 let private readFilesWithShapeCore<'T when 'T: equality> suffix (debug: bool) (width: uint) (height: uint) : Stage<string, Image<'T>> =
     let name = "readFiles"
     if debug && DebugLevel.current() >= 2u then printfn $"[{name} cast to {typeof<'T>.Name}]"
@@ -1266,6 +1384,112 @@ let readChunkVolume<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
             id
 
     readVolume<'T> filename pl >=> toChunk
+#endif
+
+let readChunkVolume<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (filename: string)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+    if not (isTiffVolumePath filename) then
+        invalidArg "filename" "readChunkVolume currently supports TIFF/BigTIFF volumes only."
+
+    use header = Tiff.Open(filename, "r")
+    if isNull header then
+        invalidOp $"Could not open '{filename}' for TIFF volume reading."
+
+    let expectedBits, expectedFormat, expectedBytesPerSample = tiffPixelLayout<'T> ()
+    let width = uint (tiffFieldInt header TiffTag.IMAGEWIDTH 0)
+    let height = uint (tiffFieldInt header TiffTag.IMAGELENGTH 0)
+    if width = 0u || height = 0u then
+        invalidOp $"TIFF volume '{filename}' has invalid page dimensions {width}x{height}."
+
+    let bitsPerSample = tiffFieldIntDefaulted header TiffTag.BITSPERSAMPLE 1
+    let samplesPerPixel = tiffFieldIntDefaulted header TiffTag.SAMPLESPERPIXEL 1
+    validateTiffSamples samplesPerPixel
+
+    let sampleFormat =
+        tiffFieldIntDefaulted header TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
+        |> enum<SampleFormat>
+
+    if bitsPerSample <> expectedBits || sampleFormat <> expectedFormat then
+        invalidOp $"TIFF volume '{filename}' does not match {typeof<'T>.Name}: got {bitsPerSample}-bit {sampleFormat}."
+
+    let bytesPerSample = tiffBytesPerSample bitsPerSample sampleFormat
+    if bytesPerSample <> expectedBytesPerSample then
+        invalidOp $"TIFF volume '{filename}' has unexpected sample width {bytesPerSample}; expected {expectedBytesPerSample}."
+
+    let depth = tiffDirectoryCount filename
+    let rowBytes = int width * expectedBytesPerSample
+    let elementBytes = uint64 rowBytes * uint64 height
+    let sourcePeek =
+        SourcePeek.create
+            "readChunkVolume"
+            elementBytes
+            (Some (uint64 depth))
+            (Map.ofList
+                [ "kind", "chunk-tiff-volume"
+                  "filename", filename
+                  "width", string width
+                  "height", string height
+                  "depth", string depth
+                  "pixelType", typeof<'T>.Name ])
+
+    let mapper (index: int) =
+        use reader = Tiff.Open(filename, "r")
+        if isNull reader then
+            invalidOp $"Could not open '{filename}' for TIFF volume reading."
+        if not (reader.SetDirectory(int16 index)) then
+            invalidOp $"Could not seek to TIFF page {index} in '{filename}'."
+        if pl.debug then
+            printfn $"[readChunkVolume] Reading TIFF page {index} from {filename} as {typeof<'T>.Name}"
+
+        let pageWidth = uint (tiffFieldInt reader TiffTag.IMAGEWIDTH 0)
+        let pageHeight = uint (tiffFieldInt reader TiffTag.IMAGELENGTH 0)
+        if pageWidth <> width || pageHeight <> height then
+            invalidOp $"readChunkVolume expected all TIFF pages to be {width}x{height}; page {index} is {pageWidth}x{pageHeight}."
+
+        let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+        try
+            let scanlineSize = max rowBytes (reader.ScanlineSize())
+            if scanlineSize <= rowBytes then
+                for row in 0 .. int height - 1 do
+                    if not (reader.ReadScanline(chunk.Bytes, row * rowBytes, row, int16 0)) then
+                        invalidOp $"Failed to read TIFF scanline {row} from page {index} in '{filename}'."
+            else
+                let scratch = System.Buffers.ArrayPool<byte>.Shared.Rent(scanlineSize)
+                try
+                    for row in 0 .. int height - 1 do
+                        if not (reader.ReadScanline(scratch, row, int16 0)) then
+                            invalidOp $"Failed to read TIFF scanline {row} from page {index} in '{filename}'."
+                        Buffer.BlockCopy(scratch, 0, chunk.Bytes, row * rowBytes, rowBytes)
+                finally
+                    System.Buffers.ArrayPool<byte>.Shared.Return(scratch)
+            chunk
+        with
+        | _ ->
+            Chunk.decRef chunk
+            reraise()
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memoryNeed _ = elementBytes
+    let elementTransformation _ = uint64 width * uint64 height
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        imageIoCost<'T>
+            "readVolume"
+            Source
+            $"readChunkVolume.tiff.{typeof<'T>.Name}"
+            (fun _ -> elementBytes)
+            (fun _ -> 1UL)
+
+    let stage =
+        Stage.init "readChunkVolume" depth mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    Plan.createWithOptimizer stage pl.memAvail elementBytes elementBytes (uint64 depth) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
+    |> Plan.withSourcePeek sourcePeek
 
 let private randomIndices count depth =
     if depth <= 0 then
@@ -1296,6 +1520,7 @@ let private rangeIndices (first: uint) step (last: uint) depth =
         else
             [| for index in startIndex .. step .. lastIndex -> index |]
 
+#if LEGACY_IMAGE
 let private readTiffVolumeRandom<'T when 'T: equality> (count: uint) (filename: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     use header = Tiff.Open(filename, "r")
     if isNull header then
@@ -1627,6 +1852,7 @@ let read<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan<uni
 
 let readRandom<'T when 'T: equality> (count: uint) (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     readFiltered<'T> inputDir suffix (Array.randomChoices (int count)) pl
+#endif
 
 let private rangeFilter first step last files =
     let sorted = Array.sort files
@@ -1649,6 +1875,7 @@ let readChunkSlicesRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: 
         [ "first", string first; "step", string step; "last", string last ]
         pl
 
+#if LEGACY_IMAGE
 let readRange<'T when 'T: equality> (first: uint) (step: int) (last: uint) (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     let info = getStackInfo inputDir suffix
     let width = uint info.size[0]
@@ -1681,6 +1908,7 @@ let readRange<'T when 'T: equality> (first: uint) (step: int) (last: uint) (inpu
     |> getFilenames inputDir suffix (rangeFilter first step last)
     >=> readFilesWithShapeForSuffix<'T> suffix pl.debug width height
     |> Plan.withSourcePeek sourcePeek
+#endif
 
 let getChunkInfo (inputDir: string) (suffix: string) : ChunkInfo =
     let (|IJK|_|) (s: string) =
@@ -1706,8 +1934,8 @@ let getChunkInfo (inputDir: string) (suffix: string) : ChunkInfo =
                         | _ -> (maxI, maxJ, maxK, tl, br)
                 res
             ) (System.Int32.MinValue, System.Int32.MinValue, System.Int32.MinValue, files[0], files[0]) files
-    let topLeftFi = ImageFunctions.getFileInfo topLeft
-    let bottomRightFi = ImageFunctions.getFileInfo bottomRight
+    let topLeftFi = getFileInfo topLeft
+    let bottomRightFi = getFileInfo bottomRight
 
     let stackSize = 
         [
@@ -1783,6 +2011,7 @@ let private nexusFrameChunkDepth (info: ChunkInfo) (frameAxis: int) =
 let getChunkFilename (path: string) (suffix: string) (i: int) (j: int) (k: int) =
     Path.Combine(path, sprintf "chunk%d_%d_%d%s" i j k suffix)
 
+#if LEGACY_IMAGE
 let _readChunk<'T when 'T: equality>  (inputDir: string) (suffix: string) i j k = 
     let filename = getChunkFilename inputDir suffix i j k
     if typeof<'T> = typeof<Image.ComplexFloat32> then
@@ -2507,6 +2736,88 @@ let readNexusRange<'T when 'T: equality>
     |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
+#endif
+
+let readZarrChunkSlicesRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (first: uint)
+    (step: int)
+    (last: uint)
+    (path: string)
+    (multiscaleIndex: int)
+    (datasetIndex: int)
+    (timepoint: int)
+    (channel: int)
+    (maxParallelChunks: int)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+
+    suppressZarrNetDebugLogging ()
+
+    let name = "readZarrChunkSlicesRange"
+    let level = openZarrResolutionLevel path multiscaleIndex datasetIndex
+    let sizeT, sizeC, sizeZ, sizeY, sizeX = zarrShapeTCZYX level.Shape
+    validateZarrScalarChunkType<'T> level.DataType
+
+    if timepoint < 0 || timepoint >= sizeT then
+        invalidArg "timepoint" $"Timepoint {timepoint} is outside the Zarr time range 0..{sizeT - 1}."
+    if channel < 0 || channel >= sizeC then
+        invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
+
+    let selected = rangeIndices first step last sizeZ
+    let elementBytes = uint64 sizeX * uint64 sizeY * uint64 (zarrScalarElementBytes<'T> ())
+    let parallelChunks = nullableParallelChunks maxParallelChunks
+    let sourcePeek =
+        SourcePeek.create
+            name
+            elementBytes
+            (Some (uint64 selected.Length))
+            (Map.ofList
+                [ "kind", "zarr-chunk-range"
+                  "path", path
+                  "width", string sizeX
+                  "height", string sizeY
+                  "depth", string selected.Length
+                  "sourceDepth", string sizeZ
+                  "pixelType", typeof<'T>.Name
+                  "multiscaleIndex", string multiscaleIndex
+                  "datasetIndex", string datasetIndex
+                  "timepoint", string timepoint
+                  "channel", string channel
+                  "first", string first
+                  "step", string step
+                  "last", string last ])
+
+    let mapper (outputIndex: int) : Chunk<'T> =
+        let zIndex = selected[outputIndex]
+        if pl.debug then
+            printfn $"[readZarrChunkSlicesRange] Reading z {zIndex} from {path} as {typeof<'T>.Name}"
+
+        let region =
+            PixelRegion(
+                [| int64 timepoint; int64 channel; int64 zIndex; 0L; 0L |],
+                [| int64 (timepoint + 1); int64 (channel + 1); int64 (zIndex + 1); int64 sizeY; int64 sizeX |])
+        let result =
+            level.ReadPixelRegionAsync(region, parallelChunks, CancellationToken.None)
+            |> runTask
+        deleteZarrNetDebugLogs ()
+        zarrPlaneChunkAs<'T> level.DataType sizeX sizeY result.Data
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memPeak = 256UL
+    let memoryNeed = fun _ -> memPeak
+    let elementTransformation = id
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        StageTimeCostModel.ioRead Source (Some $"readZarrChunkSlicesRange.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> 1UL)
+    let stage =
+        Stage.init name (uint selected.Length) mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    Plan.createWithOptimizer stage pl.memAvail memPeak memPeak (uint64 selected.Length) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
+    |> Plan.withSourcePeek sourcePeek
+
 let icompare s1 s2  = 
     System.String.Equals(s1, s2, System.StringComparison.CurrentCultureIgnoreCase)
 
@@ -2533,6 +2844,7 @@ let private cleanChunkFiles outputDir suffix =
         Directory.GetFiles(outputDir, pattern)
         |> Array.iter File.Delete
 
+#if LEGACY_IMAGE
 let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Image<'T>, Image<'T>> =
     let t = typeof<'T>
     if (icompare suffix ".tif" || icompare suffix ".tiff") 
@@ -2566,6 +2878,7 @@ let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Ima
             fallbackTimeCostModel.Estimate
     Stage.mapi $"write \"{outputDir}/*{suffix}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+#endif
 
 let writeChunkSlices<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Chunk<'T>, unit> =
     ensureDirectTiffChunkWrite<'T> suffix
@@ -2624,6 +2937,7 @@ let writeColorChunkSlices (outputDir: string) (suffix: string) : Stage<VectorChu
     Stage.mapi $"writeColorChunkSlices \"{outputDir}/*{suffix}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 
+#if LEGACY_IMAGE
 let writeSlabSlices<'T when 'T: equality> (outputDir: string) (suffix: string) (_winSz: uint) : Stage<Image<'T>, Image<'T>> =
     Directory.CreateDirectory(outputDir) |> ignore
 
@@ -2861,6 +3175,138 @@ let writeZarr<'T when 'T: equality>
     : Stage<Image<'T>, Image<'T>> =
 
     writeZarrWithCompression
+        ZarrCompression.BloscLz4
+        outputPath
+        name
+        depth
+        chunkX
+        chunkY
+        chunkZ
+        physicalSizeX
+        physicalSizeY
+        physicalSizeZ
+        maxConcurrentWrites
+#endif
+
+let writeZarrChunkSlicesWithCompression<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (compression: ZarrCompression)
+    (outputPath: string)
+    (name: string)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<Chunk<'T>, unit> =
+
+    suppressZarrNetDebugLogging ()
+
+    let dataType = zarrDataType<'T> ()
+    let elementBytes = zarrScalarElementBytes<'T> ()
+    let depth = int depth
+    let chunkX = max 1u chunkX |> int
+    let chunkY = max 1u chunkY |> int
+    let chunkZ = max 1u chunkZ |> int
+    let mutable writer: OmeZarrWriter option = None
+    let mutable width = 0
+    let mutable height = 0
+
+    let createWriter chunkWidth chunkHeight =
+        let descriptor =
+            BioImageDescriptor(
+                chunkWidth,
+                chunkHeight,
+                ZCT(depth, 1, 1),
+                Name = name,
+                DataType = dataType,
+                ChunkX = chunkX,
+                ChunkY = chunkY,
+                ChunkZ = chunkZ,
+                ChunkC = 1,
+                ChunkT = 1,
+                PhysicalSizeX = physicalSizeX,
+                PhysicalSizeY = physicalSizeY,
+                PhysicalSizeZ = physicalSizeZ,
+                Compression = compression)
+
+        let created =
+            OmeZarrWriter.CreateAsync(outputPath, descriptor, CancellationToken.None)
+            |> runTask
+        deleteZarrNetDebugLogs ()
+
+        if maxConcurrentWrites > 0 then
+            OmeZarrWriter.MaxConcurrentWrites <- maxConcurrentWrites
+
+        width <- chunkWidth
+        height <- chunkHeight
+        writer <- Some created
+        created
+
+    let mapper (debug: bool) (idx: int64) (chunk: Chunk<'T>) =
+        try
+            if depth <= 0 then
+                invalidArg "depth" "writeZarrChunkSlices expects positive depth."
+            if idx >= int64 depth then
+                failwith $"writeZarrChunkSlices received slice {idx}, but declared depth is {depth}."
+
+            let chunkWidth, chunkHeight, chunkDepth = chunk.Size
+            if chunkDepth <> 1UL then
+                failwith $"writeZarrChunkSlices expects 2D chunks with depth 1, got {chunk.Size}."
+
+            let chunkWidth = int chunkWidth
+            let chunkHeight = int chunkHeight
+            let zarrWriter =
+                match writer with
+                | Some writer ->
+                    if chunkWidth <> width || chunkHeight <> height then
+                        failwith $"writeZarrChunkSlices expected all slices to be {width}x{height}, got {chunkWidth}x{chunkHeight}."
+                    writer
+                | None -> createWriter chunkWidth chunkHeight
+
+            let expectedBytes = chunkWidth * chunkHeight * elementBytes
+            if chunk.ByteLength <> expectedBytes then
+                failwith $"writeZarrChunkSlices expected {expectedBytes} bytes, got {chunk.ByteLength}."
+
+            let planeBytes = Array.zeroCreate<byte> expectedBytes
+            Buffer.BlockCopy(chunk.Bytes, 0, planeBytes, 0, expectedBytes)
+
+            if debug then
+                printfn $"[writeZarrChunkSlices] Saved plane {idx} to {outputPath} as {dataType}"
+
+            zarrWriter.WritePlaneAsync(int idx, planeBytes, CancellationToken.None)
+            |> runUnitTask
+            deleteZarrNetDebugLogs ()
+
+            if idx = int64 (depth - 1) then
+                zarrWriter.DisposeAsync().AsTask()
+                |> runUnitTask
+                writer <- None
+                deleteZarrNetDebugLogs ()
+        finally
+            Chunk.decRef chunk
+
+    let memoryNeed nPixels =
+        nPixels * uint64 (elementBytes * 2)
+
+    Stage.mapi $"writeZarrChunkSlices \"{outputPath}\"" mapper memoryNeed id
+
+let writeZarrChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (outputPath: string)
+    (name: string)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<Chunk<'T>, unit> =
+
+    writeZarrChunkSlicesWithCompression
         ZarrCompression.BloscLz4
         outputPath
         name
@@ -3322,6 +3768,7 @@ let fftZComplex64InterleavedZarrTiles
         |> runUnitTask
         deleteZarrNetDebugLogs ()
 
+#if LEGACY_IMAGE
 let private writeZarrSlabStage<'T when 'T: equality>
     (compression: ZarrCompression)
     (outputPath: string)
@@ -4004,3 +4451,4 @@ let chunkedVolumeOperation
     --> ignoreSingles ()
     --> Stage.map name (fun debug _ -> operation debug inputDir outputDir suffix chunkX chunkY chunkZ) memoryNeed elementTransformation
     --> readChunksAsSlices<'T> name outputDir suffix
+#endif

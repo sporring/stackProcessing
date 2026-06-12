@@ -6,7 +6,7 @@ The implementation lives in [src/SlimPipeline/SlimPipeline.fs](/Users/jrh630/rep
 
 ## Purpose
 
-SlimPipeline provides the general, type-agnostic machinery for processing streams of elements. In StackProcessing those elements are usually image slices, windows of slices, slabs, point sets, or scalar reducer values, but SlimPipeline itself does not depend on image types.
+SlimPipeline provides the general, type-agnostic machinery for processing streams of elements. In StackProcessing those elements are usually Chunk slices, windows of chunks, point sets, meshes, charts, or scalar reducer values, but SlimPipeline itself does not depend on image types.
 
 It provides:
 
@@ -207,7 +207,7 @@ let (-->) = Stage.compose
 - cleanup actions
 - pipeline graphs
 
-This is the composition used inside Core helper functions such as window/slab scaffolding. It is ergonomic for library authors, but because it remains inside a single stage from the user's point of view, future optimizer work may need richer graph semantics to see these internal pieces.
+This is the composition used inside Core helper functions such as windowed Chunk scaffolding. It is ergonomic for library authors, but because it remains inside a single stage from the user's point of view, future optimizer work may need richer graph semantics to see these internal pieces.
 
 ## Plan
 
@@ -357,7 +357,7 @@ type ResourceOps<'T> =
       MemoryOf: 'T -> uint64 option }
 ```
 
-SlimPipeline itself does not know about images, but StackProcessing.Core supplies image-specific resource operations. This keeps the generic pipeline layer independent while still allowing image stages to release native resources predictably.
+SlimPipeline itself does not know about chunks, but StackProcessing.Core supplies chunk-specific resource operations. This keeps the generic pipeline layer independent while still allowing image stages to release pooled buffers predictably.
 
 ## Runtime Measurement
 
@@ -434,8 +434,8 @@ StackProcessing.Core builds image-specific stages on top of SlimPipeline:
 
 - read/write stages
 - casts
-- image operators
-- window/slab conversions
+- Chunk image operators
+- windowed Chunk operations
 - reducers
 - connected components
 - object measurement
@@ -451,7 +451,7 @@ Use `Stage` when creating a reusable operation that should carry memory, cost, g
 
 Use `Plan` when composing user-facing DSL operations that should be checked, costed, and executed later.
 
-Keep domain concepts such as images, slabs, TIFF, OME-Zarr, and SimpleITK outside SlimPipeline unless they are expressible as generic stream concepts.
+Keep domain concepts such as chunks, TIFF, OME-Zarr, native image kernels, and Studio graph policies outside SlimPipeline unless they are expressible as generic stream concepts.
 
 ## Open Direction
 
@@ -459,9 +459,8 @@ The most useful future development is likely graph enrichment at the `Stage` lev
 
 - `cast<T,T> -> identity`
 - safe cast-chain fusion
-- slab identity elimination
+- window identity elimination
 - read/cast alternative generation
-- window/slab pattern recognition
+- windowed Chunk pattern recognition
 
 That work should enrich the existing graph rather than adding a separate shadow IR.
-

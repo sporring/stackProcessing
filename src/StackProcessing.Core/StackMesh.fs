@@ -98,15 +98,6 @@ let private cubeTetrahedra =
        [| 0; 7; 4; 6 |]
        [| 0; 4; 5; 6 |] |]
 
-let private voxelValue (pixels: 'T[,]) x y =
-    pixels[x, y] |> Convert.ToDouble
-
-let private voxelValueOrBackground (pixels: 'T[,]) width height x y =
-    if x < 0 || y < 0 || x >= width || y >= height then
-        0.0
-    else
-        voxelValue pixels x y
-
 let private chunkValueOrBackground<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (pixels: 'T[])
     width
@@ -117,67 +108,6 @@ let private chunkValueOrBackground<'T when 'T: equality and 'T: (new: unit -> 'T
         0.0
     else
         Convert.ToDouble pixels[Chunk.toIndex width height x y 0]
-
-let private meshBetweenSlices<'T when 'T: equality> surfaceValue (lower: Image<'T>) (upper: Image<'T>) =
-    let width = min (int (lower.GetWidth())) (int (upper.GetWidth()))
-    let height = min (int (lower.GetHeight())) (int (upper.GetHeight()))
-    let lowerZ = float lower.index
-    let upperZ = float upper.index
-    let lowerPixels = lower.toArray2D()
-    let upperPixels = upper.toArray2D()
-
-    let triangles = ResizeArray<Triangle>()
-
-    if width >= 1 && height >= 1 then
-        for y in -1 .. height - 1 do
-            for x in -1 .. width - 1 do
-                let positions =
-                    [| point (float x) (float y) lowerZ
-                       point (float (x + 1)) (float y) lowerZ
-                       point (float (x + 1)) (float (y + 1)) lowerZ
-                       point (float x) (float (y + 1)) lowerZ
-                       point (float x) (float y) upperZ
-                       point (float (x + 1)) (float y) upperZ
-                       point (float (x + 1)) (float (y + 1)) upperZ
-                       point (float x) (float (y + 1)) upperZ |]
-
-                let values =
-                    [| voxelValueOrBackground lowerPixels width height x y
-                       voxelValueOrBackground lowerPixels width height (x + 1) y
-                       voxelValueOrBackground lowerPixels width height (x + 1) (y + 1)
-                       voxelValueOrBackground lowerPixels width height x (y + 1)
-                       voxelValueOrBackground upperPixels width height x y
-                       voxelValueOrBackground upperPixels width height (x + 1) y
-                       voxelValueOrBackground upperPixels width height (x + 1) (y + 1)
-                       voxelValueOrBackground upperPixels width height x (y + 1) |]
-
-                let cube = Array.init 8 (fun index -> positions[index], values[index])
-
-                cubeTetrahedra
-                |> Array.iter (fun tetra ->
-                    tetra
-                    |> Array.map (fun index -> cube[index])
-                    |> triangulateTetra surfaceValue
-                    |> List.iter triangles.Add)
-
-    { Triangles = triangles |> Seq.toList }
-
-let marchingCubes<'T when 'T: equality> surfaceValue : Stage<Image<'T>, TriangleSet> =
-    let releaseConsumed (window: Window<Image<'T>>) =
-        window.Items
-        |> List.take (min (int window.ReleaseCount) window.Items.Length)
-        |> List.iter (fun image -> image.decRefCount())
-
-    let mapper (_debug: bool) (window: Window<Image<'T>>) =
-        try
-            match window.Items with
-            | lower :: upper :: _ -> meshBetweenSlices surfaceValue lower upper
-            | _ -> TriangleSet.empty
-        finally
-            releaseConsumed window
-
-    (StackCore.window 2u 1u 1u)
-    --> StackCore.mapWindow "marchingCubes" mapper id id
 
 let private meshBetweenChunks<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     surfaceValue

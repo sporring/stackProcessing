@@ -14,13 +14,13 @@ let main arg =
             "../data/volume", "../tmp/finiteDiff3D"
 
     src
-    |> read<float> input ".tiff"
+    |> readChunkSlices<float32> input ".tiff"
     >=> tap "tap: For finiteDiff"
-    >=> finiteDiff 2u 1u
+    >=> finiteDiffNativeZParallelCollect<float32> 2u 4
     >=> tap "tap: For cast"
-    >=> cast<float,uint8>
+    >=> chunkCast<float32,uint8>
     >=> tap "tap: For write"
-    >=> write output ".tiff"
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     0

@@ -8,8 +8,6 @@ let main arg =
 
     let src, arg = commandLineSource availableMemory arg
 
-    src
-    |> empty
-    |> sink
+    src |> sink
 
     0

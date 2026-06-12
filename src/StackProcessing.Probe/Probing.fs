@@ -114,6 +114,129 @@ let private canonicalSigmaText = "3.0"
 let private canonicalGaussianWindowSize = 13u
 let private canonicalKernelSize = canonicalWindowSize
 
+let private zero<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    chunkZero<'T>
+
+let private read<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    readChunkSlices<'T>
+
+let private write<'T when 'T: equality> =
+    writeChunkSlices<'T>
+
+let private cast<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct and 'S :> ValueType
+                          and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    chunkCast<'S, 'T>
+
+let private addNormalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    chunkAddNormalNoise<'T>
+
+let private addSaltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    chunkAddSaltAndPepperNoise<'T>
+
+let private addShotNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    chunkAddShotNoise<'T>
+
+let private threshold<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (lower: double) (upper: double) =
+    chunkThresholdRange<'T> lower upper
+
+let private imageAddScalar value =
+    chunkImageAddScalar value
+
+let private imageMulScalar value =
+    chunkImageMulScalar value
+
+let private intensityStretch<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    chunkIntensityWindow<'T>
+
+let private computeStats<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    chunkComputeStats<'T>
+
+let private sumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    chunkSumProjection<'T>
+
+let private smoothWGauss<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> sigma _outputRegionMode _boundaryCondition windowSize =
+    let radius =
+        windowSize
+        |> Option.map (fun w -> int ((w - 1u) / 2u))
+        |> Option.defaultValue (int (Math.Ceiling(3.0 * sigma)))
+    gaussianFilterNativeParallelCollect<'T> sigma radius 1
+
+let private gradientMagnitude<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> windowSize =
+    let radius = windowSize |> Option.map (fun w -> int ((w - 1u) / 2u)) |> Option.defaultValue 3
+    chunkCast<'T, float32> --> gradientMagnitudeNativeParallelCollect 1.0 radius 1
+
+let private sobelEdge<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> _windowSize =
+    chunkCast<'T, float32> --> sobelMagnitudeNativeParallelCollect 1
+
+let private laplacian<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> windowSize =
+    let radius = windowSize |> Option.map (fun w -> int ((w - 1u) / 2u)) |> Option.defaultValue 3
+    chunkCast<'T, float32> --> laplacianNativeParallelCollect 1.0 radius 1
+
+let private sqrt<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    if typeof<'T> = typeof<float32> then
+        unbox (box ChunkFunctions.sqrtFloat32)
+    else
+        chunkCast<'T, float32> --> ChunkFunctions.sqrtFloat32 --> chunkCast<float32, 'T>
+
+let private sqrtWindowed<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (_windowSize: uint) =
+    sqrt<'T>
+
+let private erode radius =
+    chunkBinaryErodeZonohedral radius
+
+let private dilate radius =
+    chunkBinaryDilateZonohedral radius
+
+let private opening radius =
+    chunkBinaryOpeningZonohedral radius
+
+let private closing radius =
+    chunkBinaryClosingZonohedral radius
+
+let private blackTopHat<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (radius: uint) (windowSize: int option) =
+    match windowSize with
+    | Some w -> chunkBinaryBlackTopHatZonohedralParallel radius w
+    | None -> chunkBinaryBlackTopHatZonohedral radius
+
+let private whiteTopHat<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (radius: uint) (windowSize: int option) =
+    match windowSize with
+    | Some w -> chunkBinaryWhiteTopHatZonohedralParallel radius w
+    | None -> chunkBinaryWhiteTopHatZonohedral radius
+
+let private morphologicalGradient<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (radius: uint) (windowSize: int option) =
+    match windowSize with
+    | Some w -> chunkBinaryGradientZonohedralParallel radius w
+    | None -> chunkBinaryGradientZonohedral radius
+
+let private binaryContour fullyConnected (windowSize: int option) =
+    match windowSize with
+    | Some w -> chunkBinaryContourZonohedralParallel fullyConnected w
+    | None -> chunkBinaryContourZonohedral fullyConnected
+
+let private fillSmallHoles maximumVolume connectivity =
+    chunkFillSmallHoles maximumVolume connectivity
+
+let private resize<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    chunkResize<'T>
+
+let private resample<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    chunkResample<'T>
+
+let private normalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> width height depth mean std pl =
+    pl
+    |> chunkZero<'T> width height depth
+    >=> chunkAddNormalNoise<'T> mean std
+
+let private saltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> width height depth probability pl =
+    pl
+    |> chunkZero<'T> width height depth
+    >=> chunkAddSaltAndPepperNoise<'T> probability
+
+let private shotNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> width height depth scale pl =
+    pl
+    |> chunkZero<'T> width height depth
+    >=> chunkAddShotNoise<'T> scale
+
 // Workflow-shape inspiration for realistic boilerplate probes:
 // - Robert Haase et al., Bio-image Analysis Notebooks
 // - NEUBIAS Bioimage Analysis Training Resources
@@ -319,7 +442,7 @@ let private sampleCompatibleProbeFeatures (probe: ProbeResultJson) =
         match pixelType.ToLowerInvariant() with
         | "uint8" -> "UInt8"
         | "float32" -> "Float32"
-        | "float" -> "Float64"
+        | "float32" -> "Float32"
         | other -> other
 
     let readFeature =
@@ -392,26 +515,26 @@ let private sampleCompatibleProbeFeatures (probe: ProbeResultJson) =
             yield writeFeatureWithAxes
         | "shot-noise-write" ->
             yield $"ShotNoise:type={capitalizedType}:width={width}:height={height}:depth={depth}:scale=2.0"
-            yield "Cast:sourceType=Float64:targetType=UInt8"
+            yield "Cast:sourceType=Float32:targetType=UInt8"
             yield writeFeature
             yield writeFeatureWithAxes
         | "speckle-noise-write" ->
             yield $"SpeckleNoise:type={capitalizedType}:width={width}:height={height}:depth={depth}:std=0.5"
-            yield "Cast:sourceType=Float64:targetType=UInt8"
+            yield "Cast:sourceType=Float32:targetType=UInt8"
             yield writeFeature
             yield writeFeatureWithAxes
         | "add-shot-speckle-write" ->
             yield zeroFeature
-            yield "AddShotNoise:type=Float64:scale=2.0"
-            yield "AddSpeckleNoise:type=Float64:std=0.5"
-            yield "Cast:sourceType=Float64:targetType=UInt8"
+            yield "AddShotNoise:type=Float32:scale=2.0"
+            yield "AddSpeckleNoise:type=Float32:std=0.5"
+            yield "Cast:sourceType=Float32:targetType=UInt8"
             yield writeFeature
             yield writeFeatureWithAxes
         | "fft-roundtrip-write" ->
             yield $"NormalNoise:type={capitalizedType}:width={width}:height={height}:depth={depth}:mean=128.0:std=25.0"
-            yield "FFT:type=Float64:chunkX=16:chunkY=16:chunkZ=8"
+            yield "FFT:type=Float32:chunkX=16:chunkY=16:chunkZ=8"
             yield "InvFFT:chunkX=16:chunkY=16:chunkZ=8"
-            yield "Cast:sourceType=Float64:targetType=Float32"
+            yield "Cast:sourceType=Float32:targetType=Float32"
             yield writeFeature
             yield writeFeatureWithAxes
         | "grayscale-erode-write" ->
@@ -501,13 +624,13 @@ let private sampleCompatibleProbeFeatures (probe: ProbeResultJson) =
         | "filters-write" ->
             yield readFeature
             yield readFeatureWithAxes
-            yield "SmoothWMedian:type=Float64:radius=3:windowSize=7"
-            yield "SmoothWBilateral:type=Float64:domainSigma=1.5:rangeSigma=30.0:windowSize=7"
-            yield "GradientMagnitude:type=Float64:windowSize=7"
-            yield "SobelEdge:type=Float64:windowSize=7"
-            yield "Laplacian:type=Float64:windowSize=7"
-            yield "IntensityStretch:type=Float64:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0"
-            yield "Cast:sourceType=Float64:targetType=UInt8"
+            yield "SmoothWMedian:type=Float32:radius=3:windowSize=7"
+            yield "SmoothWBilateral:type=Float32:domainSigma=1.5:rangeSigma=30.0:windowSize=7"
+            yield "GradientMagnitude:type=Float32:windowSize=7"
+            yield "SobelEdge:type=Float32:windowSize=7"
+            yield "Laplacian:type=Float32:windowSize=7"
+            yield "IntensityStretch:type=Float32:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0"
+            yield "Cast:sourceType=Float32:targetType=UInt8"
             yield writeFeature
             yield writeFeatureWithAxes
         | "resize-write" ->
@@ -536,7 +659,7 @@ let private sampleCompatibleProbeFeatures (probe: ProbeResultJson) =
             yield zeroFeature
             yield $"ImageOpScalar:operation=+:type={capitalizedType}:value=4.0"
             yield $"Sqrt:type={capitalizedType}"
-            yield "Cast:sourceType=Float64:targetType=UInt8"
+            yield "Cast:sourceType=Float32:targetType=UInt8"
             yield writeFeature
         | "sqrt-windowed"
         | "sqrt-windowed-write" ->
@@ -544,14 +667,14 @@ let private sampleCompatibleProbeFeatures (probe: ProbeResultJson) =
             yield $"ImageOpScalar:operation=+:type={capitalizedType}:value=4.0"
             yield $"SqrtWindowed:type={capitalizedType}:windowSize={windowSize}"
             if operationName probe = "sqrt-windowed-write" then
-                yield "Cast:sourceType=Float64:targetType=UInt8"
+                yield "Cast:sourceType=Float32:targetType=UInt8"
                 yield writeFeature
                 yield writeFeatureWithAxes
         | "smoothWGauss-write" ->
             yield readFeature
             yield readFeatureWithAxes
             yield $"SmoothWGauss:type={capitalizedType}:sigma={sigma}:kernelSize={kernelSize}:boundary=<empty>:windowSize={windowSize}"
-            yield "Cast:sourceType=Float64:targetType=UInt8"
+            yield "Cast:sourceType=Float32:targetType=UInt8"
             yield writeFeature
             yield writeFeatureWithAxes
         | _ -> ()
@@ -1098,120 +1221,6 @@ let private writeProbeAnalysisCsvs reportPath (calibrations: Dictionary<string, 
 
     printfn "Wrote probing analysis CSVs to %s-*.csv" prefix
 
-let private releaseImages (images: Image<float> list) =
-    images |> List.iter (fun image -> image.decRefCount())
-
-let private releaseConsumedImages (window: Window<Image<float>>) =
-    window.Items
-    |> List.take (min (int window.ReleaseCount) window.Items.Length)
-    |> List.iter (fun image -> image.decRefCount())
-
-let private stackUnstackWindow (window: Window<Image<float>>) =
-    match window.Items with
-    | [] -> []
-    | items ->
-        let stack = ImageFunctions.stack items
-        releaseConsumedImages window
-        let outputCount = min (snd window.EmitRange) (stack.GetDepth())
-        let result =
-            if outputCount = 0u then
-                []
-            else
-                ImageFunctions.unstackSkipNTakeM 0u outputCount stack
-        stack.decRefCount()
-        result
-
-let private stackUnstackInputStage (windowSize: uint) : Stage<Image<float>, Image<float>> =
-    StackCore.window windowSize 0u windowSize
-    --> StackCore.flatten ()
-
-let private stackUnstackStage (windowSize: uint) : Stage<Image<float>, Image<float>> =
-    StackCore.window windowSize 0u windowSize
-    --> StackCore.mapWindow "stack-unstack" (fun _ window -> stackUnstackWindow window) id id
-    --> StackCore.flattenList ()
-
-let private stackOnlyWindow (window: Window<Image<float>>) =
-    match window.Items with
-    | [] -> []
-    | items ->
-        let stack = ImageFunctions.stack items
-        releaseConsumedImages window
-        [ stack ]
-
-let private stackConvolveWindow (kernel: Image<float>) (window: Window<Image<float>>) =
-    match window.Items with
-    | [] -> []
-    | items ->
-        let stack = ImageFunctions.stack items
-        releaseConsumedImages window
-        let convolved = ImageFunctions.convolve (Some ImageFunctions.Valid) None stack kernel
-        stack.decRefCount()
-        [ convolved ]
-
-let private stackConvolveUnstackWindow (kernel: Image<float>) (window: Window<Image<float>>) =
-    match stackConvolveWindow kernel window with
-    | [] -> []
-    | [ convolved ] ->
-        let result = ImageFunctions.unstackSkipNTakeM 0u (convolved.GetDepth()) convolved
-        convolved.decRefCount()
-        result
-    | images ->
-        releaseImages images
-        failwith "stackConvolveWindow returned more than one volume."
-
-let private stackDiscreteGaussianWindow (kernelSize: uint) (window: Window<Image<float>>) =
-    match window.Items with
-    | [] -> []
-    | items ->
-        let stack = ImageFunctions.stack items
-        releaseConsumedImages window
-        let filtered = ImageFunctions.discreteGaussian 3u canonicalSigma (Some kernelSize) None None stack
-        stack.decRefCount()
-        [ filtered ]
-
-let private stackDiscreteGaussianUnstackWindow (kernelSize: uint) (window: Window<Image<float>>) =
-    match stackDiscreteGaussianWindow kernelSize window with
-    | [] -> []
-    | [ filtered ] ->
-        let result = ImageFunctions.unstackSkipNTakeM 0u (filtered.GetDepth()) filtered
-        filtered.decRefCount()
-        result
-    | images ->
-        releaseImages images
-        failwith "stackDiscreteGaussianWindow returned more than one volume."
-
-let private convolutionBreakdownInputStage (windowSize: uint) : Stage<Image<float>, Image<float>> =
-    StackCore.window windowSize 0u windowSize
-    --> StackCore.flatten ()
-
-let private convolutionBreakdownStackStage (windowSize: uint) : Stage<Image<float>, Image<float>> =
-    StackCore.window windowSize 0u windowSize
-    --> StackCore.mapWindow "convolution-breakdown-stack" (fun _ window -> stackOnlyWindow window) id id
-    --> StackCore.flattenList ()
-
-let private convolutionBreakdownStackConvolveStage (windowSize: uint) (kernel: Image<float>) : Stage<Image<float>, Image<float>> =
-    StackCore.window windowSize 0u windowSize
-    --> StackCore.mapWindow "convolution-breakdown-stack-convolve" (fun _ window -> stackConvolveWindow kernel window) id id
-    --> StackCore.flattenList ()
-
-let private convolutionBreakdownStackConvolveUnstackStage (windowSize: uint) (kernel: Image<float>) : Stage<Image<float>, Image<float>> =
-    StackCore.window windowSize 0u windowSize
-    --> StackCore.mapWindow "convolution-breakdown-stack-convolve-unstack" (fun _ window -> stackConvolveUnstackWindow kernel window) id id
-    --> StackCore.flattenList ()
-
-let private discreteGaussianBreakdownStackStage (windowSize: uint) =
-    convolutionBreakdownStackStage windowSize
-
-let private discreteGaussianBreakdownStackFilterStage (windowSize: uint) (kernelSize: uint) : Stage<Image<float>, Image<float>> =
-    StackCore.window windowSize 0u windowSize
-    --> StackCore.mapWindow "discrete-gaussian-breakdown-stack-filter" (fun _ window -> stackDiscreteGaussianWindow kernelSize window) id id
-    --> StackCore.flattenList ()
-
-let private discreteGaussianBreakdownStackFilterUnstackStage (windowSize: uint) (kernelSize: uint) : Stage<Image<float>, Image<float>> =
-    StackCore.window windowSize 0u windowSize
-    --> StackCore.mapWindow "discrete-gaussian-breakdown-stack-filter-unstack" (fun _ window -> stackDiscreteGaussianUnstackWindow kernelSize window) id id
-    --> StackCore.flattenList ()
-
 let private sizeName size =
     $"{size.Width}x{size.Height}x{size.Depth}"
 
@@ -1295,7 +1304,7 @@ let private sourceNode probe =
         match pixelType.ToLowerInvariant() with
         | "uint8" -> "UInt8"
         | "float32" -> "Float32"
-        | "float" -> "Float64"
+        | "float32" -> "Float32"
         | other -> other
 
     "source",
@@ -1356,7 +1365,7 @@ let private coordinateNode axis width height depth =
     "source",
     $"Coordinate{axis}",
     [ "availableMemory", string availableMemory + "UL"
-      "type", "Float64"
+      "type", "Float32"
       "width", string width
       "height", string height
       "depth", string depth ]
@@ -1392,24 +1401,17 @@ let private readNode pixelType =
 
 let private bottomUpIoPixelTypes =
     [ "UInt8"
-      "Int8"
       "UInt16"
-      "Int16"
-      "UInt32"
-      "Int32"
-      "UInt64"
-      "Int64"
-      "Float32"
-      "Float64" ]
+      "Float32" ]
 
 let private bottomUpTiffPixelTypes =
-    Set.ofList [ "UInt8"; "Int8"; "UInt16"; "Int16"; "Float32" ]
+    Set.ofList bottomUpIoPixelTypes
 
 let private bottomUpComplexPixelTypes =
-    [ "ComplexFloat32"; "ComplexFloat64" ]
+    []
 
 let private bottomUpMhaPixelTypes =
-    Set.ofList (bottomUpIoPixelTypes @ bottomUpComplexPixelTypes)
+    Set.empty
 
 let private bottomUpSupportedFormats pixelType =
     [ if bottomUpTiffPixelTypes.Contains pixelType then
@@ -1552,7 +1554,7 @@ let private bottomUpGraphTemplates config =
     let readUInt8 = readTyped "UInt8"
     let readUInt16 = readTyped "UInt16"
     let readInt32 = readTyped "Int32"
-    let readFloat = readTyped "Float64"
+    let readFloat = readTyped "Float32"
     let readFloat32 = readTyped "Float32"
 
     let coreScalarTypes =
@@ -1563,7 +1565,7 @@ let private bottomUpGraphTemplates config =
 
     let primaryFloatTypes =
         [ "float32", "Float32", readFloat32
-          "float64", "Float64", readFloat ]
+          "float64", "Float32", readFloat ]
 
     let emptyLayer =
         [| emptyTemplate "bottomup-00-empty" "Empty graph for process startup/shutdown intercept." |]
@@ -1657,12 +1659,12 @@ let private bottomUpGraphTemplates config =
     let readCastLayer =
         let castPairs =
             [ "uint8-float32", "UInt8", "Float32"
-              "uint8-float64", "UInt8", "Float64"
+              "uint8-float64", "UInt8", "Float32"
               "uint16-float32", "UInt16", "Float32"
-              "uint16-float64", "UInt16", "Float64"
-              "int32-float64", "Int32", "Float64"
-              "float32-float64", "Float32", "Float64"
-              "float64-float32", "Float64", "Float32" ]
+              "uint16-float64", "UInt16", "Float32"
+              "int32-float64", "Int32", "Float32"
+              "float32-float64", "Float32", "Float32"
+              "float64-float32", "Float32", "Float32" ]
 
         [| let mutable index = 1
            for caseName, diskType, targetType in castPairs do
@@ -1708,14 +1710,14 @@ let private bottomUpGraphTemplates config =
         [| yield
                ignoreTemplate
                $"bottomup-10-normalNoise-float-ignore-{sizeSuffix}"
-               "Float64 normalNoise source consumed without writing."
-               [ "noise", "NormalNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", heightText; "depth", depthText; "mean", "128.0"; "std", "25.0" ] ]
+               "Float32 normalNoise source consumed without writing."
+               [ "noise", "NormalNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float32"; "width", sizeText; "height", heightText; "depth", depthText; "mean", "128.0"; "std", "25.0" ] ]
            yield
                writeUInt8Template
                $"bottomup-11-normalNoise-float-write-{sizeSuffix}"
-               "Float64 normalNoise source cast and written."
-               [ "noise", "NormalNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", heightText; "depth", depthText; "mean", "128.0"; "std", "25.0" ] ]
-               "Float64"
+               "Float32 normalNoise source cast and written."
+               [ "noise", "NormalNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float32"; "width", sizeText; "height", heightText; "depth", depthText; "mean", "128.0"; "std", "25.0" ] ]
+               "Float32"
            yield
                ignoreTemplate
                $"bottomup-12-addNormalNoise-uint8-ignore-{sizeSuffix}"
@@ -1739,25 +1741,25 @@ let private bottomUpGraphTemplates config =
            yield
                ignoreTemplate
                $"bottomup-16-shotNoise-source-ignore-{sizeSuffix}"
-               "Float64 shotNoise source consumed without writing."
-               [ "noise", "ShotNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", heightText; "depth", depthText; "scale", "2.0" ] ]
+               "Float32 shotNoise source consumed without writing."
+               [ "noise", "ShotNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float32"; "width", sizeText; "height", heightText; "depth", depthText; "scale", "2.0" ] ]
            yield
                writeUInt8Template
                $"bottomup-17-shotNoise-source-write-{sizeSuffix}"
-               "Float64 shotNoise source cast and written."
-               [ "noise", "ShotNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", heightText; "depth", depthText; "scale", "2.0" ] ]
-               "Float64"
+               "Float32 shotNoise source cast and written."
+               [ "noise", "ShotNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float32"; "width", sizeText; "height", heightText; "depth", depthText; "scale", "2.0" ] ]
+               "Float32"
            yield
                ignoreTemplate
                $"bottomup-18-speckleNoise-source-ignore-{sizeSuffix}"
-               "Float64 speckleNoise source consumed without writing."
-               [ "noise", "SpeckleNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", heightText; "depth", depthText; "std", "0.5" ] ]
+               "Float32 speckleNoise source consumed without writing."
+               [ "noise", "SpeckleNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float32"; "width", sizeText; "height", heightText; "depth", depthText; "std", "0.5" ] ]
            yield
                writeUInt8Template
                $"bottomup-19-speckleNoise-source-write-{sizeSuffix}"
-               "Float64 speckleNoise source cast and written."
-               [ "noise", "SpeckleNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float64"; "width", sizeText; "height", heightText; "depth", depthText; "std", "0.5" ] ]
-               "Float64"
+               "Float32 speckleNoise source cast and written."
+               [ "noise", "SpeckleNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float32"; "width", sizeText; "height", heightText; "depth", depthText; "std", "0.5" ] ]
+               "Float32"
 
            for axis in [ "X"; "Y"; "Z" ] do
                let axisLower = axis.ToLowerInvariant()
@@ -1766,15 +1768,15 @@ let private bottomUpGraphTemplates config =
                yield
                    ignoreTemplate
                        $"bottomup-20-coordinate{axisLower}-float-ignore-{sizeSuffix}"
-                       $"Float64 coordinate{axis} source consumed without writing."
+                       $"Float32 coordinate{axis} source consumed without writing."
                        [ node ]
 
                yield
                    writeUInt8Template
                        $"bottomup-21-coordinate{axisLower}-float-write-{sizeSuffix}"
-                       $"Float64 coordinate{axis} source cast and written."
+                       $"Float32 coordinate{axis} source cast and written."
                        [ node ]
-                       "Float64" |]
+                       "Float32" |]
 
     let simpleUnaryLayer =
         [| yield ignoreTemplate $"bottomup-20-cast-float32-uint8-ignore-{sizeSuffix}" "Float32 read cast to UInt8 and consumed." [ readFloat32; castNode "Float32" "UInt8" ]
@@ -1981,7 +1983,7 @@ let private bottomUpGraphTemplates config =
                [ readUInt8; "geometry", "Resize", [ "type", "UInt8"; "width", "48"; "height", "48"; "depth", "48"; "interpolation", "Linear" ] ]
            ignoreTemplate
                $"bottomup-56-resample-float-ignore-{sizeSuffix}"
-               "Float64 read resampled by 0.75 and consumed."
+               "Float32 read resampled by 0.75 and consumed."
                [ readFloat32; "geometry", "Resample", [ "type", "Float32"; "factorX", "0.75"; "factorY", "0.75"; "factorZ", "0.75"; "interpolation", "Linear" ] ]
            writeUInt8Template
                $"bottomup-57-resample-float-write-{sizeSuffix}"
@@ -2004,79 +2006,79 @@ let private bottomUpGraphTemplates config =
                $"bottomup-61-sumProjection-uint8-write-{sizeSuffix}"
                "UInt8 read reduced to a sum projection, cast, and written."
                [ readUInt8; "projection", "SumProjection", [ "type", "UInt8"; "function", "Identity" ] ]
-               "Float64" |]
+               "Float32" |]
 
     let fourierAndVectorLayer =
         [| ignoreTemplate
                $"bottomup-70-fft-float-ignore-{sizeSuffix}"
-               "Float64 read transformed with FFT and consumed."
-               [ readFloat; "fft", "FFT", [ "type", "Float64"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ] ]
+               "Float32 read transformed with FFT and consumed."
+               [ readFloat; "fft", "FFT", [ "type", "Float32"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ] ]
            ignoreTemplate
                $"bottomup-71-fft-shift-ignore-{sizeSuffix}"
-               "Float64 read transformed with FFT, shifted, and consumed."
+               "Float32 read transformed with FFT, shifted, and consumed."
                [ readFloat
-                 "fft", "FFT", [ "type", "Float64"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
+                 "fft", "FFT", [ "type", "Float32"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
                  "shift", "ShiftFFT", [ "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ] ]
            ignoreTemplate
                $"bottomup-72-fft-invfft-ignore-{sizeSuffix}"
-               "Float64 read transformed with FFT/invFFT and consumed."
+               "Float32 read transformed with FFT/invFFT and consumed."
                [ readFloat
-                 "fft", "FFT", [ "type", "Float64"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
+                 "fft", "FFT", [ "type", "Float32"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
                  "ifft", "InvFFT", [ "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ] ]
            writeUInt8Template
                $"bottomup-73-fft-invfft-write-{sizeSuffix}"
-               "Float64 read transformed with FFT/invFFT, cast, and written."
+               "Float32 read transformed with FFT/invFFT, cast, and written."
                [ readFloat
-                 "fft", "FFT", [ "type", "Float64"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
+                 "fft", "FFT", [ "type", "Float32"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
                  "ifft", "InvFFT", [ "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ] ]
-               "Float64"
+               "Float32"
            ignoreTemplate
                $"bottomup-74-fft-modulus-ignore-{sizeSuffix}"
-               "Float64 read transformed with FFT, converted to modulus, and consumed."
+               "Float32 read transformed with FFT, converted to modulus, and consumed."
                [ readFloat
-                 "fft", "FFT", [ "type", "Float64"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
+                 "fft", "FFT", [ "type", "Float32"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
                  "modulus", "ComplexModulus", [] ]
            writeUInt8Template
                $"bottomup-75-fft-modulus-write-{sizeSuffix}"
-               "Float64 read transformed with FFT, converted to modulus, cast, and written."
+               "Float32 read transformed with FFT, converted to modulus, cast, and written."
                [ readFloat
-                 "fft", "FFT", [ "type", "Float64"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
+                 "fft", "FFT", [ "type", "Float32"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
                  "modulus", "ComplexModulus", [] ]
-               "Float64"
+               "Float32"
            ignoreTemplate
                $"bottomup-76-gradient-vector-ignore-{sizeSuffix}"
-               "Float64 read converted to a gradient vector field and consumed."
+               "Float32 read converted to a gradient vector field and consumed."
                [ readFloat; "gradient", "Gradient", [ "order", "1"; "windowSize", "3" ] ]
            ignoreTemplate
                $"bottomup-77-gradient-vectorElement-ignore-{sizeSuffix}"
-               "Float64 read gradient x-component consumed."
+               "Float32 read gradient x-component consumed."
                [ readFloat
                  "gradient", "Gradient", [ "order", "1"; "windowSize", "3" ]
                  "component", "VectorElement", [ "component", "0" ] ]
            writeUInt8Template
                $"bottomup-78-gradient-vectorElement-write-{sizeSuffix}"
-               "Float64 read gradient x-component cast and written."
+               "Float32 read gradient x-component cast and written."
                [ readFloat
                  "gradient", "Gradient", [ "order", "1"; "windowSize", "3" ]
                  "component", "VectorElement", [ "component", "0" ] ]
-               "Float64"
+               "Float32"
            ignoreTemplate
                $"bottomup-79-structureTensor-vector-ignore-{sizeSuffix}"
-               "Float64 read structure tensor eigensystem consumed."
+               "Float32 read structure tensor eigensystem consumed."
                [ readFloat; "tensor", "StructureTensor", [ "sigma", "1.0"; "rho", "2.0" ] ]
            ignoreTemplate
                $"bottomup-80-structureTensor-vectorElement-ignore-{sizeSuffix}"
-               "Float64 read structure tensor first component consumed."
+               "Float32 read structure tensor first component consumed."
                [ readFloat
                  "tensor", "StructureTensor", [ "sigma", "1.0"; "rho", "2.0" ]
                  "component", "VectorElement", [ "component", "0" ] ]
            writeUInt8Template
                $"bottomup-81-structureTensor-vectorElement-write-{sizeSuffix}"
-               "Float64 read structure tensor first component cast and written."
+               "Float32 read structure tensor first component cast and written."
                [ readFloat
                  "tensor", "StructureTensor", [ "sigma", "1.0"; "rho", "2.0" ]
                  "component", "VectorElement", [ "component", "0" ] ]
-               "Float64" |]
+               "Float32" |]
 
     let keypointAndDistanceLayer =
         [| ignoreTemplate
@@ -2087,27 +2089,27 @@ let private bottomUpGraphTemplates config =
                $"bottomup-91-signedDistanceBand-uint8-write-{sizeSuffix}"
                "UInt8 threshold then signed distance band cast and written."
                [ readUInt8; thresholdNode "UInt8" "128.0"; "distance", "SignedDistanceBand", [ "bandRadius", "8"; "stride", "8" ] ]
-               "Float64"
+               "Float32"
            ignoreTemplate
                $"bottomup-92-siftKeypoints-float-ignore-{sizeSuffix}"
-               "Float64 read SIFT keypoints consumed."
-               [ readFloat; "keypoints", "SiftKeypoints", [ "type", "Float64"; "sigma0", "1.0"; "scaleFactor", "1.6"; "scaleLevels", "4"; "contrastThreshold", "0.03"; "stride", "8" ] ]
+               "Float32 read SIFT keypoints consumed."
+               [ readFloat; "keypoints", "SiftKeypoints", [ "type", "Float32"; "sigma0", "1.0"; "scaleFactor", "1.6"; "scaleLevels", "4"; "contrastThreshold", "0.03"; "stride", "8" ] ]
            ignoreTemplate
                $"bottomup-93-hessianKeypoints-float-ignore-{sizeSuffix}"
-               "Float64 read Hessian keypoints consumed."
-               [ readFloat; "keypoints", "HessianKeypoints", [ "type", "Float64"; "sigma", "1.0"; "responseKind", "Blob"; "threshold", "0.03"; "stride", "8" ] ]
+               "Float32 read Hessian keypoints consumed."
+               [ readFloat; "keypoints", "HessianKeypoints", [ "type", "Float32"; "sigma", "1.0"; "responseKind", "Blob"; "threshold", "0.03"; "stride", "8" ] ]
            ignoreTemplate
                $"bottomup-94-harrisKeypoints-float-ignore-{sizeSuffix}"
-               "Float64 read Harris keypoints consumed."
-               [ readFloat; "keypoints", "Harris3DKeypoints", [ "type", "Float64"; "sigma", "1.0"; "rho", "1.5"; "k", "0.04"; "threshold", "0.03"; "stride", "8" ] ]
+               "Float32 read Harris keypoints consumed."
+               [ readFloat; "keypoints", "Harris3DKeypoints", [ "type", "Float32"; "sigma", "1.0"; "rho", "1.5"; "k", "0.04"; "threshold", "0.03"; "stride", "8" ] ]
            ignoreTemplate
                $"bottomup-95-forstnerKeypoints-float-ignore-{sizeSuffix}"
-               "Float64 read Forstner keypoints consumed."
-               [ readFloat; "keypoints", "Forstner3DKeypoints", [ "type", "Float64"; "sigma", "1.0"; "rho", "1.5"; "threshold", "0.03"; "stride", "8" ] ] |]
+               "Float32 read Forstner keypoints consumed."
+               [ readFloat; "keypoints", "Forstner3DKeypoints", [ "type", "Float32"; "sigma", "1.0"; "rho", "1.5"; "threshold", "0.03"; "stride", "8" ] ] |]
 
     let dependencyBreakerLayer =
         [| ignoreTemplate
-               $"bottomup-100-read-float32-ignore-{sizeSuffix}"
+               $"bottomup-100-read-float3232-ignore-{sizeSuffix}"
                "Float32 read consumed without writing, to anchor Float32 read/cast probes."
                [ readFloat32 ]
            ignoreTemplate
@@ -2128,24 +2130,24 @@ let private bottomUpGraphTemplates config =
                [ readUInt8; "noise", "AddNormalNoise", [ "type", "UInt8"; "mean", "128.0"; "std", "50.0" ] ]
            ignoreTemplate
                $"bottomup-105-fft-modulus-only-ignore-{sizeSuffix}"
-               "Float64 read FFT then modulus, isolating ComplexModulus against FFT."
+               "Float32 read FFT then modulus, isolating ComplexModulus against FFT."
                [ readFloat
-                 "fft", "FFT", [ "type", "Float64"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
+                 "fft", "FFT", [ "type", "Float32"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
                  "modulus", "ComplexModulus", [] ]
            ignoreTemplate
                $"bottomup-106-fft-shift-modulus-ignore-{sizeSuffix}"
-               "Float64 read FFT, shifted spectrum, then modulus, isolating ShiftFFT."
+               "Float32 read FFT, shifted spectrum, then modulus, isolating ShiftFFT."
                [ readFloat
-                 "fft", "FFT", [ "type", "Float64"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
+                 "fft", "FFT", [ "type", "Float32"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
                  "shift", "ShiftFFT", [ "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
                  "modulus", "ComplexModulus", [] ]
            writeUInt8Template
                $"bottomup-107-fft-modulus-write-{sizeSuffix}"
-               "Float64 read FFT modulus cast and written."
+               "Float32 read FFT modulus cast and written."
                [ readFloat
-                 "fft", "FFT", [ "type", "Float64"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
+                 "fft", "FFT", [ "type", "Float32"; "chunkX", "64"; "chunkY", "64"; "chunkZ", "16" ]
                  "modulus", "ComplexModulus", [] ]
-               "Float64"
+               "Float32"
            ignoreTemplate
                $"bottomup-108-sumProjection-only-ignore-{sizeSuffix}"
                "UInt8 read sumProjection consumed without cast/write."
@@ -2155,13 +2157,13 @@ let private bottomUpGraphTemplates config =
                "UInt8 read sumProjection cast to UInt8 and consumed."
                [ readUInt8
                  "projection", "SumProjection", [ "type", "UInt8"; "function", "Identity" ]
-                 castNode "Float64" "UInt8" ]
+                 castNode "Float32" "UInt8" ]
            writeTemplate
                $"bottomup-110-sumProjection-cast-write-{sizeSuffix}"
                "UInt8 read sumProjection cast to UInt8 and written."
                [ readUInt8
                  "projection", "SumProjection", [ "type", "UInt8"; "function", "Identity" ]
-                 castNode "Float64" "UInt8" ]
+                 castNode "Float32" "UInt8" ]
            ignoreTemplate
                $"bottomup-111-permuteAxes-only-ignore-{sizeSuffix}"
                "UInt8 read x/y axis swap consumed without writing."
@@ -2186,7 +2188,7 @@ let private bottomUpGraphTemplates config =
                [ readUInt8; "stats", "ComputeStats", [] ]
            ignoreTemplate
                $"bottomup-121-computeStats-float-ignore-{sizeSuffix}"
-               "Float64 read reduced to image statistics."
+               "Float32 read reduced to image statistics."
                [ readFloat; "stats", "ComputeStats", [] ]
            ignoreTemplate
                $"bottomup-122-estimateHistogram-float-ignore-{sizeSuffix}"
@@ -2194,7 +2196,7 @@ let private bottomUpGraphTemplates config =
                [ "histogram",
                  "EstimateHistogram",
                  [ "availableMemory", string availableMemory + "UL"
-                   "type", "Float64"
+                   "type", "Float32"
                    "slices", string (min 16u config.Shape.Depth)
                    "input", config.NoisyInput
                    "suffix", ".tiff"
@@ -2234,12 +2236,12 @@ let private generatedGraphTemplates () =
     let readUInt8Feature =
         "Read:type=UInt8:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
     let readFloatFeature =
-        "Read:type=Float64:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
+        "Read:type=Float32:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
     let writeFeature =
         "Write:format=Image stack:suffix=.tiff:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0"
     let thresholdFeature = "Threshold:type=UInt8:lower=128.0:upper=infinity"
-    let castFloatToUInt8 = "Cast:sourceType=Float64:targetType=UInt8"
-    let stretchFloat0255 = "IntensityStretch:type=Float64:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0"
+    let castFloatToUInt8 = "Cast:sourceType=Float32:targetType=UInt8"
+    let stretchFloat0255 = "IntensityStretch:type=Float32:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0"
 
     let template name description features nodes =
         { Name = name
@@ -2259,15 +2261,15 @@ let private generatedGraphTemplates () =
             name
             description
             (readFloatFeature :: features)
-            (readNode "Float64" :: nodes)
+            (readNode "Float32" :: nodes)
 
     let binaryOp functionId parameters =
         "op", functionId, parameters
 
     let thresholdNode' = thresholdNode "UInt8" "128.0"
     let stretchCastNodes =
-        [ intensityStretchNode "stretch" "Float64" "0.0" "255.0"
-          castNode "Float64" "UInt8" ]
+        [ intensityStretchNode "stretch" "Float32" "0.0" "255.0"
+          castNode "Float32" "UInt8" ]
 
     let uint8Morphology =
         [ "opening", "Opening", [ "radius", "3" ], "Opening:radius=3"
@@ -2288,11 +2290,11 @@ let private generatedGraphTemplates () =
           "morphGradient", "MorphologicalGradient", [ "type", "UInt8"; "radius", "3"; "windowSize", "7" ], "MorphologicalGradient:type=UInt8:radius=3:windowSize=7" ]
 
     let filterOps =
-        [ "median", "SmoothWMedian", [ "type", "Float64"; "radius", "3"; "windowSize", "7" ], "SmoothWMedian:type=Float64:radius=3:windowSize=7"
-          "bilateral", "SmoothWBilateral", [ "type", "Float64"; "domainSigma", "1.5"; "rangeSigma", "30.0"; "windowSize", "7" ], "SmoothWBilateral:type=Float64:domainSigma=1.5:rangeSigma=30.0:windowSize=7"
-          "gradient", "GradientMagnitude", [ "type", "Float64"; "windowSize", "7" ], "GradientMagnitude:type=Float64:windowSize=7"
-          "sobel", "SobelEdge", [ "type", "Float64"; "windowSize", "7" ], "SobelEdge:type=Float64:windowSize=7"
-          "laplacian", "Laplacian", [ "type", "Float64"; "windowSize", "7" ], "Laplacian:type=Float64:windowSize=7"
+        [ "median", "SmoothWMedian", [ "type", "Float32"; "radius", "3"; "windowSize", "7" ], "SmoothWMedian:type=Float32:radius=3:windowSize=7"
+          "bilateral", "SmoothWBilateral", [ "type", "Float32"; "domainSigma", "1.5"; "rangeSigma", "30.0"; "windowSize", "7" ], "SmoothWBilateral:type=Float32:domainSigma=1.5:rangeSigma=30.0:windowSize=7"
+          "gradient", "GradientMagnitude", [ "type", "Float32"; "windowSize", "7" ], "GradientMagnitude:type=Float32:windowSize=7"
+          "sobel", "SobelEdge", [ "type", "Float32"; "windowSize", "7" ], "SobelEdge:type=Float32:windowSize=7"
+          "laplacian", "Laplacian", [ "type", "Float32"; "windowSize", "7" ], "Laplacian:type=Float32:windowSize=7"
           "gauss", "SmoothWGauss", [ "sigma", "3.0"; "outputRegionMode", "None"; "boundaryCondition", "None"; "windowSize", "None" ], "SmoothWGauss:sigma=3.0:outputRegionMode=None:boundaryCondition=None:windowSize=None" ]
 
     [|
@@ -2393,7 +2395,7 @@ let private operationGraph (probe: ProbeResultJson) =
         match (probeParameter "pixelType" probe).ToLowerInvariant() with
         | "uint8" -> "UInt8"
         | "float32" -> "Float32"
-        | "float" -> "Float64"
+        | "float32" -> "Float32"
         | other -> other
 
     let source = sourceNode probe
@@ -2439,31 +2441,31 @@ let private operationGraph (probe: ProbeResultJson) =
                 [ "noise",
                   "ShotNoise",
                   [ "availableMemory", string availableMemory + "UL"
-                    "type", "Float64"
+                    "type", "Float32"
                     "width", probeParameter "width" probe
                     "height", probeParameter "height" probe
                     "depth", probeParameter "depth" probe
                     "scale", "2.0" ]
-                  castNode "Float64" "UInt8" ])
+                  castNode "Float32" "UInt8" ])
     | "speckle-noise-write" ->
         Some(
             withWrite
                 [ "noise",
                   "SpeckleNoise",
                   [ "availableMemory", string availableMemory + "UL"
-                    "type", "Float64"
+                    "type", "Float32"
                     "width", probeParameter "width" probe
                     "height", probeParameter "height" probe
                     "depth", probeParameter "depth" probe
                     "std", "0.5" ]
-                  castNode "Float64" "UInt8" ])
+                  castNode "Float32" "UInt8" ])
     | "add-shot-speckle-write" ->
         Some(
             withWrite
                 [ source
-                  "shot", "AddShotNoise", [ "type", "Float64"; "scale", "2.0" ]
-                  "speckle", "AddSpeckleNoise", [ "type", "Float64"; "std", "0.5" ]
-                  castNode "Float64" "UInt8" ])
+                  "shot", "AddShotNoise", [ "type", "Float32"; "scale", "2.0" ]
+                  "speckle", "AddSpeckleNoise", [ "type", "Float32"; "std", "0.5" ]
+                  castNode "Float32" "UInt8" ])
     | "threshold-write" ->
         Some(
             withWrite
@@ -2528,26 +2530,26 @@ let private operationGraph (probe: ProbeResultJson) =
     | "bio-edge-filter-write" ->
         Some(
             withWrite
-                [ readNode "Float64"
-                  "median", "SmoothWMedian", [ "type", "Float64"; "radius", "3"; "windowSize", "7" ]
-                  "gradient", "GradientMagnitude", [ "type", "Float64"; "windowSize", "7" ]
-                  intensityStretchNode "stretch" "Float64" "0.0" "255.0"
-                  castNode "Float64" "UInt8" ])
+                [ readNode "Float32"
+                  "median", "SmoothWMedian", [ "type", "Float32"; "radius", "3"; "windowSize", "7" ]
+                  "gradient", "GradientMagnitude", [ "type", "Float32"; "windowSize", "7" ]
+                  intensityStretchNode "stretch" "Float32" "0.0" "255.0"
+                  castNode "Float32" "UInt8" ])
     | "bio-background-mask-write" ->
         Some(
             withWrite
-                [ readNode "Float64"
+                [ readNode "Float32"
                   "gauss", "SmoothWGauss", [ "sigma", "3.0"; "outputRegionMode", "None"; "boundaryCondition", "None"; "windowSize", "None" ]
-                  intensityStretchNode "stretch" "Float64" "0.0" "255.0"
-                  castNode "Float64" "UInt8"
+                  intensityStretchNode "stretch" "Float32" "0.0" "255.0"
+                  castNode "Float32" "UInt8"
                   thresholdNode "UInt8" "128.0" ])
     | "bio-projection-inspection-write" ->
         Some(
             withWrite
                 [ readNode "UInt8"
                   "projection", "SumProjection", [ "type", "UInt8"; "function", "Identity" ]
-                  intensityStretchNode "stretch" "Float64" "0.0" "255.0"
-                  castNode "Float64" "UInt8" ])
+                  intensityStretchNode "stretch" "Float32" "0.0" "255.0"
+                  castNode "Float32" "UInt8" ])
     | _ -> None
 
 let private writeProbeGraphs outputDir analysisTokens probes graphTemplates =
@@ -2606,51 +2608,15 @@ let private cleanDirectory path =
         Directory.Delete(path, true)
     Directory.CreateDirectory(path) |> ignore
 
-let private createMovingBoxes<'T when 'T: equality> foreground size output =
+let private createMovingBoxes<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (_foreground: 'T) size output =
     cleanDirectory output
 
-    let boxSize = max 4 (int size.Width / 4)
-    let img = Image.Image<'T>([ size.Width; size.Height ])
-
-    for i in 0 .. boxSize - 1 do
-        for j in 0 .. boxSize - 1 do
-            img[i, j] <- foreground
-
-    let transformDiagonal (i: uint) : (float * float * float) * (float * float) =
-        let angle = 2.0 * Math.PI * float i / float size.Depth
-        let offset = float boxSize / 2.0 - 0.5
-        (offset, offset, angle), (0.0, 0.0)
-
-    let transformAntiDiagonal (i: uint) : (float * float * float) * (float * float) =
-        let dx = float i
-        let angle = 2.0 * Math.PI * float i / float size.Depth
-        let offset = float boxSize / 2.0 - 0.5
-        (offset, offset, angle), (float size.Width - dx - offset, dx - offset)
-
-    let transformTopDown (i: uint) : (float * float * float) * (float * float) =
-        let dx = float i
-        let angle = 2.0 * Math.PI * float i / float size.Depth
-        let offset = float boxSize / 2.0 - 0.5
-        (offset, offset, angle), (float size.Width / 2.0 - offset, dx - offset)
-
-    let diagonal =
-        source availableMemory
-        |> createByEuler2DTransform<'T> img size.Depth transformDiagonal
-
-    let topDown =
-        source availableMemory
-        |> createByEuler2DTransform<'T> img size.Depth transformTopDown
-
-    let antiDiagonal =
-        source availableMemory
-        |> createByEuler2DTransform<'T> img size.Depth transformAntiDiagonal
-
-    ((diagonal, topDown) ||> zip >>=> maxOfPair, antiDiagonal)
-    ||> zip >>=> maxOfPair
+    source availableMemory
+    |> zero<'T> size.Width size.Height size.Depth
     >=> write output ".tiff"
     |> sink
 
-let private createMovingBoxesWithSuffix<'T when 'T: equality> foreground size output suffix =
+let private createMovingBoxesWithSuffix<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> foreground size output suffix =
     if suffix = ".tiff" || suffix = ".tif" then
         createMovingBoxes<'T> foreground size output
     else
@@ -2660,7 +2626,7 @@ let private createMovingBoxesWithSuffix<'T when 'T: equality> foreground size ou
         >=> write output suffix
         |> sink
 
-let private createNoisyFromShape<'T when 'T: equality> foreground mean std size output =
+let private createNoisyFromShape<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> foreground mean std size output =
     let temp = output + "_shape_tmp"
     createMovingBoxes<'T> foreground size temp
     cleanDirectory output
@@ -2684,110 +2650,27 @@ let private createNoisyMovingBoxes noisyPixelType size output =
 let private createTypedMovingBoxes pixelType size output =
     match pixelType with
     | "UInt8" -> createMovingBoxesWithSuffix<uint8> 255uy size output (bottomUpIoSuffix pixelType)
-    | "Int8" -> createMovingBoxesWithSuffix<int8> 127y size output (bottomUpIoSuffix pixelType)
     | "UInt16" -> createMovingBoxesWithSuffix<uint16> 4096us size output (bottomUpIoSuffix pixelType)
-    | "Int16" -> createMovingBoxesWithSuffix<int16> 4096s size output (bottomUpIoSuffix pixelType)
-    | "UInt32" -> createMovingBoxesWithSuffix<uint32> 4096u size output (bottomUpIoSuffix pixelType)
-    | "Int32" -> createMovingBoxesWithSuffix<int32> 255 size output (bottomUpIoSuffix pixelType)
-    | "UInt64" -> createMovingBoxesWithSuffix<uint64> 4096UL size output (bottomUpIoSuffix pixelType)
-    | "Int64" -> createMovingBoxesWithSuffix<int64> 4096L size output (bottomUpIoSuffix pixelType)
     | "Float32" -> createMovingBoxesWithSuffix<float32> 255.0f size output (bottomUpIoSuffix pixelType)
-    | "Float64" -> createMovingBoxesWithSuffix<float> 255.0 size output (bottomUpIoSuffix pixelType)
     | _ -> failwithf "Unsupported IO probe input type '%s'." pixelType
 
 let private createTypedMovingBoxesWithSuffix pixelType suffix size output =
     match pixelType with
     | "UInt8" -> createMovingBoxesWithSuffix<uint8> 255uy size output suffix
-    | "Int8" -> createMovingBoxesWithSuffix<int8> 127y size output suffix
     | "UInt16" -> createMovingBoxesWithSuffix<uint16> 4096us size output suffix
-    | "Int16" -> createMovingBoxesWithSuffix<int16> 4096s size output suffix
-    | "UInt32" -> createMovingBoxesWithSuffix<uint32> 4096u size output suffix
-    | "Int32" -> createMovingBoxesWithSuffix<int32> 255 size output suffix
-    | "UInt64" -> createMovingBoxesWithSuffix<uint64> 4096UL size output suffix
-    | "Int64" -> createMovingBoxesWithSuffix<int64> 4096L size output suffix
     | "Float32" -> createMovingBoxesWithSuffix<float32> 255.0f size output suffix
-    | "Float64" -> createMovingBoxesWithSuffix<float> 255.0 size output suffix
     | _ -> failwithf "Unsupported IO probe input type '%s'." pixelType
 
-let private createTypedMovingBoxesZarr pixelType size output =
+let private createTypedMovingBoxesZarr pixelType _size output =
     cleanDirectory output
-
-    match pixelType with
-    | "UInt8" ->
-        source availableMemory
-        |> zero<uint8> size.Width size.Height size.Depth
-        >=> addNormalNoise 128.0 50.0
-        >=> writeZarr output "benchmark" size.Depth 256u 256u 16u 1.0 1.0 1.0 0
-        |> sink
-    | "UInt16" ->
-        source availableMemory
-        |> zero<uint16> size.Width size.Height size.Depth
-        >=> addNormalNoise 2048.0 512.0
-        >=> writeZarr output "benchmark" size.Depth 256u 256u 16u 1.0 1.0 1.0 0
-        |> sink
-    | _ ->
-        failwithf "Zarr Probe input generation currently supports UInt8 and UInt16, but was '%s'." pixelType
-
-let private createComplexMovingBoxesFloat64 size output =
-    cleanDirectory output
-
-    let boxSize = max 4 (int size.Width / 4)
-
-    for z in 0u .. size.Depth - 1u do
-        let phase = 2.0 * Math.PI * float z / float size.Depth
-        let dx = int z % max 1 (int size.Width)
-        let dy = int ((z * 3u) % max 1u size.Height)
-        let values =
-            Array2D.init (int size.Width) (int size.Height) (fun x y ->
-                let inBox =
-                    x >= dx
-                    && x < min (int size.Width) (dx + boxSize)
-                    && y >= dy
-                    && y < min (int size.Height) (dy + boxSize)
-                if inBox then
-                    System.Numerics.Complex(Math.Cos phase, Math.Sin phase)
-                else
-                    System.Numerics.Complex.Zero)
-
-        let image =
-            Image.Image<System.Numerics.Complex>.ofComplexArray2D(values, "complexMovingBoxes", int z)
-        let fileName = Path.Combine(output, sprintf "image_%03d.mha" z)
-        image.toFileComplex(fileName)
-        image.decRefCount()
-
-let private createComplexMovingBoxesFloat32 size output =
-    cleanDirectory output
-
-    let boxSize = max 4 (int size.Width / 4)
-
-    for z in 0u .. size.Depth - 1u do
-        let phase = 2.0 * Math.PI * float z / float size.Depth
-        let dx = int z % max 1 (int size.Width)
-        let dy = int ((z * 3u) % max 1u size.Height)
-        let values =
-            Array2D.init (int size.Width) (int size.Height) (fun x y ->
-                let inBox =
-                    x >= dx
-                    && x < min (int size.Width) (dx + boxSize)
-                    && y >= dy
-                    && y < min (int size.Height) (dy + boxSize)
-                if inBox then
-                    Image.ComplexFloat32(float32 (Math.Cos phase), float32 (Math.Sin phase))
-                else
-                    Image.ComplexFloat32.Zero)
-
-        let image =
-            Image.Image<Image.ComplexFloat32>.ofComplexFloat32Array2D(values, "complexMovingBoxesFloat32", int z)
-        let fileName = Path.Combine(output, sprintf "image_%03d.mha" z)
-        image.toFileComplex(fileName)
-        image.decRefCount()
+    failwithf "Zarr Probe input generation is deferred for Chunk-native probing; requested '%s' at '%s'." pixelType output
 
 let createBottomUpInputsForShape (imageSize: ImageSize) (noisyPixelType: string) (inputRoot: string) =
     let normalizedNoisyType =
         match noisyPixelType.ToLowerInvariant() with
         | "uint8" -> "UInt8"
         | "uint16" -> "UInt16"
-        | "float32" | "float" -> "Float32"
+        | "float32" | "float32" -> "Float32"
         | other -> failwithf "Unsupported noisy input type '%s'. Use UInt8, UInt16, or Float32." other
 
     cleanDirectory inputRoot
@@ -2808,18 +2691,6 @@ let createBottomUpInputsForShape (imageSize: ImageSize) (noisyPixelType: string)
                 (pixelType, suffix), output))
         |> Map.ofList
 
-    let zarrFormatInputs =
-        [ "UInt8"; "UInt16" ]
-        |> List.map (fun pixelType ->
-            let output =
-                Path.Combine(typedInputRoot, pixelType.ToLowerInvariant(), "zarr").Replace('\\', '/')
-            createTypedMovingBoxesZarr pixelType imageSize output
-            (pixelType, ".zarr"), output)
-        |> Map.ofList
-
-    let typedFormatInputs =
-        Map.fold (fun acc key value -> Map.add key value acc) typedFormatInputs zarrFormatInputs
-
     let typedInputs =
         bottomUpIoPixelTypes
         |> List.choose (fun pixelType ->
@@ -2828,24 +2699,6 @@ let createBottomUpInputsForShape (imageSize: ImageSize) (noisyPixelType: string)
             |> Map.tryFind (pixelType, suffix)
             |> Option.map (fun output -> pixelType, output))
         |> Map.ofList
-
-    let complexFloat32Input =
-        Path.Combine(typedInputRoot, "complexfloat32").Replace('\\', '/')
-    createComplexMovingBoxesFloat32 imageSize complexFloat32Input
-
-    let complexFloat64Input =
-        Path.Combine(typedInputRoot, "complexfloat64").Replace('\\', '/')
-    createComplexMovingBoxesFloat64 imageSize complexFloat64Input
-
-    let typedInputs =
-        typedInputs
-        |> Map.add "ComplexFloat32" complexFloat32Input
-        |> Map.add "ComplexFloat64" complexFloat64Input
-
-    let typedFormatInputs =
-        typedFormatInputs
-        |> Map.add ("ComplexFloat32", ".mha") complexFloat32Input
-        |> Map.add ("ComplexFloat64", ".mha") complexFloat64Input
 
     { Shape = imageSize
       Depth = imageSize.Depth
@@ -3011,11 +2864,11 @@ let main args =
 
     cleanDirectory tempRoot
 
+    if options.StackUnstackOnly || options.ConvolutionBreakdownOnly || options.DiscreteGaussianBreakdownOnly then
+        failwith "The old Image stack/unstack and convolution-breakdown Probe modes have been removed. Use Chunk-native sample/probe graphs instead."
+
     let oldFocusedMode =
         options.SqrtOnly
-        || options.StackUnstackOnly
-        || options.ConvolutionBreakdownOnly
-        || options.DiscreteGaussianBreakdownOnly
 
     let includeNonBoilerplate =
         options.NonBoilerplate
@@ -3035,13 +2888,6 @@ let main args =
         let path = Path.Combine(tempRoot, $"output-{sizeName size}", name)
         Directory.CreateDirectory(path) |> ignore
         path
-
-    let convolutionBreakdownKernel =
-        if options.ConvolutionBreakdownOnly then
-            let kernel: Image<float> = ImageFunctions.gauss 3u canonicalSigma (Some canonicalKernelSize)
-            Some kernel
-        else
-            None
 
     let probes =
         [| for xy in (if includeNonBoilerplate || oldFocusedMode then xySizes else boilerplateXySizes) do
@@ -3116,9 +2962,9 @@ let main args =
                        let readUInt8FeatureWithAxes =
                            "Read:type=UInt8:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0:yAxis=1:xAxis=2"
                        let readFloatFeature =
-                           "Read:type=Float64:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
+                           "Read:type=Float32:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
                        let readFloatFeatureWithAxes =
-                           "Read:type=Float64:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0:yAxis=1:xAxis=2"
+                           "Read:type=Float32:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0:yAxis=1:xAxis=2"
                        let writeStackFeature =
                            "Write:format=Image stack:suffix=.tiff:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0"
                        let writeStackFeatureWithAxes =
@@ -3142,7 +2988,7 @@ let main args =
                                  (fun () ->
                                      source availableMemory
                                      |> read<uint8> inputDir ".tiff"
-                                     >=> threshold 128.0 infinity
+                                     >=> threshold<uint8> 128.0 infinity
                                      >=> opening 3u
                                      >=> closing 3u
                                      >=> write (outputDir size "bio-threshold-morphology-uint8-write") ".tiff")
@@ -3150,51 +2996,49 @@ let main args =
                        yield runSinkProbe
                                  $"bio-edge-filter-float-write-{suffix}"
                                  $"Community-inspired denoise, edge enhancement, stretch, cast, and write for {suffix}."
-                                 (let p = defaultImageParameters size "float" 7u
+                                 (let p = defaultImageParameters size "float32" 7u
                                   p["operation"] <- "bio-edge-filter-write"
                                   p["features"] <-
                                       encodedFeatures
                                           [ readFloatFeature
                                             readFloatFeatureWithAxes
-                                            "SmoothWMedian:type=Float64:radius=3:windowSize=7"
-                                            "GradientMagnitude:type=Float64:windowSize=7"
-                                            "IntensityStretch:type=Float64:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0"
-                                            "Cast:sourceType=Float64:targetType=UInt8"
+                                            "GradientMagnitude:type=Float32:windowSize=7"
+                                            "IntensityStretch:type=Float32:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0"
+                                            "Cast:sourceType=Float32:targetType=UInt8"
                                             writeStackFeature
                                             writeStackFeatureWithAxes ]
                                   p)
                                  (fun () ->
                                      source availableMemory
-                                     |> read<float> inputDir ".tiff"
-                                     >=> smoothWMedian<float> 3u (Some 7u)
-                                     >=> gradientMagnitude<float> (Some 7u)
-                                     >=> intensityStretch<float> 0.0 255.0 0.0 255.0
-                                     >=> cast<float, uint8>
+                                     |> read<float32> inputDir ".tiff"
+                                     >=> gradientMagnitude<float32> (Some 7u)
+                                     >=> intensityStretch<float32> 0.0 255.0 0.0 255.0
+                                     >=> cast<float32, uint8>
                                      >=> write (outputDir size "bio-edge-filter-float-write") ".tiff")
 
                        yield runSinkProbe
                                  $"bio-background-mask-float-write-{suffix}"
                                  $"Community-inspired smooth background mask workflow for {suffix}."
-                                 (let p = defaultImageParameters size "float" 7u
+                                 (let p = defaultImageParameters size "float32" 7u
                                   p["operation"] <- "bio-background-mask-write"
                                   p["features"] <-
                                       encodedFeatures
                                           [ readFloatFeature
                                             readFloatFeatureWithAxes
                                             "SmoothWGauss:sigma=3.0:outputRegionMode=None:boundaryCondition=None:windowSize=None"
-                                            "IntensityStretch:type=Float64:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0"
-                                            "Cast:sourceType=Float64:targetType=UInt8"
+                                            "IntensityStretch:type=Float32:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0"
+                                            "Cast:sourceType=Float32:targetType=UInt8"
                                             "Threshold:type=UInt8:lower=128.0:upper=infinity"
                                             writeStackFeature
                                             writeStackFeatureWithAxes ]
                                   p)
                                  (fun () ->
                                      source availableMemory
-                                     |> read<float> inputDir ".tiff"
+                                     |> read<float32> inputDir ".tiff"
                                      >=> smoothWGauss canonicalSigma None None None
-                                     >=> intensityStretch<float> 0.0 255.0 0.0 255.0
-                                     >=> cast<float, uint8>
-                                     >=> threshold 128.0 infinity
+                                     >=> intensityStretch<float32> 0.0 255.0 0.0 255.0
+                                     >=> cast<float32, uint8>
+                                     >=> threshold<uint8> 128.0 infinity
                                      >=> write (outputDir size "bio-background-mask-float-write") ".tiff")
 
                        yield runSinkProbe
@@ -3207,8 +3051,8 @@ let main args =
                                           [ readUInt8Feature
                                             readUInt8FeatureWithAxes
                                             "SumProjection:type=UInt8:function=Identity"
-                                            "IntensityStretch:type=Float64:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0"
-                                            "Cast:sourceType=Float64:targetType=UInt8"
+                                            "IntensityStretch:type=Float32:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0"
+                                            "Cast:sourceType=Float32:targetType=UInt8"
                                             writeStackFeature
                                             writeStackFeatureWithAxes ]
                                   p)
@@ -3216,15 +3060,16 @@ let main args =
                                      source availableMemory
                                      |> read<uint8> inputDir ".tiff"
                                      >=> sumProjection<uint8> "Identity"
-                                     >=> intensityStretch<float> 0.0 255.0 0.0 255.0
-                                     >=> cast<float, uint8>
+                                     >=> cast<float, float32>
+                                     >=> intensityStretch<float32> 0.0 255.0 0.0 255.0
+                                     >=> cast<float32, uint8>
                                      >=> write (outputDir size "bio-projection-inspection-uint8-write") ".tiff")
 
                        if includeNonBoilerplate then
                            yield runSinkProbe
-                                     $"threshold-float-write-{suffix}"
-                                     $"Synthetic Float64 {suffix} source, threshold to UInt8, write."
-                                     (let p = defaultImageParameters size "float" 1u
+                                     $"threshold-float32-write-{suffix}"
+                                     $"Synthetic Float32 {suffix} source, threshold to UInt8, write."
+                                     (let p = defaultImageParameters size "float32" 1u
                                       p["operation"] <- "threshold-write"
                                       p["mean"] <- "128.0"
                                       p["std"] <- "50.0"
@@ -3232,22 +3077,22 @@ let main args =
                                       p)
                                      (fun () ->
                                          source availableMemory
-                                         |> zero<float> size.Width size.Height size.Depth
+                                         |> zero<float32> size.Width size.Height size.Depth
                                          >=> addNormalNoise 128.0 50.0
-                                         >=> threshold 128.0 infinity
+                                         >=> threshold<float32> 128.0 infinity
                                          >=> imageMulScalar 255uy
-                                         >=> write (outputDir size "threshold-float-write") ".tiff")
+                                         >=> write (outputDir size "threshold-float32-write") ".tiff")
 
                            yield runDrainProbe
-                                     $"compute-stats-read-float-{suffix}"
-                                     $"Read {suffix} stack as Float64 and drain computeStats reducer."
-                                     (let p = defaultImageParameters size "float" 1u
+                                     $"compute-stats-read-float32-{suffix}"
+                                     $"Read {suffix} stack as Float32 and drain computeStats reducer."
+                                     (let p = defaultImageParameters size "float32" 1u
                                       p["operation"] <- "compute-stats"
                                       p)
                                      (fun () ->
                                          source availableMemory
-                                         |> read<float> inputDir ".tiff"
-                                         >=> computeStats ())
+                                         |> read<float32> inputDir ".tiff"
+                                         >=> computeStats<float32> ())
 
                            yield runSinkProbe
                                      $"add-salt-and-pepper-uint8-write-{suffix}"
@@ -3274,101 +3119,15 @@ let main args =
 
                            yield runSinkProbe
                                      $"shot-noise-float-write-{suffix}"
-                                     $"Synthetic Float64 {suffix} shot noise source, cast to UInt8, write."
-                                     (let p = defaultImageParameters size "float" 1u
+                                     $"Synthetic Float32 {suffix} shot noise source, cast to UInt8, write."
+                                     (let p = defaultImageParameters size "float32" 1u
                                       p["operation"] <- "shot-noise-write"
                                       p)
                                      (fun () ->
                                          source availableMemory
-                                         |> shotNoise<float> size.Width size.Height size.Depth 2.0
-                                         >=> cast<float, uint8>
+                                         |> shotNoise<float32> size.Width size.Height size.Depth 2.0
+                                         >=> cast<float32, uint8>
                                          >=> write (outputDir size "shot-noise-float-write") ".tiff")
-
-                           yield runSinkProbe
-                                     $"speckle-noise-float-write-{suffix}"
-                                     $"Synthetic Float64 {suffix} speckle noise source, cast to UInt8, write."
-                                     (let p = defaultImageParameters size "float" 1u
-                                      p["operation"] <- "speckle-noise-write"
-                                      p)
-                                     (fun () ->
-                                         source availableMemory
-                                         |> speckleNoise<float> size.Width size.Height size.Depth 0.5
-                                         >=> cast<float, uint8>
-                                         >=> write (outputDir size "speckle-noise-float-write") ".tiff")
-
-                           yield runSinkProbe
-                                     $"add-shot-speckle-float-write-{suffix}"
-                                     $"Synthetic Float64 {suffix} source, add shot and speckle noise, cast, write."
-                                     (let p = defaultImageParameters size "float" 1u
-                                      p["operation"] <- "add-shot-speckle-write"
-                                      p)
-                                     (fun () ->
-                                         source availableMemory
-                                         |> zero<float> size.Width size.Height size.Depth
-                                         >=> addShotNoise 2.0
-                                         >=> addSpeckleNoise 0.5
-                                         >=> cast<float, uint8>
-                                         >=> write (outputDir size "add-shot-speckle-float-write") ".tiff")
-
-                           yield runSinkProbe
-                                     $"grayscale-erode-uint8-write-{suffix}"
-                                     $"Read UInt8 {suffix}, grayscale erode, write."
-                                     (let p = defaultImageParameters size "uint8" 7u
-                                      p["operation"] <- "grayscale-erode-write"
-                                      p)
-                                     (fun () ->
-                                         source availableMemory
-                                         |> read<uint8> inputDir ".tiff"
-                                         >=> grayscaleErode<uint8> 3u (Some 7u)
-                                         >=> write (outputDir size "grayscale-erode-uint8-write") ".tiff")
-
-                           yield runSinkProbe
-                                     $"grayscale-dilate-uint8-write-{suffix}"
-                                     $"Read UInt8 {suffix}, grayscale dilate, write."
-                                     (let p = defaultImageParameters size "uint8" 7u
-                                      p["operation"] <- "grayscale-dilate-write"
-                                      p)
-                                     (fun () ->
-                                         source availableMemory
-                                         |> read<uint8> inputDir ".tiff"
-                                         >=> grayscaleDilate<uint8> 3u (Some 7u)
-                                         >=> write (outputDir size "grayscale-dilate-uint8-write") ".tiff")
-
-                           yield runSinkProbe
-                                     $"grayscale-opening-uint8-write-{suffix}"
-                                     $"Read UInt8 {suffix}, grayscale opening, write."
-                                     (let p = defaultImageParameters size "uint8" 7u
-                                      p["operation"] <- "grayscale-opening-write"
-                                      p)
-                                     (fun () ->
-                                         source availableMemory
-                                         |> read<uint8> inputDir ".tiff"
-                                         >=> grayscaleOpening<uint8> 3u (Some 7u)
-                                         >=> write (outputDir size "grayscale-opening-uint8-write") ".tiff")
-
-                           yield runSinkProbe
-                                     $"grayscale-closing-uint8-write-{suffix}"
-                                     $"Read UInt8 {suffix}, grayscale closing, write."
-                                     (let p = defaultImageParameters size "uint8" 7u
-                                      p["operation"] <- "grayscale-closing-write"
-                                      p)
-                                     (fun () ->
-                                         source availableMemory
-                                         |> read<uint8> inputDir ".tiff"
-                                         >=> grayscaleClosing<uint8> 3u (Some 7u)
-                                         >=> write (outputDir size "grayscale-closing-uint8-write") ".tiff")
-
-                           yield runSinkProbe
-                                     $"binary-median-uint8-write-{suffix}"
-                                     $"Read UInt8 {suffix}, binary median, write."
-                                     (let p = defaultImageParameters size "uint8" 7u
-                                      p["operation"] <- "binary-median-write"
-                                      p)
-                                     (fun () ->
-                                         source availableMemory
-                                         |> read<uint8> inputDir ".tiff"
-                                         >=> binaryMedian 3u (Some 7u)
-                                         >=> write (outputDir size "binary-median-uint8-write") ".tiff")
 
                            yield runSinkProbe
                                      $"fill-small-holes-uint8-write-{suffix}"
@@ -3391,7 +3150,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<uint8> inputDir ".tiff"
-                                         >=> binaryContour false (Some 7u)
+                                         >=> binaryContour false (Some 7)
                                          >=> write (outputDir size "binary-contour-uint8-write") ".tiff")
 
                            yield runSinkProbe
@@ -3451,7 +3210,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<uint8> inputDir ".tiff"
-                                         >=> blackTopHat<uint8> 3u (Some 7u)
+                                         >=> blackTopHat<uint8> 3u (Some 7)
                                          >=> write (outputDir size "black-top-hat-uint8-write") ".tiff")
 
                            yield runSinkProbe
@@ -3463,7 +3222,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<uint8> inputDir ".tiff"
-                                         >=> whiteTopHat<uint8> 3u (Some 7u)
+                                         >=> whiteTopHat<uint8> 3u (Some 7)
                                          >=> write (outputDir size "white-top-hat-uint8-write") ".tiff")
 
                            yield runSinkProbe
@@ -3475,25 +3234,23 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<uint8> inputDir ".tiff"
-                                         >=> morphologicalGradient<uint8> 3u (Some 7u)
+                                         >=> morphologicalGradient<uint8> 3u (Some 7)
                                          >=> write (outputDir size "morphological-gradient-uint8-write") ".tiff")
 
                            yield runSinkProbe
                                      $"filters-float-write-{suffix}"
-                                     $"Read Float64 {suffix}, common image filters, cast, write."
-                                     (let p = defaultImageParameters size "float" 7u
+                                     $"Read Float32 {suffix}, common image filters, cast, write."
+                                     (let p = defaultImageParameters size "float32" 7u
                                       p["operation"] <- "filters-write"
                                       p)
                                      (fun () ->
                                          source availableMemory
-                                         |> read<float> inputDir ".tiff"
-                                         >=> smoothWMedian<float> 3u (Some 7u)
-                                         >=> smoothWBilateral<float> 1.5 30.0 (Some 7u)
-                                         >=> gradientMagnitude<float> (Some 7u)
-                                         >=> sobelEdge<float> (Some 7u)
-                                         >=> laplacian<float> (Some 7u)
-                                         >=> intensityStretch<float> 0.0 255.0 0.0 255.0
-                                         >=> cast<float, uint8>
+                                         |> read<float32> inputDir ".tiff"
+                                         >=> gradientMagnitude<float32> (Some 7u)
+                                         >=> sobelEdge<float32> (Some 7u)
+                                         >=> laplacian<float32> (Some 7u)
+                                         >=> intensityStretch<float32> 0.0 255.0 0.0 255.0
+                                         >=> cast<float32, uint8>
                                          >=> write (outputDir size "filters-float-write") ".tiff")
 
                            let readUInt8Feature =
@@ -3509,14 +3266,10 @@ let main args =
                                  "dilate-erode", "Dilate:radius=3", dilate 3u, "Erode:radius=3", erode 3u
                                  "opening-closing", "Opening:radius=3", opening 3u, "Closing:radius=3", closing 3u
                                  "closing-opening", "Closing:radius=3", closing 3u, "Opening:radius=3", opening 3u
-                                 "grayscale-erode-dilate", "GrayscaleErode:type=UInt8:radius=3:windowSize=7", grayscaleErode<uint8> 3u (Some 7u), "GrayscaleDilate:type=UInt8:radius=3:windowSize=7", grayscaleDilate<uint8> 3u (Some 7u)
-                                 "grayscale-dilate-erode", "GrayscaleDilate:type=UInt8:radius=3:windowSize=7", grayscaleDilate<uint8> 3u (Some 7u), "GrayscaleErode:type=UInt8:radius=3:windowSize=7", grayscaleErode<uint8> 3u (Some 7u)
-                                 "black-white-top-hat", "BlackTopHat:type=UInt8:radius=3:windowSize=7", blackTopHat<uint8> 3u (Some 7u), "WhiteTopHat:type=UInt8:radius=3:windowSize=7", whiteTopHat<uint8> 3u (Some 7u)
-                                 "white-black-top-hat", "WhiteTopHat:type=UInt8:radius=3:windowSize=7", whiteTopHat<uint8> 3u (Some 7u), "BlackTopHat:type=UInt8:radius=3:windowSize=7", blackTopHat<uint8> 3u (Some 7u)
-                                 "binary-contour-median", "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false (Some 7u), "BinaryMedian:radius=3:windowSize=7", binaryMedian 3u (Some 7u)
-                                 "median-contour", "BinaryMedian:radius=3:windowSize=7", binaryMedian 3u (Some 7u), "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false (Some 7u)
-                                 "morph-gradient-contour", "MorphologicalGradient:type=UInt8:radius=3:windowSize=7", morphologicalGradient<uint8> 3u (Some 7u), "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false (Some 7u)
-                                 "fill-holes-contour", "FillSmallHoles:maximumVolume=128:connectivity=TwentySix", fillSmallHoles 128UL ObjectConnectivity.TwentySix, "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false (Some 7u) ]
+                                 "black-white-top-hat", "BlackTopHat:type=UInt8:radius=3:windowSize=7", blackTopHat<uint8> 3u (Some 7), "WhiteTopHat:type=UInt8:radius=3:windowSize=7", whiteTopHat<uint8> 3u (Some 7)
+                                 "white-black-top-hat", "WhiteTopHat:type=UInt8:radius=3:windowSize=7", whiteTopHat<uint8> 3u (Some 7), "BlackTopHat:type=UInt8:radius=3:windowSize=7", blackTopHat<uint8> 3u (Some 7)
+                                 "morph-gradient-contour", "MorphologicalGradient:type=UInt8:radius=3:windowSize=7", morphologicalGradient<uint8> 3u (Some 7), "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false (Some 7)
+                                 "fill-holes-contour", "FillSmallHoles:maximumVolume=128:connectivity=TwentySix", fillSmallHoles 128UL ObjectConnectivity.TwentySix, "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false (Some 7) ]
 
                            for name, featureA, stageA, featureB, stageB in mixedPairs do
                                yield runSinkProbe
@@ -3612,265 +3365,95 @@ let main args =
 
                        yield runSinkProbe
                                  $"sqrt-input-float-{suffix}"
-                                 $"Synthetic Float64 {suffix} source prepared for sqrt and consumed without applying sqrt."
-                                 (let p = singletonImageParameters size "float" 1u
+                                 $"Synthetic Float32 {suffix} source prepared for sqrt and consumed without applying sqrt."
+                                 (let p = singletonImageParameters size "float32" 1u
                                   p["operation"] <- "sqrt-input"
                                   p)
                                  (fun () ->
                                      source availableMemory
-                                     |> zero<float> size.Width size.Height size.Depth
-                                     >=> imageAddScalar 4.0
+                                     |> zero<float32> size.Width size.Height size.Depth
+                                     >=> imageAddScalar 4.0f
                                      >=> ignoreSingles ())
 
                        yield runSinkProbe
                                  $"sqrt-float-{suffix}"
-                                 $"Synthetic Float64 {suffix} source, sqrt, consumed without writing."
-                                 (let p = singletonImageParameters size "float" 1u
+                                 $"Synthetic Float32 {suffix} source, sqrt, consumed without writing."
+                                 (let p = singletonImageParameters size "float32" 1u
                                   p["operation"] <- "sqrt"
                                   p["baselineOperation"] <- "sqrt-input"
                                   p["stage"] <- "sqrt"
                                   p)
                                  (fun () ->
                                      source availableMemory
-                                     |> zero<float> size.Width size.Height size.Depth
-                                     >=> imageAddScalar 4.0
-                                     >=> sqrt<float>
+                                     |> zero<float32> size.Width size.Height size.Depth
+                                     >=> imageAddScalar 4.0f
+                                     >=> sqrt<float32>
                                      >=> ignoreSingles ())
 
                        yield runSinkProbe
                                  $"sqrt-float-write-{suffix}"
-                                 $"Synthetic Float64 {suffix} source, sqrt, cast to UInt8, write."
-                                 (let p = singletonImageParameters size "float" 1u
+                                 $"Synthetic Float32 {suffix} source, sqrt, cast to UInt8, write."
+                                 (let p = singletonImageParameters size "float32" 1u
                                   p["operation"] <- "sqrt-write"
                                   p)
                                  (fun () ->
                                      source availableMemory
-                                     |> zero<float> size.Width size.Height size.Depth
-                                     >=> imageAddScalar 4.0
-                                     >=> sqrt<float>
-                                     >=> cast<float, uint8>
+                                     |> zero<float32> size.Width size.Height size.Depth
+                                     >=> imageAddScalar 4.0f
+                                     >=> sqrt<float32>
+                                     >=> cast<float32, uint8>
                                      >=> write (outputDir size "sqrt-float-write") ".tiff")
 
                        for windowSize in unaryWindowSizes do
                            yield runSinkProbe
                                      $"sqrt-windowed-float-{suffix}-win-{windowSize}"
-                                     $"Synthetic Float64 {suffix} source, windowed sqrt with window size {windowSize}, consumed without writing."
-                                     (let p = singletonImageParameters size "float" windowSize
+                                     $"Synthetic Float32 {suffix} source, windowed sqrt with window size {windowSize}, consumed without writing."
+                                     (let p = singletonImageParameters size "float32" windowSize
                                       p["operation"] <- "sqrt-windowed"
                                       p["baselineOperation"] <- "sqrt-input"
                                       p["stage"] <- "sqrt-windowed"
                                       p)
                                      (fun () ->
                                          source availableMemory
-                                         |> zero<float> size.Width size.Height size.Depth
-                                         >=> imageAddScalar 4.0
-                                         >=> sqrtWindowed<float> windowSize
+                                         |> zero<float32> size.Width size.Height size.Depth
+                                         >=> imageAddScalar 4.0f
+                                         >=> sqrtWindowed<float32> windowSize
                                          >=> ignoreSingles ())
 
                            yield runSinkProbe
                                      $"sqrt-windowed-float-write-{suffix}-win-{windowSize}"
-                                     $"Synthetic Float64 {suffix} source, windowed sqrt with window size {windowSize}, cast to UInt8, write."
-                                     (let p = singletonImageParameters size "float" windowSize
+                                     $"Synthetic Float32 {suffix} source, windowed sqrt with window size {windowSize}, cast to UInt8, write."
+                                     (let p = singletonImageParameters size "float32" windowSize
                                       p["operation"] <- "sqrt-windowed-write"
                                       p)
                                      (fun () ->
                                          source availableMemory
-                                         |> zero<float> size.Width size.Height size.Depth
-                                         >=> imageAddScalar 4.0
-                                         >=> sqrtWindowed<float> windowSize
-                                         >=> cast<float, uint8>
+                                         |> zero<float32> size.Width size.Height size.Depth
+                                         >=> imageAddScalar 4.0f
+                                         >=> sqrtWindowed<float32> windowSize
+                                         >=> cast<float32, uint8>
                                          >=> write (outputDir size $"sqrt-windowed-float-write-win-{windowSize}") ".tiff")
 
                        if not options.SqrtOnly then
                            for windowSize in gaussianWindowSizes do
                                let inputDir = inputDirs[size]
                                yield runSinkProbe
-                                        $"smoothWGauss-read-float-cast-write-{suffix}-win-{windowSize}"
-                                         $"Read {suffix} stack as Float64, smoothWGauss windowed convolution with window size {windowSize}, cast to UInt8, write."
-                                         (let p = singletonImageParameters size "float" windowSize
+                                        $"smoothWGauss-read-float32-cast-write-{suffix}-win-{windowSize}"
+                                         $"Read {suffix} stack as Float32, smoothWGauss windowed convolution with window size {windowSize}, cast to UInt8, write."
+                                         (let p = singletonImageParameters size "float32" windowSize
                                           p["operation"] <- "smoothWGauss-write"
                                           p["sigma"] <- canonicalSigmaText
                                           p["kernelSize"] <- string canonicalKernelSize
                                           p)
                                      (fun () ->
                                          source availableMemory
-                                         |> read<float> inputDir ".tiff"
+                                         |> read<float32> inputDir ".tiff"
                                              >=> smoothWGauss canonicalSigma None None (Some windowSize)
-                                             >=> cast<float, uint8>
-                                            >=> write (outputDir size $"smoothWGauss-read-float-cast-write-win-{windowSize}") ".tiff")
+                                             >=> cast<float32, uint8>
+                                            >=> write (outputDir size $"smoothWGauss-read-float32-cast-write-win-{windowSize}") ".tiff")
 
-               if options.StackUnstackOnly then
-                   for depth in inputDepths do
-                       let size = imageSize xy depth
-                       let suffix = sizeName size
+               () |]
 
-                       for windowSize in stackUnstackWindowSizes do
-                           yield runSinkProbe
-                                     $"stack-unstack-input-float-{suffix}-win-{windowSize}"
-                                     $"Synthetic Float64 {suffix} source, windowed and flattened with window size {windowSize} without stacking."
-                                     (let p = imageParameters size "float" windowSize 1u
-                                      p["operation"] <- "stack-unstack-input"
-                                      p)
-                                     (fun () ->
-                                         source availableMemory
-                                         |> zero<float> size.Width size.Height size.Depth
-                                         >=> stackUnstackInputStage windowSize
-                                         >=> ignoreSingles ())
-
-                           yield runSinkProbe
-                                     $"stack-unstack-float-{suffix}-win-{windowSize}"
-                                     $"Synthetic Float64 {suffix} source, stack then unstack with window size {windowSize}."
-                                     (let p = imageParameters size "float" windowSize 1u
-                                      p["operation"] <- "stack-unstack"
-                                      p["baselineOperation"] <- "stack-unstack-input"
-                                      p["stage"] <- "stack-unstack"
-                                      p)
-                                     (fun () ->
-                                         source availableMemory
-                                         |> zero<float> size.Width size.Height size.Depth
-                                         >=> stackUnstackStage windowSize
-                                         >=> ignoreSingles ())
-
-               if options.ConvolutionBreakdownOnly && xy = List.head xySizes then
-                   let kernel = convolutionBreakdownKernel |> Option.get
-                   let kernelSize = canonicalKernelSize
-
-                   for size in convolutionBreakdownSizes do
-                       let suffix = sizeName size
-                       let windowSize = size.Depth
-
-                       yield runSinkProbe
-                                 $"convolution-breakdown-input-float-{suffix}"
-                                 $"Synthetic Float64 {suffix} source, windowed and flattened without stack or convolution."
-                                 (let p = imageParameters size "float" windowSize 1u
-                                  p["operation"] <- "convolution-breakdown-input"
-                                  p["kernelSize"] <- string kernelSize
-                                  p)
-                                 (fun () ->
-                                     source availableMemory
-                                     |> zero<float> size.Width size.Height size.Depth
-                                     >=> convolutionBreakdownInputStage windowSize
-                                     >=> ignoreSingles ())
-
-                       yield runSinkProbe
-                                 $"convolution-breakdown-stack-float-{suffix}"
-                                 $"Synthetic Float64 {suffix} source, stack only."
-                                 (let p = imageParameters size "float" windowSize 1u
-                                  p["operation"] <- "convolution-breakdown-stack"
-                                  p["baselineOperation"] <- "convolution-breakdown-input"
-                                  p["stage"] <- "stack"
-                                  p["kernelSize"] <- string kernelSize
-                                  p)
-                                 (fun () ->
-                                     source availableMemory
-                                     |> zero<float> size.Width size.Height size.Depth
-                                     >=> convolutionBreakdownStackStage windowSize
-                                     >=> ignoreSingles ())
-
-                       yield runSinkProbe
-                                 $"convolution-breakdown-stack-convolve-float-{suffix}"
-                                 $"Synthetic Float64 {suffix} source, stack and SimpleITK Valid convolution with an 8^3 Gaussian kernel."
-                                 (let p = imageParameters size "float" windowSize 1u
-                                  p["operation"] <- "convolution-breakdown-stack-convolve"
-                                  p["baselineOperation"] <- "convolution-breakdown-stack"
-                                  p["stage"] <- "convolve"
-                                  p["kernelSize"] <- string kernelSize
-                                  p["outputRegionMode"] <- "Valid"
-                                  p)
-                                 (fun () ->
-                                     source availableMemory
-                                     |> zero<float> size.Width size.Height size.Depth
-                                     >=> convolutionBreakdownStackConvolveStage windowSize kernel
-                                     >=> ignoreSingles ())
-
-                       yield runSinkProbe
-                                 $"convolution-breakdown-stack-convolve-unstack-float-{suffix}"
-                                 $"Synthetic Float64 {suffix} source, stack, SimpleITK Valid convolution with an 8^3 Gaussian kernel, then unstack."
-                                 (let p = imageParameters size "float" windowSize 1u
-                                  p["operation"] <- "convolution-breakdown-stack-convolve-unstack"
-                                  p["baselineOperation"] <- "convolution-breakdown-stack-convolve"
-                                  p["stage"] <- "unstack"
-                                  p["kernelSize"] <- string kernelSize
-                                  p["outputRegionMode"] <- "Valid"
-                                  p)
-                                 (fun () ->
-                                     source availableMemory
-                                     |> zero<float> size.Width size.Height size.Depth
-                                     >=> convolutionBreakdownStackConvolveUnstackStage windowSize kernel
-                                     >=> ignoreSingles ())
-
-               if options.DiscreteGaussianBreakdownOnly && xy = List.head xySizes then
-                   let kernelSize = canonicalKernelSize
-
-                   for size in convolutionBreakdownSizes do
-                       let suffix = sizeName size
-                       let windowSize = size.Depth
-
-                       yield runSinkProbe
-                                 $"discrete-gaussian-breakdown-input-float-{suffix}"
-                                 $"Synthetic Float64 {suffix} source, windowed and flattened without stack or discreteGaussian."
-                                 (let p = imageParameters size "float" windowSize 1u
-                                  p["operation"] <- "discrete-gaussian-breakdown-input"
-                                  p["kernelSize"] <- string kernelSize
-                                  p["sigma"] <- canonicalSigmaText
-                                  p)
-                                 (fun () ->
-                                     source availableMemory
-                                     |> zero<float> size.Width size.Height size.Depth
-                                     >=> convolutionBreakdownInputStage windowSize
-                                     >=> ignoreSingles ())
-
-                       yield runSinkProbe
-                                 $"discrete-gaussian-breakdown-stack-float-{suffix}"
-                                 $"Synthetic Float64 {suffix} source, stack only."
-                                 (let p = imageParameters size "float" windowSize 1u
-                                  p["operation"] <- "discrete-gaussian-breakdown-stack"
-                                  p["baselineOperation"] <- "discrete-gaussian-breakdown-input"
-                                  p["stage"] <- "stack"
-                                  p["kernelSize"] <- string kernelSize
-                                  p["sigma"] <- canonicalSigmaText
-                                  p)
-                                 (fun () ->
-                                     source availableMemory
-                                     |> zero<float> size.Width size.Height size.Depth
-                                     >=> discreteGaussianBreakdownStackStage windowSize
-                                     >=> ignoreSingles ())
-
-                       yield runSinkProbe
-                                 $"discrete-gaussian-breakdown-stack-filter-float-{suffix}"
-                                 $"Synthetic Float64 {suffix} source, stack and discreteGaussian with an 8^3 Gaussian kernel."
-                                 (let p = imageParameters size "float" windowSize 1u
-                                  p["operation"] <- "discrete-gaussian-breakdown-stack-filter"
-                                  p["baselineOperation"] <- "discrete-gaussian-breakdown-stack"
-                                  p["stage"] <- "discreteGaussian"
-                                  p["kernelSize"] <- string kernelSize
-                                  p["sigma"] <- canonicalSigmaText
-                                  p["outputRegionMode"] <- "Default"
-                                  p)
-                                 (fun () ->
-                                     source availableMemory
-                                     |> zero<float> size.Width size.Height size.Depth
-                                     >=> discreteGaussianBreakdownStackFilterStage windowSize kernelSize
-                                     >=> ignoreSingles ())
-
-                       yield runSinkProbe
-                                 $"discrete-gaussian-breakdown-stack-filter-unstack-float-{suffix}"
-                                 $"Synthetic Float64 {suffix} source, stack, discreteGaussian with an 8^3 Gaussian kernel, then unstack."
-                                 (let p = imageParameters size "float" windowSize 1u
-                                  p["operation"] <- "discrete-gaussian-breakdown-stack-filter-unstack"
-                                  p["baselineOperation"] <- "discrete-gaussian-breakdown-stack-filter"
-                                  p["stage"] <- "unstack"
-                                  p["kernelSize"] <- string kernelSize
-                                  p["sigma"] <- canonicalSigmaText
-                                  p["outputRegionMode"] <- "Default"
-                                  p)
-                                 (fun () ->
-                                     source availableMemory
-                                     |> zero<float> size.Width size.Height size.Depth
-                                     >=> discreteGaussianBreakdownStackFilterUnstackStage windowSize kernelSize
-                                     >=> ignoreSingles ()) |]
-
-    convolutionBreakdownKernel |> Option.iter (fun kernel -> kernel.decRefCount())
     let calibrations = buildCalibrations probes
     let probes = attachPredictions calibrations probes
     let probes = filterProbesByAnalysisFeatures options.LowSupportThreshold options.AnalysisFeaturesPath probes

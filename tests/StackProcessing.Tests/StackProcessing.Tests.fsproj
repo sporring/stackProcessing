@@ -50,8 +50,6 @@
 
   <ItemGroup>
     <Compile Include="ChunkTests.fs" />
-    <Compile Include="StackProcessingSupportTests.fs" />
-    <Compile Include="StackProcessingCorrectnessTests.fs" />
     <Compile Include="Tests.fs" />
   </ItemGroup>
 </Project>

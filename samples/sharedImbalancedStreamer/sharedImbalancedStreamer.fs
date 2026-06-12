@@ -16,18 +16,18 @@ let main arg =
 
     let readMaker = 
         src
-        |> read<float> input ".tiff"
+        |> readChunkSlices<float32> input ".tiff"
         // >=> tapIt (fun s -> $"[readAs] {s.Index} -> Image {s.Image}")
 
     readMaker 
     >=> tap "For >=>>"
-    >=>> (imageAddScalar 1.0, smoothWGauss 3.0 None None None)
+    >=>> (chunkImageAddScalar 1.0f, gaussianFilterNativeParallelCollect<float32> 3.0 3 4)
     >=> tap "For >>=>"
-    >>=> mulPair
+    >=> chunkMulPair<float32>
     >=> tap "For cast"
-    >=> cast<float,int8>
+    >=> chunkCast<float32,int8>
     >=> tap "For write"
-    >=> write output ".tiff"
+    >=> writeChunkSlices output ".tiff"
     //>>=> ignorePairs ()
     |> sink
 

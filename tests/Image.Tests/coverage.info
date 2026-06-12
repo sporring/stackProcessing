@@ -3427,7 +3427,9 @@ DA:47,4
 DA:48,0
 DA:49,0
 DA:50,0
+DA:51,0
 DA:52,0
+DA:54,0
 BRDA:45,28,0,0
 BRDA:45,28,1,2
 BRDA:46,56,0,0
@@ -3440,266 +3442,292 @@ BRDA:49,142,0,0
 BRDA:49,142,1,0
 BRDA:50,171,0,0
 BRDA:50,171,1,0
-FN:54,System.Boolean ImageIO::supportsDirectTiffRead()
+BRDA:51,200,0,0
+BRDA:51,200,1,0
+BRDA:52,229,0,0
+BRDA:52,229,1,0
+FN:56,System.Boolean ImageIO::supportsDirectTiffRead()
 FNDA:0,System.Boolean ImageIO::supportsDirectTiffRead()
-DA:55,0
-DA:56,0
 DA:57,0
 DA:58,0
 DA:59,0
 DA:60,0
 DA:61,0
-BRDA:56,27,0,0
-BRDA:56,27,1,0
-BRDA:57,50,0,0
-BRDA:57,50,1,0
-BRDA:58,73,0,0
-BRDA:58,73,1,0
-BRDA:59,96,0,0
-BRDA:59,96,1,0
-BRDA:60,119,0,0
-BRDA:60,119,1,0
-FN:63,System.Boolean ImageIO::supportsDirectTiffWrite()
-FNDA:0,System.Boolean ImageIO::supportsDirectTiffWrite()
+DA:62,0
+DA:63,0
 DA:64,0
-DA:65,0
-DA:66,0
+BRDA:58,27,0,0
+BRDA:58,27,1,0
+BRDA:59,50,0,0
+BRDA:59,50,1,0
+BRDA:60,73,0,0
+BRDA:60,73,1,0
+BRDA:61,96,0,0
+BRDA:61,96,1,0
+BRDA:62,119,0,0
+BRDA:62,119,1,0
+BRDA:63,142,0,0
+BRDA:63,142,1,0
+FN:66,System.Boolean ImageIO::supportsDirectTiffWrite()
+FNDA:0,System.Boolean ImageIO::supportsDirectTiffWrite()
 DA:67,0
 DA:68,0
 DA:69,0
-BRDA:65,27,0,0
-BRDA:65,27,1,0
-BRDA:66,50,0,0
-BRDA:66,50,1,0
-BRDA:67,73,0,0
-BRDA:67,73,1,0
-BRDA:68,96,0,0
-BRDA:68,96,1,0
-FN:71,System.String ImageIO::tiffWriteMode(System.String)
+DA:70,0
+DA:71,0
+DA:72,0
+DA:73,0
+DA:74,0
+DA:75,0
+BRDA:68,27,0,0
+BRDA:68,27,1,0
+BRDA:69,50,0,0
+BRDA:69,50,1,0
+BRDA:70,73,0,0
+BRDA:70,73,1,0
+BRDA:71,96,0,0
+BRDA:71,96,1,0
+BRDA:72,119,0,0
+BRDA:72,119,1,0
+BRDA:73,142,0,0
+BRDA:73,142,1,0
+BRDA:74,165,0,0
+BRDA:74,165,1,0
+FN:77,System.String ImageIO::tiffWriteMode(System.String)
 FNDA:2,System.String ImageIO::tiffWriteMode(System.String)
-DA:72,2
-DA:73,8
-BRDA:73,24,0,0
-BRDA:73,24,1,2
-BRDA:73,42,0,0
-BRDA:73,42,1,2
-FN:75,System.Int32 ImageIO::tiffFieldInt(BitMiracle.LibTiff.Classic.Tiff,BitMiracle.LibTiff.Classic.TiffTag,System.Int32)
+DA:78,2
+DA:79,8
+BRDA:79,24,0,0
+BRDA:79,24,1,2
+BRDA:79,42,0,0
+BRDA:79,42,1,2
+FN:81,System.Int32 ImageIO::tiffFieldInt(BitMiracle.LibTiff.Classic.Tiff,BitMiracle.LibTiff.Classic.TiffTag,System.Int32)
 FNDA:4,System.Int32 ImageIO::tiffFieldInt(BitMiracle.LibTiff.Classic.Tiff,BitMiracle.LibTiff.Classic.TiffTag,System.Int32)
-DA:76,4
-DA:77,16
-BRDA:77,17,0,0
-BRDA:77,17,1,4
-BRDA:77,25,0,0
-BRDA:77,25,1,4
-BRDA:77,38,0,0
-BRDA:77,38,1,4
-FN:79,System.Int32 ImageIO::tiffFieldIntDefaulted(BitMiracle.LibTiff.Classic.Tiff,BitMiracle.LibTiff.Classic.TiffTag,System.Int32)
+DA:82,4
+DA:83,16
+BRDA:83,17,0,0
+BRDA:83,17,1,4
+BRDA:83,25,0,0
+BRDA:83,25,1,4
+BRDA:83,38,0,0
+BRDA:83,38,1,4
+FN:85,System.Int32 ImageIO::tiffFieldIntDefaulted(BitMiracle.LibTiff.Classic.Tiff,BitMiracle.LibTiff.Classic.TiffTag,System.Int32)
 FNDA:6,System.Int32 ImageIO::tiffFieldIntDefaulted(BitMiracle.LibTiff.Classic.Tiff,BitMiracle.LibTiff.Classic.TiffTag,System.Int32)
-DA:80,6
-DA:81,24
-BRDA:81,17,0,0
-BRDA:81,17,1,6
-BRDA:81,25,0,0
-BRDA:81,25,1,6
-BRDA:81,38,0,0
-BRDA:81,38,1,6
-FN:83,System.UInt32 ImageIO::tiffDirectoryCount(System.String)
+DA:86,6
+DA:87,24
+BRDA:87,17,0,0
+BRDA:87,17,1,6
+BRDA:87,25,0,0
+BRDA:87,25,1,6
+BRDA:87,38,0,0
+BRDA:87,38,1,6
+FN:89,System.UInt32 ImageIO::tiffDirectoryCount(System.String)
 FNDA:1,System.UInt32 ImageIO::tiffDirectoryCount(System.String)
-DA:84,1
-DA:85,1
-DA:86,0
-DA:88,1
-DA:89,1
-DA:90,2
+DA:90,1
 DA:91,1
-DA:92,1
+DA:92,0
 DA:94,1
-DA:95,0
+DA:95,1
+DA:96,2
 DA:97,1
-BRDA:85,21,0,0
-BRDA:85,21,1,1
-BRDA:85,29,0,0
-BRDA:85,29,1,1
-BRDA:90,80,1,1
-BRDA:90,80,0,1
-BRDA:94,85,0,0
-BRDA:94,85,1,1
-FN:99,System.Int32 ImageIO::tiffBytesPerSample(System.Int32,BitMiracle.LibTiff.Classic.SampleFormat)
+DA:98,1
+DA:100,1
+DA:101,0
+DA:103,1
+BRDA:91,21,0,0
+BRDA:91,21,1,1
+BRDA:91,29,0,0
+BRDA:91,29,1,1
+BRDA:96,80,1,1
+BRDA:96,80,0,1
+BRDA:100,85,0,0
+BRDA:100,85,1,1
+FN:105,System.Int32 ImageIO::tiffBytesPerSample(System.Int32,BitMiracle.LibTiff.Classic.SampleFormat)
 FNDA:2,System.Int32 ImageIO::tiffBytesPerSample(System.Int32,BitMiracle.LibTiff.Classic.SampleFormat)
-DA:100,2
-DA:102,0
-DA:104,2
-DA:105,0
-DA:106,0
+DA:106,2
 DA:108,0
-BRDA:100,16,1,2
-BRDA:100,46,0,2
-BRDA:100,16,2,0
-BRDA:100,83,0,0
-BRDA:100,16,3,0
-BRDA:100,121,0,0
-BRDA:100,46,1,0
-BRDA:100,83,1,0
-BRDA:100,64,1,2
-BRDA:100,101,1,2
-BRDA:100,121,1,0
-BRDA:100,139,1,0
-BRDA:100,16,0,0
-BRDA:100,64,0,0
-BRDA:100,101,0,0
-BRDA:100,139,0,0
-FN:110,System.Void ImageIO::validateTiffSamples(System.Int32)
-FNDA:2,System.Void ImageIO::validateTiffSamples(System.Int32)
-DA:111,2
-DA:112,0
-BRDA:111,3,0,0
-BRDA:111,3,1,2
-FN:114,System.Void ImageIO::setImportImageBufferFromTiffLayout(itk.simple.ImportImageFilter,System.Int32,BitMiracle.LibTiff.Classic.SampleFormat,System.IntPtr)
-FNDA:2,System.Void ImageIO::setImportImageBufferFromTiffLayout(itk.simple.ImportImageFilter,System.Int32,BitMiracle.LibTiff.Classic.SampleFormat,System.IntPtr)
-DA:115,2
+DA:110,2
+DA:113,0
+DA:114,0
 DA:116,0
-DA:117,0
-DA:118,2
-DA:119,0
+BRDA:106,16,1,2
+BRDA:106,46,0,2
+BRDA:106,64,0,0
+BRDA:106,16,2,0
+BRDA:106,101,0,0
+BRDA:106,119,0,0
+BRDA:106,16,3,0
+BRDA:106,157,0,0
+BRDA:106,46,1,0
+BRDA:106,101,1,0
+BRDA:106,64,1,2
+BRDA:106,119,1,2
+BRDA:106,82,1,0
+BRDA:106,137,1,0
+BRDA:106,157,1,0
+BRDA:106,175,1,0
+BRDA:106,16,0,0
+BRDA:106,82,0,0
+BRDA:106,137,0,0
+BRDA:106,175,0,0
+FN:118,System.Void ImageIO::validateTiffSamples(System.Int32)
+FNDA:2,System.Void ImageIO::validateTiffSamples(System.Int32)
+DA:119,2
 DA:120,0
-DA:121,0
-DA:123,0
-BRDA:115,16,1,2
-BRDA:115,46,0,2
-BRDA:115,16,2,0
-BRDA:115,86,0,0
-BRDA:115,16,3,0
-BRDA:115,124,0,0
-BRDA:115,46,1,0
-BRDA:115,86,1,0
-BRDA:115,64,1,2
-BRDA:115,104,1,0
-BRDA:115,124,1,0
-BRDA:115,142,1,0
-BRDA:115,16,0,0
-BRDA:115,64,0,0
-BRDA:115,104,0,0
-BRDA:115,142,0,0
-FN:125,System.Byte[] ImageIO::bytesOfScalarImage2D(Image/Image`1<T>)
-FNDA:3,System.Byte[] ImageIO::bytesOfScalarImage2D(Image/Image`1<T>)
-DA:126,3
+BRDA:119,3,0,0
+BRDA:119,3,1,2
+FN:122,System.Void ImageIO::setImportImageBufferFromTiffLayout(itk.simple.ImportImageFilter,System.Int32,BitMiracle.LibTiff.Classic.SampleFormat,System.IntPtr)
+FNDA:2,System.Void ImageIO::setImportImageBufferFromTiffLayout(itk.simple.ImportImageFilter,System.Int32,BitMiracle.LibTiff.Classic.SampleFormat,System.IntPtr)
+DA:123,2
+DA:124,0
+DA:125,0
+DA:126,2
 DA:127,0
-DA:129,3
-DA:130,3
-DA:131,3
-DA:132,3
-DA:133,3
-DA:134,3
-DA:135,3
-BRDA:126,8,0,0
-BRDA:126,8,1,3
-FN:137,Image/Image`1<T> ImageIO::readTiffPage(BitMiracle.LibTiff.Classic.Tiff,System.UInt32,System.UInt32,System.Int32,BitMiracle.LibTiff.Classic.SampleFormat,System.Int32,System.Int32)
+DA:128,0
+DA:129,0
+DA:130,0
+DA:131,0
+DA:133,0
+BRDA:123,16,1,2
+BRDA:123,46,0,2
+BRDA:123,64,0,0
+BRDA:123,16,2,0
+BRDA:123,104,0,0
+BRDA:123,122,0,0
+BRDA:123,16,3,0
+BRDA:123,160,0,0
+BRDA:123,46,1,0
+BRDA:123,104,1,0
+BRDA:123,64,1,2
+BRDA:123,122,1,0
+BRDA:123,82,1,0
+BRDA:123,140,1,0
+BRDA:123,160,1,0
+BRDA:123,178,1,0
+BRDA:123,16,0,0
+BRDA:123,82,0,0
+BRDA:123,140,0,0
+BRDA:123,178,0,0
+FN:135,System.Byte[] ImageIO::bytesOfScalarImage2D(Image/Image`1<T>)
+FNDA:3,System.Byte[] ImageIO::bytesOfScalarImage2D(Image/Image`1<T>)
+DA:136,3
+DA:137,0
+DA:139,3
+DA:140,3
+DA:141,3
+DA:142,3
+DA:143,3
+DA:144,3
+DA:145,3
+BRDA:136,8,0,0
+BRDA:136,8,1,3
+FN:147,Image/Image`1<T> ImageIO::readTiffPage(BitMiracle.LibTiff.Classic.Tiff,System.UInt32,System.UInt32,System.Int32,BitMiracle.LibTiff.Classic.SampleFormat,System.Int32,System.Int32)
 FNDA:2,Image/Image`1<T> ImageIO::readTiffPage(BitMiracle.LibTiff.Classic.Tiff,System.UInt32,System.UInt32,System.Int32,BitMiracle.LibTiff.Classic.SampleFormat,System.Int32,System.Int32)
-DA:138,2
-DA:139,2
-DA:140,2
-DA:141,2
-DA:143,6
-DA:144,4
-DA:145,0
-DA:147,4
+DA:148,2
 DA:149,2
-DA:150,6
-DA:152,2
-DA:153,2
-DA:154,2
-DA:155,2
-DA:156,2
-DA:157,2
-DA:158,2
-BRDA:139,16,0,0
-BRDA:139,16,1,2
-BRDA:143,55,0,4
-BRDA:143,162,1,4
-BRDA:144,72,0,0
-BRDA:144,72,1,4
-BRDA:143,55,1,2
-BRDA:143,162,0,2
-FN:160,Image/Image`1<T> ImageIO::readTiffSliceFile(System.String,System.Int64)
-FNDA:2,Image/Image`1<T> ImageIO::readTiffSliceFile(System.String,System.Int64)
-DA:161,2
+DA:150,2
+DA:151,2
+DA:153,6
+DA:154,4
+DA:155,0
+DA:157,4
+DA:159,2
+DA:160,6
 DA:162,2
-DA:163,0
+DA:163,2
+DA:164,2
 DA:165,2
 DA:166,2
-DA:167,6
-DA:168,0
-DA:170,2
+DA:167,2
+DA:168,2
+BRDA:149,16,0,0
+BRDA:149,16,1,2
+BRDA:153,55,0,4
+BRDA:153,162,1,4
+BRDA:154,72,0,0
+BRDA:154,72,1,4
+BRDA:153,55,1,2
+BRDA:153,162,0,2
+FN:170,Image/Image`1<T> ImageIO::readTiffSliceFile(System.String,System.Int64)
+FNDA:2,Image/Image`1<T> ImageIO::readTiffSliceFile(System.String,System.Int64)
 DA:171,2
-DA:173,2
-DA:174,2
+DA:172,2
+DA:173,0
+DA:175,2
 DA:176,2
-DA:177,2
-DA:178,2
-DA:179,2
+DA:177,6
+DA:178,0
 DA:180,2
-BRDA:162,21,0,0
-BRDA:162,21,1,2
-BRDA:162,29,0,0
-BRDA:162,29,1,2
-BRDA:167,87,0,0
-BRDA:167,87,1,2
-BRDA:167,99,0,0
-BRDA:167,99,1,2
-FN:182,System.Void ImageIO::writeTiffPage(BitMiracle.LibTiff.Classic.Tiff,Image/Image`1<T>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>)
-FNDA:2,System.Void ImageIO::writeTiffPage(BitMiracle.LibTiff.Classic.Tiff,Image/Image`1<T>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>)
+DA:181,2
 DA:183,2
-DA:184,0
+DA:184,2
 DA:186,2
 DA:187,2
 DA:188,2
-DA:190,4
-DA:191,4
-DA:192,4
-DA:193,4
-DA:194,4
-DA:195,4
-DA:196,4
-DA:197,4
-DA:198,4
-DA:199,2
-DA:201,0
-DA:202,0
-DA:203,2
-DA:205,2
-DA:206,2
-DA:208,6
-DA:209,4
-DA:210,4
-DA:211,4
+DA:189,2
+DA:190,2
+BRDA:172,21,0,0
+BRDA:172,21,1,2
+BRDA:172,29,0,0
+BRDA:172,29,1,2
+BRDA:177,87,0,0
+BRDA:177,87,1,2
+BRDA:177,99,0,0
+BRDA:177,99,1,2
+FN:192,System.Void ImageIO::writeTiffPage(BitMiracle.LibTiff.Classic.Tiff,Image/Image`1<T>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>)
+FNDA:2,System.Void ImageIO::writeTiffPage(BitMiracle.LibTiff.Classic.Tiff,Image/Image`1<T>,Microsoft.FSharp.Core.FSharpOption`1<System.Int32>)
+DA:193,2
+DA:194,0
+DA:196,2
+DA:197,2
+DA:198,2
+DA:200,4
+DA:201,4
+DA:202,4
+DA:203,4
+DA:204,4
+DA:205,4
+DA:206,4
+DA:207,4
+DA:208,4
+DA:209,2
+DA:211,0
 DA:212,0
-DA:214,2
-DA:215,0
-BRDA:183,8,0,0
-BRDA:183,8,1,2
-BRDA:199,454,1,0
-BRDA:199,454,0,2
-BRDA:208,589,0,4
-BRDA:208,693,1,4
-BRDA:211,632,0,0
-BRDA:211,632,1,4
-BRDA:208,589,1,2
-BRDA:208,693,0,2
-BRDA:214,706,0,0
-BRDA:214,706,1,2
-FN:217,System.Void ImageIO::writeTiffSliceFile(System.String,Image/Image`1<T>)
+DA:213,2
+DA:215,2
+DA:216,2
+DA:218,6
+DA:219,4
+DA:220,4
+DA:221,4
+DA:222,0
+DA:224,2
+DA:225,0
+BRDA:193,8,0,0
+BRDA:193,8,1,2
+BRDA:209,454,1,0
+BRDA:209,454,0,2
+BRDA:218,589,0,4
+BRDA:218,693,1,4
+BRDA:221,632,0,0
+BRDA:221,632,1,4
+BRDA:218,589,1,2
+BRDA:218,693,0,2
+BRDA:224,706,0,0
+BRDA:224,706,1,2
+FN:227,System.Void ImageIO::writeTiffSliceFile(System.String,Image/Image`1<T>)
 FNDA:2,System.Void ImageIO::writeTiffSliceFile(System.String,Image/Image`1<T>)
-DA:218,2
-DA:219,2
-DA:220,0
-DA:222,2
-BRDA:219,22,0,0
-BRDA:219,22,1,2
-BRDA:219,30,0,0
-BRDA:219,30,1,2
-LF:140
+DA:228,2
+DA:229,2
+DA:230,0
+DA:232,2
+BRDA:229,22,0,0
+BRDA:229,22,1,2
+BRDA:229,30,0,0
+BRDA:229,30,1,2
+LF:148
 LH:87
-BRF:124
+BRF:144
 BRH:45
 FNF:18
 FNH:13
@@ -3907,8 +3935,8 @@ FN:518,System.Void Image::incMemUsed(System.UInt32)
 FNDA:6360,System.Void Image::incMemUsed(System.UInt32)
 DA:519,6360
 DA:520,6360
-BRDA:520,75,0,258
-BRDA:520,75,1,2922
+BRDA:520,75,0,262
+BRDA:520,75,1,2918
 FN:521,System.Void Image::decMemUsed(System.UInt32)
 FNDA:400,System.Void Image::decMemUsed(System.UInt32)
 DA:522,400

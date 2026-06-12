@@ -40,7 +40,6 @@
         <ProjectReference Include="../../../SharpFFTW/SharpFFTW/SharpFFTW.csproj" />
         <ProjectReference Include="../Chunk/Chunk.Core.fsproj" />
         <ProjectReference Include="../TinyLinAlg/TinyLinAlg.fsproj" />
-        <ProjectReference Include="../Image/Image.fsproj" />
         <ProjectReference Include="../SlimPipeline/SlimPipeline.fsproj" />
         <ProjectReference Include="../StackProcessing.Cost/StackProcessing.Cost.fsproj" />
     </ItemGroup>
@@ -60,10 +59,8 @@
         <Compile Include="StackRegistration.fs" />
         <Compile Include="StackRansac.fs" />
         <Compile Include="StackManifest.fs" />
-        <Compile Include="StackStitching.fs" />
         <Compile Include="StackObjects.fs" />
         <Compile Include="StackMesh.fs" />
-        <Compile Include="StackImageFunctions.fs" />
         <Compile Include="StackBias.fs" />
         <Compile Include="StackSerialSections.fs" />
         <Compile Include="StackAffineResampler.fs" />

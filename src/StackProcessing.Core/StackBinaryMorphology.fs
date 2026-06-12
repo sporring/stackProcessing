@@ -35,6 +35,74 @@ type private LinePlan =
 let private binaryBackground = 0uy
 let private binaryForeground = 1uy
 
+let private zonohedralBestCoefficients =
+    // Best-approximation coefficients from Gorpho/pygorpho's implementation of
+    // Jensen et al., "Zonohedral Approximation of Spherical Structuring Element
+    // for Volumetric Morphology" (SCIA 2019).
+    [| 2, 0, 0
+       4, 0, 0
+       3, 0, 2
+       4, 0, 2
+       3, 2, 2
+       4, 2, 2
+       3, 2, 3
+       4, 3, 2
+       3, 3, 3
+       4, 4, 2
+       6, 3, 3
+       4, 4, 3
+       6, 4, 3
+       8, 3, 4
+       6, 4, 4
+       7, 5, 3
+       6, 5, 4
+       7, 6, 3
+       9, 5, 4
+       7, 6, 4
+       9, 5, 5
+       7, 7, 4
+       9, 6, 5
+       11, 5, 6
+       9, 7, 5
+       11, 6, 6
+       12, 7, 5
+       10, 8, 5
+       9, 8, 6
+       10, 9, 5
+       12, 8, 6
+       14, 7, 7 |]
+
+let private zonohedralLineSteps =
+    [| ( 1,  0,  0)
+       ( 0, -1,  0)
+       ( 0,  0,  1)
+       ( 1,  1,  0)
+       (-1,  1,  0)
+       (-1,  0, -1)
+       ( 1,  0, -1)
+       ( 0,  1,  1)
+       ( 0, -1,  1)
+       (-1, -1, -1)
+       ( 1,  1, -1)
+       ( 1, -1,  1)
+       (-1,  1,  1) |]
+
+let private zonohedralBestLines radius =
+    if radius = 0u then
+        [||]
+    elif int radius <= zonohedralBestCoefficients.Length then
+        let a1, a2, a3 = zonohedralBestCoefficients[int radius - 1]
+        let lengths =
+            [| a1; a1; a1
+               a2; a2; a2; a2; a2; a2
+               a3; a3; a3; a3 |]
+
+        Array.zip zonohedralLineSteps lengths
+        |> Array.choose (fun ((dx, dy, dz), length) ->
+            if length > 1 then Some(dx, dy, dz, length) else None)
+    else
+        invalidArg "radius" $"binary zonohedral morphology currently has best-approximation coefficients through radius {zonohedralBestCoefficients.Length}; got radius {radius}."
+
 let private lineHalo dz length =
     let left = length - length / 2 - 1
     let right = length / 2
@@ -503,7 +571,7 @@ let private chunkZonohedralLineStage
         id
 
 let binaryDilateZonohedral radius : Stage<Chunk<uint8>, Chunk<uint8>> =
-    let lines = ImageFunctions.zonohedralBestLines radius
+    let lines = zonohedralBestLines radius
     if lines.Length = 0 then
         Stage.map "chunkBinaryDilateZonohedral.identity" (fun _ chunk -> chunk) id id
     else
@@ -512,7 +580,7 @@ let binaryDilateZonohedral radius : Stage<Chunk<uint8>, Chunk<uint8>> =
         |> Array.fold Stage.compose (Stage.map "chunkBinaryDilateZonohedral.start" (fun _ chunk -> chunk) id id)
 
 let binaryDilateZonohedralParallel radius windowSize : Stage<Chunk<uint8>, Chunk<uint8>> =
-    let lines = ImageFunctions.zonohedralBestLines radius
+    let lines = zonohedralBestLines radius
     if lines.Length = 0 then
         Stage.map "chunkBinaryDilateZonohedralParallel.identity" (fun _ chunk -> chunk) id id
     elif windowSize <= 1 then
@@ -523,7 +591,7 @@ let binaryDilateZonohedralParallel radius windowSize : Stage<Chunk<uint8>, Chunk
         |> Array.fold Stage.compose (Stage.map $"chunkBinaryDilateZonohedral.parallel{windowSize}.start" (fun _ chunk -> chunk) id id)
 
 let binaryErodeZonohedral radius : Stage<Chunk<uint8>, Chunk<uint8>> =
-    let lines = ImageFunctions.zonohedralBestLines radius
+    let lines = zonohedralBestLines radius
     if lines.Length = 0 then
         Stage.map "chunkBinaryErodeZonohedral.identity" (fun _ chunk -> chunk) id id
     else
@@ -532,7 +600,7 @@ let binaryErodeZonohedral radius : Stage<Chunk<uint8>, Chunk<uint8>> =
         |> Array.fold Stage.compose (Stage.map "chunkBinaryErodeZonohedral.start" (fun _ chunk -> chunk) id id)
 
 let binaryErodeZonohedralParallel radius windowSize : Stage<Chunk<uint8>, Chunk<uint8>> =
-    let lines = ImageFunctions.zonohedralBestLines radius
+    let lines = zonohedralBestLines radius
     if lines.Length = 0 then
         Stage.map "chunkBinaryErodeZonohedralParallel.identity" (fun _ chunk -> chunk) id id
     elif windowSize <= 1 then

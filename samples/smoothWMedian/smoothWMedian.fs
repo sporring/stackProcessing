@@ -13,10 +13,10 @@ let main args =
         | _ -> "../data/volume", "../tmp/smoothWMedian"
 
     src
-    |> read<float> input ".tiff"
-    >=> smoothWMedian<float> 1u None
-    >=> cast<float, uint8>
-    >=> write output ".tiff"
+    |> readChunkSlices<float32> input ".tiff"
+    >=> chunkMedianNativeNthElementFloat32ParallelCollect 1 4
+    >=> chunkCast<float32, uint8>
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     0

@@ -16,18 +16,18 @@ let main arg =
     let fname021 = output+"021"
     deleteIfExists fname021
     src
-    |> read<uint8> input ".tiff"
-    >=> tapIt (fun elm -> $"Read {elm.Name}")
-    >=> permuteAxes (0u,2u,1u) 32u
-    >=> write fname021 ".tiff"
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> tapIt (fun elm -> $"Read {elm}")
+    >=> chunkPermuteAxes<uint8> [| 0; 2; 1 |]
+    >=> writeChunkSlices fname021 ".tiff"
     |> sink
 
     let fname021021 = output + "021021"
     deleteIfExists fname021021
     src
-    |> read<uint8> fname021 ".tiff"
-    >=> permuteAxes (0u,2u,1u) 64u
-    >=> write fname021021 ".tiff"
+    |> readChunkSlices<uint8> fname021 ".tiff"
+    >=> chunkPermuteAxes<uint8> [| 0; 2; 1 |]
+    >=> writeChunkSlices fname021021 ".tiff"
     |> sink
 
     0

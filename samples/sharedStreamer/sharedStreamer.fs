@@ -16,20 +16,20 @@ let main arg =
 
     let readMaker = 
         src
-        |> read<uint8> input ".tiff"
+        |> readChunkSlices<uint8> input ".tiff"
         //>=> tapIt (fun s -> $"[readAs] {s.Index} -> Image {s.Image}")
 
     readMaker 
     >=> tap "cast"
-    >=> cast<uint8,float>
+    >=> chunkCast<uint8,float32>
     >=> tap "fan out"
-    >=>> (imageAddScalar 1.0, imageAddScalar 2.0)
+    >=>> (chunkImageAddScalar 1.0f, chunkImageAddScalar 2.0f)
     >=> tap "fan in"
-    >>=> mulPair
+    >=> chunkMulPair<float32>
     >=> tap "cast"
-    >=> cast<float,int8>
+    >=> chunkCast<float32,int8>
     >=> tap "write"
-    >=> write output ".tiff"
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     0

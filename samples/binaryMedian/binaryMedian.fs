@@ -13,9 +13,9 @@ let main args =
         | _ -> "../data/rotatingBoxes", "../tmp/binaryMedian"
 
     src
-    |> read<uint8> input ".tiff"
-    >=> binaryMedian 3u None
-    >=> write output ".tiff"
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> chunkMedianNativeNthElementUInt8ParallelCollect 3 4
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     0

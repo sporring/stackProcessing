@@ -15,7 +15,7 @@ let main arg =
 
     src
     |> readChunkSlices<uint8> input ".tiff"
-    >=> chunkComputeStats<uint8> () --> print ()
+    >=> (chunkComputeStats<uint8> () --> print ())
     |> sink
 
     0

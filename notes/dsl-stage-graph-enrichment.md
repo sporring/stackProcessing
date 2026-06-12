@@ -9,14 +9,12 @@ The Optimiser can currently reason most naturally at `Plan` composition boundari
 ```fsharp
 window win pad stride
 --> requireWindowSize ksz
---> windowToSlabWithRange
---> mapSlabWithStage stage
---> slabWithRangeToWindow
---> slabSkipTakeM outputStart outputCount
+--> parallelCollectChunk stage
+--> emitValidRange outputStart outputCount
 --> flattenList ()
 ```
 
-Pulling these internal pieces up into user-visible `>=>` composition would improve optimiser visibility, but it would make the DSL much less pleasant. Users should be able to write `convolve`, `windowedThreshold`, `smoothWGauss`, `read`, `cast`, etc. without manually spelling out all window/slab scaffolding.
+Pulling these internal pieces up into user-visible `>=>` composition would improve optimiser visibility, but it would make the DSL much less pleasant. Users should be able to write compact Chunk stages such as `gaussianFilterNativeParallelCollect`, `chunkThresholdRange`, `readChunkSlices`, and `chunkCast` without manually spelling out all windowed scaffolding.
 
 ## Rejected Direction: Shadow IR
 
@@ -58,9 +56,9 @@ The missing piece is that graph nodes are mostly name/transition records. They a
 
 - `Cast Float32 UInt8`
 - `Read TIFF UInt8 as Float32`
-- `WindowToSlab`
-- `MapSlab Threshold`
-- `SlabToWindow`
+- `Window`
+- `ParallelCollect Threshold`
+- `EmitValidRange`
 - `Flatten`
 
 String matching on stage names would be too fragile.
@@ -77,9 +75,8 @@ type StageGraphOp =
     | Cast of sourceType: string * targetType: string
     | Window of size: uint * pad: uint * stride: uint
     | RequireWindowSize of depth: uint
-    | WindowToSlab
-    | SlabToWindow
-    | MapSlab
+    | ParallelCollect of name: string
+    | EmitValidRange of start: uint * count: uint
     | WindowSkipTakeM of start: uint * count: uint
     | Flatten
     | Operator of name: string
@@ -96,8 +93,8 @@ Start with local, safe rules:
 identity --> x => x
 x --> identity => x
 cast<T,T> => identity
-mapSlabWithStage identity => identity
-mapSlabWithStage (cast<T,T>) => identity
+parallelCollect identity => identity
+parallelCollect (cast<T,T>) => identity
 ```
 
 Potentially useful but guarded rules:
@@ -111,7 +108,7 @@ This is only safe when the intermediate type `T` is not semantically lossy. For 
 For reads:
 
 ```text
-read<diskT> --> cast<diskT,T>
+readChunkSlices<diskT> --> chunkCast<diskT,T>
 ```
 
 should probably become an optimiser candidate rather than an unconditional rewrite:
@@ -123,40 +120,37 @@ Candidate B: read directly as T
 
 The measurements showed that implicit read-cast and explicit cast can have different timing behaviour. Therefore the Optimiser should choose between them using cost evidence rather than blindly canonicalising one into the other.
 
-## Slab Equivalents
+## Windowed Chunk Equivalents
 
-The same idea should apply to slab-aware stages:
+The same idea should apply to windowed Chunk stages:
 
 ```text
-mapSlabWithStage identity => identity
-mapSlabWithStage (cast<T,T>) => identity
-mapSlabWithStage (safe cast chain) => mapSlabWithStage fusedCast
+parallelCollect identity => identity
+parallelCollect (cast<T,T>) => identity
+parallelCollect (safe cast chain) => parallelCollect fusedCast
 ```
 
-Window/slab scaffolding could also be recognized as a structured compound pattern:
+Windowed Chunk scaffolding could also be recognized as a structured compound pattern:
 
 ```text
 Window
 RequireWindowSize
-WindowToSlab
-MapSlab op
-SlabToWindow
+ParallelCollect op
 WindowSkipTakeM
 Flatten
 ```
 
-This would let the Optimiser understand that the stage is a windowed-via-slab computation without forcing users to write that scaffolding explicitly.
+This would let the Optimiser understand that the stage is a windowed Chunk computation without forcing users to write that scaffolding explicitly.
 
 ## Practical Roadmap
 
 1. Add a semantic operation tag to `PipelineGraphNode`.
-2. Update basic constructors such as `identityStage`, `cast`, `window`, `windowToSlab`, `slabToWindow`, `flattenList`, and `mapSlabWithStage` to set tags.
+2. Update basic constructors such as `identityStage`, `cast`, `window`, `parallelCollect`, `emitValidRange`, and `flattenList` to set tags.
 3. Keep execution unchanged.
 4. Add graph-level simplification for the simplest identity/cast rules.
 5. Teach `Plan.composePlan` or the Optimiser to inspect the enriched graph when constructing candidates and cost explanations.
-6. Only later consider larger rewrites such as read/cast alternatives or window/slab fusion.
+6. Only later consider larger rewrites such as read/cast alternatives or windowed Chunk fusion.
 
 ## Design Principle
 
 The public DSL should stay high-level and ergonomic. Internal `-->` structure should be visible to the Optimiser through enriched stage graphs, not by forcing users or Studio-generated code to spell out implementation scaffolding.
-

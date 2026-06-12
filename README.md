@@ -2,7 +2,7 @@
 
 StackProcessing is a toolkit for processing very large 3D image volumes without loading the whole volume into memory at once.
 
-It is designed for image stacks from microscopy, medical imaging, synchrotron imaging, and similar volume-imaging workflows. The main idea is simple: describe a workflow, then let StackProcessing stream the data through that workflow slice by slice, slab by slab, or chunk by chunk.
+It is designed for image stacks from microscopy, medical imaging, synchrotron imaging, and similar volume-imaging workflows. The main idea is simple: describe a workflow, then let StackProcessing stream typed `Chunk<'T>` data through that workflow with bounded memory.
 
 You do not need to know F# to use StackProcessing. The easiest entry point is **Studio**, a visual graph editor for building and running image-processing workflows.
 
@@ -13,9 +13,9 @@ This README is for general users who want to install StackProcessing, run Studio
 More technical notes are in:
 
 - [notes/Concepts.md](notes/Concepts.md): current vocabulary and high-level architecture.
-- [notes/Image.md](notes/Image.md): the SimpleITK-backed image wrapper.
 - [notes/SlimPipeline.md](notes/SlimPipeline.md): the streaming and deferred execution engine.
-- [notes/StackProcessing.md](notes/StackProcessing.md): how image operations are bound to the streaming engine.
+- [notes/StackProcessing.md](notes/StackProcessing.md): how Chunk operations are bound to the streaming engine.
+- [notes/ChunkBackboneStageGaps.md](notes/ChunkBackboneStageGaps.md): current Chunk runtime status.
 - [notes/supportingSoftware.md](notes/supportingSoftware.md): build, test, calibration, and benchmark support tools.
 - [notes/dsl-stage-graph-enrichment.md](notes/dsl-stage-graph-enrichment.md): possible future optimizer/DSL graph work.
 
@@ -33,14 +33,14 @@ StackProcessing is useful when:
 
 Examples of supported workflow pieces include:
 
-- read and write TIFF stacks, MHA volumes, OME-Zarr, and NeXus/HDF5 where supported,
+- read and write TIFF stacks, OME-Zarr, and NeXus/HDF5 where supported,
 - create synthetic sources such as zeros, coordinate images, and noise images,
 - cast between pixel types,
 - threshold, smooth, convolve, and apply intensity transforms,
-- run binary and grayscale morphology,
+- run binary morphology,
 - compute histograms, quantiles, and image statistics,
 - label connected components and measure streamed objects,
-- work with point sets, meshes, registration, manifests, and serial sections.
+- work with vector chunks, point sets, meshes, registration, manifests, serial sections, FFT experiments, and keypoints.
 
 Some algorithms are naturally outside the streaming model, especially algorithms that require repeated unrestricted access to the whole volume. StackProcessing focuses on algorithms that can be expressed with bounded local context or carefully staged passes.
 
@@ -60,15 +60,10 @@ dotnet build StackProcessing.sln
 dotnet run --project src/Studio/Studio.fsproj
 ```
 
-StackProcessing uses SimpleITK. The repository expects the SimpleITK C# binaries in `lib/`:
-
-- `SimpleITKCSharpManaged.dll`
-- the matching native library for your platform:
-  - `libSimpleITKCSharpNative.dylib` on macOS
-  - `libSimpleITKCSharpNative.so` on Linux
-  - `SimpleITKCSharpNative.dll` on Windows
-
-These can be downloaded from the [SimpleITK releases page](https://github.com/SimpleITK/SimpleITK/releases). Look for a CSharp archive matching your platform.
+Some high-performance Chunk stages use native helper libraries built from the
+`native/` sources. Build or restore those native binaries before running
+samples that use median filters, convolution, FFT, resampling, signed distance
+bands, or connected components.
 
 ## Studio
 
@@ -120,7 +115,7 @@ If a parameter is connected from another box, Studio disables the text field and
 | -------- | -------- |
 | Sources and sinks | read, zero, coordinate images, noise sources, write, print, charts |
 | Arithmetic | image-image and image-scalar operations |
-| Filters | Gaussian smoothing, median, bilateral, gradients, FFT |
+| Filters | Gaussian smoothing, median, finite differences, gradients, FFT |
 | Segmentation | threshold, morphology, connected components |
 | Statistics | histograms, quantiles, image stats, object measurements |
 | Points and meshes | keypoints, point sets, registration, marching cubes |
@@ -139,10 +134,10 @@ open StackProcessing
 let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
 
 source availableMemory
-|> read<float32> "../data/volume" ".tiff"
->=> smoothWGauss<float32> 1.0 None
->=> cast<float32,uint8>
->=> write "../tmp/smoothedVolume" ".tiff"
+|> readChunkSlices<float32> "../data/volume" ".tiff"
+>=> gaussianFilterNativeParallelCollect<float32> 1.0 3 4
+>=> chunkCast<float32,uint8>
+>=> writeChunkSlices "../tmp/smoothedVolume" ".tiff"
 |> sink
 ```
 
@@ -174,6 +169,7 @@ Good samples to start with:
 | Sample | Demonstrates |
 | ------ | ------------ |
 | `copy` | simplest read/write pipeline |
+| `chunk` | TIFF Chunk slices to OME-Zarr and back |
 | `smoothWGauss` | local 3D Gaussian smoothing |
 | `threshold` | binary thresholding |
 | `dilate`, `erode`, `opening`, `closing` | morphology |
@@ -191,7 +187,7 @@ Samples are also useful for learning how Studio graphs correspond to direct F# w
 StackProcessing's usual pattern is:
 
 ```text
-read slices or slabs
+read Chunk slices
   -> process with bounded local context
   -> write results
 ```
@@ -212,7 +208,8 @@ dotnet build
 DYLD_LIBRARY_PATH="$(pwd)/src/StackProcessing/bin/Debug/net10.0:$(pwd)/lib" dotnet fsi
 ```
 
-On Linux use `LD_LIBRARY_PATH` similarly. On Windows, ensure the build output and `lib/` are on `PATH`.
+On Linux use `LD_LIBRARY_PATH` similarly. On Windows, ensure the build output and
+native helper directory are on `PATH`.
 
 Inside `dotnet fsi`:
 
@@ -223,8 +220,8 @@ open StackProcessing;;
 let availableMemory = 2UL * 1024UL * 1024UL * 1024UL;;
 
 source availableMemory
-|> zero<uint8> 64u 64u 8u
->=> write "tmp/fsi-zero" ".tiff"
+|> chunkZero<uint8> 64u 64u 8u
+>=> writeChunkSlices "tmp/fsi-zero" ".tiff"
 |> sink;;
 ```
 
@@ -232,9 +229,9 @@ source availableMemory
 
 | Path | Purpose |
 | ---- | ------- |
-| `src/Image` | SimpleITK-backed typed image wrapper and image functions. |
+| `src/Chunk` | Chunk payloads, typed spans, ownership helpers, and ChunkFunctions. |
 | `src/SlimPipeline` | Generic streaming, stages, plans, deferred execution, and cost metadata. |
-| `src/StackProcessing.Core` | Image-stack IO, algorithms, windows, slabs, objects, points, registration, manifests, and more. |
+| `src/StackProcessing.Core` | Chunk IO, algorithms, windows, objects, points, registration, manifests, and more. |
 | `src/StackProcessing` | Public F# DSL re-exporting the StackProcessing API. |
 | `src/Studio.Graph` | Studio graph model and box catalog. |
 | `src/Studio.Compiler` | Compiler from Studio graph JSON to StackProcessing F# code. |
@@ -260,7 +257,6 @@ Build, test, calibration, and benchmark support commands are collected in [notes
 
 StackProcessing builds on excellent open-source work, including:
 
-- SimpleITK and ITK for image IO and native image filters.
 - FSharp.Control.AsyncSeq for asynchronous streams.
 - Avalonia, NodeEditorAvalonia, PanAndZoom, and CommunityToolkit.Mvvm for Studio.
 - Plotly.NET for charts and reports.

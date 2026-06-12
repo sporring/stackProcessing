@@ -14,15 +14,15 @@ let main args =
 
     let thresholdValue =
         src
-        |> readRandom<uint8> 16u input ".tiff"
-        >=> imHistogram ()
+        |> readChunkSlicesRandom<uint8> 16u input ".tiff"
+        >=> chunkHistogram<uint8> ()
         |> drain
         |> otsuThresholdFromHistogram
 
     src
-    |> read<uint8> input ".tiff"
-    >=> threshold thresholdValue 255.0
-    >=> write output ".tiff"
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> chunkThresholdRange<uint8> thresholdValue 255.0
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     printfn "Estimated Otsu threshold: %.6f" thresholdValue

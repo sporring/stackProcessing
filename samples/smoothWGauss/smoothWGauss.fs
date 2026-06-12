@@ -15,10 +15,10 @@ let main arg =
             "../data/volume", "../tmp/smoothWGauss"
 
     src
-    |> read<float> input ".tiff"
-    >=> smoothWGauss sigma None None None 
-    >=> cast<float,uint8>
-    >=> write output ".tiff"
+    |> readChunkSlices<float32> input ".tiff"
+    >=> gaussianFilterNativeParallelCollect<float32> sigma 3 4
+    >=> chunkCast<float32,uint8>
+    >=> writeChunkSlices output ".tiff"
     //>=> ignoreImages ()
     |> sink
 

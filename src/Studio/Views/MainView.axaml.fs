@@ -125,7 +125,7 @@ type MainView() as this =
     let formatList values =
         values |> Seq.map string |> String.concat " x "
 
-    let appendFileInfo (builder: StringBuilder) (info: ImageFunctions.FileInfo) =
+    let appendFileInfo (builder: StringBuilder) (info: StackIO.FileInfo) =
         builder.AppendLine($"Dimensions: {info.dimensions}") |> ignore
         builder.AppendLine($"Size: {formatList info.size}") |> ignore
         builder.AppendLine($"Component type: {info.componentType}") |> ignore
@@ -225,7 +225,7 @@ type MainView() as this =
                     appendHeader "HDF5/NeXus-like file" "getNexusInfo path /entry/data/data 0 1 2"
                     builder.AppendLine($"Could not inspect the default NeXus dataset: {ex.Message}") |> ignore
             else
-                let info = ImageFunctions.getFileInfo path
+                let info = StackIO.getFileInfo path
 
                 let kind =
                     if ext.Equals(".tif", StringComparison.OrdinalIgnoreCase)

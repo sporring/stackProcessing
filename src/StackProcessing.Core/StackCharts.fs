@@ -66,14 +66,6 @@ let showChartXYWithLabels kind title xAxis yAxis x y =
 let showChartXY kind x y =
     showChartXYWithLabels kind "" "" "" x y
 
-let showImageWithLabels colorMap title xAxis yAxis image =
-    Chart.Heatmap(ImageFunctions.toSeqSeq image, ColorScale = colorScale colorMap)
-    |> applyChartLabels title xAxis yAxis
-    |> Chart.show
-
-let showImage image =
-    showImageWithLabels "Viridis" "" "" "" image
-
 let private chunkToSeqSeq<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
     let width64, height64, depth64 = chunk.Size
     if depth64 <> 1UL then

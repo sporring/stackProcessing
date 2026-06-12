@@ -12,7 +12,7 @@ The cost model should estimate runtime and memory from user-visible pipeline str
 - pixel type
 - cast source and target type
 - image size and shape
-- local window/slab parameters
+- local window parameters
 - operator family
 - reducer behaviour
 - IO and native-operation costs
@@ -86,7 +86,7 @@ Avoid `dotnet run` for cost-model evidence. Even with `--no-build`, it still goe
 
 Probe measurements should be measurements of DSL-shaped StackProcessing programs. Studio graphs are useful for proposing, visualizing, and editing candidate workflows, but the calibration evidence should come from the source-stage-sink DSL program executed by the compiled Probe DLL. This keeps the fitted terms anchored to the same execution path that the optimizer is meant to reason about.
 
-Use `-j 1` for timing runs. Parallel probe graphs compete for CPU, memory bandwidth, disk IO, and SimpleITK worker threads, which makes the evidence noisier.
+Use `-j 1` for timing runs. Parallel probe graphs compete for CPU, memory bandwidth, disk IO, and native helper worker threads, which makes the evidence noisier.
 
 Prefer the current larger shapes:
 
@@ -131,7 +131,7 @@ The current calibration ladder is:
 empty -> io -> io-cast -> sources -> singleton -> neighbourhood -> geometry -> fourier -> keypoints -> dependency -> reducers
 ```
 
-There is also a `window-slab` family for measuring scaffolding such as window-to-slab, slab-to-window, and singleton-on-slab behaviour. It is useful for implementation experiments, but it is not part of the implicit `--up-to` fit ladder unless requested explicitly.
+There is also a `window-chunk` family for measuring scaffolding such as window creation, valid-range emission, and `ParallelCollect` behaviour. It is useful for implementation experiments, but it is not part of the implicit `--up-to` fit ladder unless requested explicitly.
 
 Typical families:
 
@@ -142,8 +142,8 @@ Typical families:
 | `io-cast` | Explicit and implicit read/cast combinations. |
 | `sources` | Synthetic source stages such as zero, noise, and coordinate images. |
 | `singleton` | Per-slice image operations such as cast, threshold, scalar ops, and intensity transforms. |
-| `window-slab` | Window/slab scaffolding experiments. |
-| `neighbourhood` | Local 3D operations requiring windows or slabs. |
+| `window-chunk` | Windowed Chunk scaffolding experiments. |
+| `neighbourhood` | Local 3D operations requiring Chunk windows. |
 | `reducers` | Stages that summarize streams into scalar/statistical outputs. |
 
 ## Standard Collect/Fit/Inspect Loop
@@ -306,10 +306,10 @@ reducers
 Optional/experimental:
 
 ```text
-window-slab
+window-chunk
 ```
 
-Keep `window-slab` explicit rather than part of the default climb unless the goal is to study slab/window scaffolding.
+Keep `window-chunk` explicit rather than part of the default climb unless the goal is to study windowed Chunk scaffolding.
 
 ### Per-Step Template
 
@@ -428,7 +428,7 @@ unless intentionally starting a new calibration cycle.
 For comparing machines, keep these fixed:
 
 - same git commit,
-- same SimpleITK version and native library,
+- same native helper library versions,
 - same .NET SDK/runtime,
 - same shapes,
 - same repeat count,
@@ -447,7 +447,7 @@ RAM
 storage type
 operating system
 .NET version
-SimpleITK version
+Native helper library version
 git commit
 date
 shape scope
@@ -519,14 +519,14 @@ Important modelling details:
 
 - TIFF is measured for the pixel types StackProcessing exposes as TIFF-compatible.
 - `.mha` covers the wider scalar set and complex images.
-- SimpleITK writes are requested without compression by default so measurements match ordinary DSL behaviour.
+- Chunk TIFF writes are requested without compression by default so measurements match ordinary DSL behaviour.
 - Read/write cost should be format-aware, for example `read-tiff-uint8` and `read-mha-uint8` should not be treated as the same entity.
 
 The `io-cast` family compares:
 
 ```text
-read<T>
-read<diskT> --> cast<diskT,T>
+readChunkSlices<T>
+readChunkSlices<diskT> --> chunkCast<diskT,T>
 ```
 
 Implicit read-cast and explicit cast can have different mechanics and timings. The model should preserve that distinction rather than blindly rewriting one into the other.
@@ -622,7 +622,7 @@ dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   bottom-up --size 128 --noisy-type Float32 --repeat 3 -j 1
 ```
 
-The current preferred workflow is `collect`, `fit`, and `inspect`. Use legacy commands only when testing compatibility or reproducing older measurements.
+The current preferred workflow is `collect`, `fit`, and `inspect`. Use older compatibility commands only when reproducing older measurements.
 
 ## Main Outputs
 

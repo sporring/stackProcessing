@@ -14,10 +14,8 @@ let main arg =
             "../data/volume", "../tmp/copy"
 
     src
-    |> read<uint8> input ".tiff"
-    //|> getFilenames (input) ".tiff" Array.sort
-    //>=> readFiles<uint8>
-    >=> write output ".tiff"
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     0

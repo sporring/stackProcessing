@@ -1528,8 +1528,8 @@ let castFromFloat32<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
     Stage.map $"chunkCastFromFloat32.{typeof<'T>.Name}" mapper id id
 
 let thresholdRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
-    lower
-    upper
+    (lower: double)
+    (upper: double)
     : Stage<Chunk<'T>, Chunk<uint8>> =
     let lowerF = float32 lower
     let upperF = float32 upper
@@ -1612,12 +1612,8 @@ let histogramDense<'T when 'T: equality and 'T: comparison and 'T: (new: unit ->
 let histogramLeftEdgeCounts<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> leftEdges chunk = ChunkKernel.histogramLeftEdgeCounts<'T> leftEdges chunk
 let histogramLeftEdges<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> leftEdges chunk = ChunkKernel.histogramLeftEdges<'T> leftEdges chunk
 
-let private toImageStats (stats: ChunkStats) : ImageFunctions.ImageStats =
-    { NumPixels =
-          if stats.NumPixels > uint64 UInt32.MaxValue then
-              UInt32.MaxValue
-          else
-              uint stats.NumPixels
+let private toImageStats (stats: ChunkStats) : StackCore.ImageStats =
+    { NumPixels = stats.NumPixels
       Mean = stats.Mean
       Std = stats.Std
       Min = stats.Min
@@ -1627,7 +1623,7 @@ let private toImageStats (stats: ChunkStats) : ImageFunctions.ImageStats =
 
 let computeStats<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     ()
-    : Stage<Chunk<'T>, ImageFunctions.ImageStats> =
+    : Stage<Chunk<'T>, StackCore.ImageStats> =
     let reducer _debug (input: AsyncSeq<Chunk<'T>>) =
         async {
             let mutable stats = ChunkKernel.zeroStats
@@ -1983,10 +1979,6 @@ let medianNativeNthElementInt32ParallelCollect radius workers = StackMedian.medi
 let medianNativeNthElementFloat32 radius = StackMedian.medianNativeNthElementFloat32 radius
 let medianNativeNthElementFloat32ParallelCollect radius workers = StackMedian.medianNativeNthElementFloat32ParallelCollect radius workers
 let medianQuickselectInt16 radius = StackMedian.medianQuickselectInt16 radius
-let medianItkWrappedParallelCollect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> radius workers =
-    StackMedian.medianItkWrappedParallelCollect<'T> radius workers
-let medianItkWrapped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> radius =
-    StackMedian.medianItkWrapped<'T> radius
 let medianPerreaultHebertUInt8DenseRollingYBands radius workers = StackMedian.medianPerreaultHebertUInt8DenseRollingYBands radius workers
 let medianPerreaultHebertUInt8DenseRollingTree radius = StackMedian.medianPerreaultHebertUInt8DenseRollingTree radius
 let medianPerreaultHebertUInt8DenseRollingTransposedXBlock radius = StackMedian.medianPerreaultHebertUInt8DenseRollingTransposedXBlock radius

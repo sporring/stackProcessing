@@ -7,7 +7,7 @@ This note describes the near-term release-candidate process for technically symp
 The tester is expected to have:
 
 - .NET 10 SDK installed;
-- a platform matching the supplied native SimpleITK library;
+- platform matching supplied native helper libraries;
 - permission to run local executables and write temporary output;
 - enough disk space for input stacks, temporary outputs, and generated graph builds.
 
@@ -16,13 +16,13 @@ The tester is expected to have:
 A developer release should contain:
 
 - the repository source at a tagged commit;
-- `lib/` with the SimpleITK managed and native library for the target platform;
+- native helper binaries for the target platform;
 - `models/` with the current fitted/default cost model files;
 - `samples/` with a few small runnable examples;
 - `notes/` or a short release README with the commands below;
 - optional tiny TIFF stacks for smoke testing.
 
-Do not ask testers to reconstruct dependencies by hand. The release archive should already include the native SimpleITK files that match the platform.
+Do not ask testers to reconstruct dependencies by hand. The release archive should already include the native helper binaries that match the platform.
 
 ## Versioning
 
@@ -131,13 +131,13 @@ The release should include one small graph and one tiny TIFF stack. The smoke te
 The smoke graph should use conservative operations:
 
 ```text
-read -> threshold -> write
+readChunkSlices -> chunkThresholdRange -> writeChunkSlices
 ```
 
 A second optional smoke graph can exercise a small streaming window:
 
 ```text
-read -> dilate -> write
+readChunkSlices -> chunkBinaryDilateZonohedral -> writeChunkSlices
 ```
 
 Keep these graphs tiny. Their job is to detect packaging and platform errors, not to benchmark performance.
@@ -145,7 +145,7 @@ Keep these graphs tiny. Their job is to detect packaging and platform errors, no
 ## Known Developer-Release Limitations
 
 - Studio requires the .NET SDK because graph execution currently compiles generated F# code.
-- The release is platform-specific because SimpleITK native libraries are platform-specific.
+- The release is platform-specific because native helper libraries are platform-specific.
 - macOS users may need to approve the app or executable in system security settings.
 - Large TIFF stacks and benchmark outputs can quickly consume disk space.
 - Timing results from `dotnet run` should not be used as cost-model evidence.
@@ -166,7 +166,7 @@ The eventual non-technical release should remove the SDK requirement from normal
    dotnet publish src/Studio/Studio.fsproj -c Release -r <runtime-id> --self-contained true
    ```
 
-   This should bundle the .NET runtime and managed dependencies. Native SimpleITK files still need careful platform-specific packaging.
+   This should bundle the .NET runtime and managed dependencies. Native helper files still need careful platform-specific packaging.
 
 3. **Installer/app bundle**
 

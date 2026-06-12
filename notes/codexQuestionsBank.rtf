@@ -7,44 +7,9 @@
 \pard\pardeftab720\partightenfactor0
 
 \f0\fs28 \cf2 \expnd0\expndtw0\kerning0
-* Interior/border splitting in c++ convolve was somewhat of a win. Is that also something we should add to median and connected components?\
-Summary: Added and kept the border/interior split for native UInt8 C++ convolution. A further tap-precompute variant was tried and reverted because it was slower. I did not add the same structure to median or connected components: median is now routed through C++ std::nth_element for the native path, and connected components got better mileage from SAUF-specific changes: array-backed union-find, delayed compression, a small decision-tree scan, array-backed compact relabelling, UInt32 labels, and slab/window stitching.\
-\
-\
-* Please check that the other ParallelCollect/Reduce do not use the Choose but Iter version\
-Summary: Checked the relevant paths while refactoring convolution. The convolution stages no longer depend on Stage.choose for the retained window path; ChunkFunctions now handles chunk incRef/decRef around retained windows and uses map/collect-style stages. ParallelReduce already has the one-worker fast path and stays in list/window form. Chunk reference-counting was kept in StackProcessing/ChunkFunctions rather than pushed into SlimPipeline.\
-\
-\
-* Could Median radius=1 in uint8 figure be the old code? Distance to c++-itk is a big compared to radius=3\
-Summary: The UInt8 median policy was updated so radius 1 uses the native C++ nth_element slab kernel, while the intermediate UInt8 radii in the main plots use the Perreault-Hebert dense-histogram y-band implementation. The TeX captions now describe that split. The remaining gap to C++/ITK is therefore not just an old-code plot issue; it reflects IO, chunk/slab orchestration, output writing, and implementation differences around neighbourhood extraction and rank selection.\
-\
-\
-* Please update tex with a description of the new Connected Component and c++ convolution.\
-Summary: body.tex was updated with the benchmark-facing descriptions: StackProcessing connected components now uses the LMIP slab schedule for the main UInt8 memory plot, the median section notes the C++ nth_element policy, and the UInt8 benchmark discussion/captions describe the three-worker chunk pipeline. After the latest native UInt8 C++ convolution work, the figures were regenerated and copied into the TeX figure directory. A more detailed prose paragraph specifically naming the direct UInt8 native convolution kernel may still be worth adding if the report text should distinguish it from the earlier explicit UInt8-Float32-UInt8 route.\
-\
-\
 * Please make int8, uint16/int16, int, float 32 with float32 kernels version of the c++-convolve \
 Summary: Not completed. The native convolution work currently has direct UInt8 input/output with Float32 kernel and Float32 input/output with Float32 kernel. Benchmark fallback paths can still widen other integer types through Float32 and cast back, but there are not yet direct native C++ convolve entry points for Int8, UInt16, Int16, or Int32. Native median, separately, was added for UInt8, UInt16, Int32, and Float32.\
  \
-\
-* Please update ChunkFunctions with missing stuff from the Image project: \
-\pard\pardeftab720\partightenfactor0
-\cf2 - please add general Chunk<> operators like Image-simple-itk: Padding, crop, squeeze, concatenate\
-\pard\pardeftab720\partightenfactor0
-\cf2 - please add the missing Geometric and resampling operations remain Image/ITK paths:\
-  `euler2DTransform`, `euler2DRotate`, `resample2D`, affine resampling, axis permutation, and\
-  other coordinate-space operations from Image and ImageFunctions. For transform and resample, I believe Zarr would be a natural temporary format. Focussing on uint8/int8, uint16,int16, int, and float32 is fine for now.\
-- please implement single-axis convolution convolveX, -Y and -Z, e.g. for fast derivatives by finite differences, and separable convolution.\
-- Please make version of image-simple-itk\'92s \
-  bilateral, gradient magnitude, Sobel, Laplacian, Separable Gaussian convolution, Gaussian derivatives\
-- Please add versions of the noise generators: \
-  normal, salt-and-pepper, shot, and speckle noise.\
-And then update notes documentation, tex, and in particular, ChunkBackboneStageGaps.md\
-Summary: Partially done. ChunkFunctions gained many chunk-native replacements and bridges during the session: histograms and adders/reducers, dense and sparse histogram reducers, zonohedral dilation/erosion/opening/closing, threshold, copy/cast-oriented benchmark stages, convolution including native C++ Float32 and UInt8 kernels, median variants including PH UInt8 and native nth_element wrappers, connected-components SAUF UInt8 to UInt32/UInt64-compatible stages, and Chunk tests for these paths. ChunkBackboneStageGaps.md was created/updated to list remaining Image-only areas. The broad migration list here is not finished: padding/crop/squeeze/concatenate, geometric transforms/resampling, axis permutation, single-axis/separable convolutions, bilateral/gradient/Sobel/Laplacian/Gaussian derivative stages, and noise generators still need Chunk-native implementations or explicit bridge decisions.\
-\pard\pardeftab720\partightenfactor0
-\cf2 \
-\pard\pardeftab720\partightenfactor0
-\cf2 \
 \'97\'97\'97\'97\'97\'97\'97\'97\'97\'97\'97\'97\'97\'97\'97\'97\'97\'97\
 \
 Ignore anything below here:\

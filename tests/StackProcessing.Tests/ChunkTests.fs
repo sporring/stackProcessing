@@ -410,7 +410,7 @@ let chunkSuite =
                     Expect.equal vector2.Chunk.Size (4UL, 2UL, 1UL) "Vector chunk storage should widen X by the component count."
                     Expect.sequenceEqual ((Chunk.vectorSpan vector2).ToArray()) [| 1.0f; 10.0f; 2.0f; 20.0f; 3.0f; 30.0f; 4.0f; 40.0f |] "Vector storage should be component-fastest."
 
-                    let second = Chunk.vectorElement 1 vector2
+                    let second = Chunk.vectorElement 1u vector2
                     try
                         Expect.sequenceEqual ((Chunk.span<float32> second).ToArray()) [| 10.0f; 20.0f; 30.0f; 40.0f |] "vectorElement should extract the requested component."
                     finally
@@ -558,43 +558,6 @@ let chunkSuite =
                 Expect.equal weighted 52 "foldi should include flat indices."
             finally
                 Chunk.decRef chunk
-
-        testCase "ofImage and toImageWith bridge scalar image buffers through Chunk storage" <| fun _ ->
-            let image = Image<float32>.ofFlatArray([ 2u; 2u ], [| 1.0f; 2.0f; 3.0f; 4.0f |], "chunkBridge", 17)
-            let chunk = Chunk.ofImage image
-            let roundTrip = Chunk.toImageWith "chunkBridge.roundTrip" 19 chunk
-            try
-                Expect.equal chunk.Size (2UL, 2UL, 1UL) "ofImage should represent a 2D image as a depth-1 chunk."
-                Expect.sequenceEqual ((Chunk.span<float32> chunk).ToArray()) [| 1.0f; 2.0f; 3.0f; 4.0f |] "ofImage should copy image pixels into the valid chunk span."
-                Expect.equal (roundTrip.GetSize()) [ 2u; 2u ] "toImageWith should convert depth-1 chunks back to 2D images."
-                Expect.equal roundTrip.index 19 "toImageWith should carry the requested index."
-                Expect.sequenceEqual (roundTrip.toFlatArray()) [| 1.0f; 2.0f; 3.0f; 4.0f |] "toImageWith should preserve scalar pixel values."
-            finally
-                roundTrip.decRefCount()
-                Chunk.decRef chunk
-                image.decRefCount()
-
-        testCase "toSlab and ofSlab bridge chunk windows through emitted slab slices" <| fun _ ->
-            let chunks =
-                [ for z in 0 .. 2 ->
-                    [| for i in 0 .. 3 -> uint16 (z * 10 + i) |]
-                    |> chunkFromUInt16Pixels 2 2 ]
-            let window =
-                { Items = chunks
-                  EmitRange = 1u, 1u
-                  ReleaseCount = 1u }
-            let slab = Chunk.toSlabWith "chunkSlabBridge" window
-            let outputs = Chunk.ofSlab slab
-            try
-                Expect.equal (slab.Image.GetSize()) [ 2u; 2u; 3u ] "toSlab should stack 2D slice chunks into a 3D slab image."
-                Expect.equal outputs.Length 1 "ofSlab should emit only the requested slice range."
-                Expect.equal outputs[0].Size (2UL, 2UL, 1UL) "ofSlab should return 2D emitted slices as depth-1 chunks."
-                Expect.sequenceEqual ((Chunk.span<uint16> outputs[0]).ToArray()) [| 10us; 11us; 12us; 13us |] "ofSlab should preserve the emitted center slice pixels."
-                chunks |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 1 "Bridge helpers should not own or release source chunks.")
-            finally
-                outputs |> List.iter Chunk.decRef
-                slab.Image.decRefCount()
-                chunks |> List.iter Chunk.decRef
 
         testCase "ChunkFunctions connectedComponentsSauf3DUInt8 labels 6-connected foreground across slices" <| fun _ ->
             let width = 4
@@ -1701,37 +1664,6 @@ let chunkSuite =
                 int16Outputs |> List.iter Chunk.decRef
                 uint16Outputs |> List.iter Chunk.decRef
                 uint8QuickOutputs |> List.iter Chunk.decRef
-
-        testCase "ChunkFunctions ITK-wrapped median parallelCollect matches one-worker wrapper" <| fun _ ->
-            let width = 5
-            let height = 4
-            let depth = 5
-            let radius = 1
-
-            let makeInputs () =
-                [ for z in 0 .. depth - 1 ->
-                    [| for y in 0 .. height - 1 do
-                           for x in 0 .. width - 1 ->
-                               uint16 ((z * 1009 + y * 211 + x * 17 + x * y * 13) % 65521) |]
-                    |> chunkFromUInt16Pixels width height ]
-
-            let serialInputs = makeInputs ()
-            let parallelInputs = makeInputs ()
-            let serialOutputs = runStageList (ChunkFunctions.medianItkWrapped<uint16> radius) serialInputs
-            let parallelOutputs = runStageList (ChunkFunctions.medianItkWrappedParallelCollect<uint16> radius 3) parallelInputs
-
-            try
-                Expect.equal serialOutputs.Length depth "ITK-wrapped median should emit one slice per input slice."
-                Expect.equal parallelOutputs.Length serialOutputs.Length "Parallel ITK-wrapped median should preserve serial output count."
-
-                for z in 0 .. depth - 1 do
-                    Expect.sequenceEqual ((Chunk.span<uint16> parallelOutputs[z]).ToArray()) ((Chunk.span<uint16> serialOutputs[z]).ToArray()) $"Parallel ITK-wrapped median should match one-worker slice {z}."
-
-                serialInputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "One-worker ITK-wrapped median should release consumed input chunks.")
-                parallelInputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 "Parallel ITK-wrapped median should release consumed input chunks.")
-            finally
-                parallelOutputs |> List.iter Chunk.decRef
-                serialOutputs |> List.iter Chunk.decRef
 
         testCase "ChunkFunctions castToFloat32 widens signed and unsigned integer chunk spans" <| fun _ ->
             let width = 2 * System.Numerics.Vector<byte>.Count + 3

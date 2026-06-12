@@ -12,14 +12,12 @@ let main args =
         | [| input |] -> input, "../tmp/convolve"
         | _ -> "../data/volume", "../tmp/convolve"
 
-    let kernel = Image<float>.ofArray3D(Array3D.create 3 3 3 (1.0 / 27.0), "average3x3x3")
-
     src
-    |> read<float> input ".tiff"
-    >=> convolve kernel (Some ImageFunctions.Same) (Some ImageFunctions.ZeroFluxNeumannPad) (Some 7u)
-    >=> intensityStretch<float> 0.0 255.0 0.0 255.0
-    >=> cast<float, uint8>
-    >=> write output ".tiff"
+    |> readChunkSlices<float32> input ".tiff"
+    >=> boxFilterNativeParallelCollectXYZ<float32> 1 1 1 4
+    >=> chunkIntensityWindow<float32> 0.0 255.0 0.0 255.0
+    >=> chunkCast<float32, uint8>
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     0

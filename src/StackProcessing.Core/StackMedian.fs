@@ -2335,44 +2335,6 @@ let medianNativeNthElementFloat32ParallelCollect radius workers : Stage<Chunk<fl
 let medianQuickselectInt16 radius : Stage<Chunk<int16>, Chunk<int16>> =
     medianNthElementStage<int16> "chunkMedianQuickselectInt16" radius medianQuickselectInt16Slice
 
-let private medianItkWrappedSlice<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
-    width
-    height
-    radius
-    (window: Chunk<'T>[])
-    =
-    let chunkWindow =
-        { Items = window |> Array.toList
-          EmitRange = uint radius, 1u
-          ReleaseCount = 0u }
-
-    let slab = Chunk.toSlabWith $"chunkMedianItkWrapped.radius{radius}" chunkWindow
-    try
-        let medianImage = ImageFunctions.median (uint radius) slab.Image
-        try
-            match Chunk.ofSlab { Image = medianImage; EmitRange = slab.EmitRange } with
-            | [ output ] -> output
-            | outputs ->
-                outputs |> List.iter Chunk.decRef
-                invalidOp $"Chunk ITK-wrapped median expected exactly one emitted slice, got {outputs.Length}."
-        finally
-            medianImage.decRefCount()
-    finally
-        slab.Image.decRefCount()
-
-let medianItkWrappedParallelCollect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
-    radius
-    workers
-    : Stage<Chunk<'T>, Chunk<'T>> =
-    medianNthElementParallelCollectStage<'T>
-        $"chunkMedianItkWrapped.{typeof<'T>.Name}"
-        radius
-        workers
-        medianItkWrappedSlice<'T>
-
-let medianItkWrapped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> radius : Stage<Chunk<'T>, Chunk<'T>> =
-    medianItkWrappedParallelCollect<'T> radius 1
-
 let private medianPerreaultHebertUInt8DenseRollingByteBinsYBands radius workers : Stage<Chunk<uint8>, Chunk<uint8>> =
     if radius < 0 then
         invalidArg "radius" $"UInt8 rolling PH median byte-bin y-band version expects a non-negative radius, got {radius}."
@@ -3036,4 +2998,3 @@ let medianPerreaultHebertUInt8DenseXBlock radius : Stage<Chunk<uint8>, Chunk<uin
         mapper
         memoryNeed
         id
-
