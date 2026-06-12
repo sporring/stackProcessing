@@ -21,6 +21,132 @@ let chunkElementBytes<'T> =
 let chunkMemoryNeed<'T> nPixels =
     nPixels * uint64 (chunkElementBytes<'T>)
 
+let private chunkSourceStage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    name
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (mapper: int -> Chunk<'T>)
+    =
+    let nPixels = uint64 width * uint64 height
+    let memoryNeed _ = chunkMemoryNeed<'T> nPixels
+    let transition = ProfileTransition.create Unit Streaming
+    Stage.init name depth mapper transition memoryNeed (fun _ -> nPixels)
+
+let private chunkSourcePlan<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (pl: Plan<unit, unit>)
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (stage: Stage<unit, Chunk<'T>> option)
+    =
+    let nPixels = uint64 width * uint64 height
+    let memPeak = chunkMemoryNeed<'T> nPixels
+    Plan.createWithOptimizer stage pl.memAvail memPeak nPixels (uint64 depth) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
+
+let private convertFloat<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> value =
+    Convert.ChangeType(value, typeof<'T>) :?> 'T
+
+let chunkZero<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+    let mapper (i: int) =
+        let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+        (Chunk.span chunk).Fill Unchecked.defaultof<'T>
+        if pl.debug && DebugLevel.current() >= 1u then printfn "[chunkZero] Created slice %A" i
+        chunk
+
+    let stage = chunkSourceStage $"chunkZero.{typeof<'T>.Name}" width height depth mapper |> Some
+    chunkSourcePlan pl width height depth stage
+
+let private coordinateChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    width
+    height
+    z
+    coordinate
+    =
+    let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+    let pixels = Chunk.span chunk
+    let widthI = int width
+    let heightI = int height
+
+    for y in 0 .. heightI - 1 do
+        for x in 0 .. widthI - 1 do
+            pixels[Chunk.toIndex widthI heightI x y 0] <- convertFloat<'T> (coordinate x y z)
+
+    chunk
+
+let chunkCoordinateX<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+    let mapper i = coordinateChunk<'T> width height i (fun x _ _ -> float x)
+    let stage = chunkSourceStage $"chunkCoordinateX.{typeof<'T>.Name}" width height depth mapper |> Some
+    chunkSourcePlan pl width height depth stage
+
+let chunkCoordinateY<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+    let mapper i = coordinateChunk<'T> width height i (fun _ y _ -> float y)
+    let stage = chunkSourceStage $"chunkCoordinateY.{typeof<'T>.Name}" width height depth mapper |> Some
+    chunkSourcePlan pl width height depth stage
+
+let chunkCoordinateZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+    let mapper i = coordinateChunk<'T> width height i (fun _ _ z -> float z)
+    let stage = chunkSourceStage $"chunkCoordinateZ.{typeof<'T>.Name}" width height depth mapper |> Some
+    chunkSourcePlan pl width height depth stage
+
+let chunkRepeat<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (chunk: Chunk<'T>)
+    (depth: uint)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+    if depth = 0u then invalidArg "depth" "chunkRepeat requires a positive depth."
+    let width, height, _ = chunk.Size
+    let widthU = uint width
+    let heightU = uint height
+
+    let mapper (i: int) =
+        let copy = ChunkCore.ChunkFunctions.copyChunk chunk
+        if pl.debug && DebugLevel.current() >= 1u then printfn "[chunkRepeat] Created slice %A" i
+        copy
+
+    let stage =
+        { chunkSourceStage $"chunkRepeat.{typeof<'T>.Name}" widthU heightU depth mapper with
+            Cleaning = [ fun () -> Chunk.decRef chunk ] }
+        |> Some
+
+    chunkSourcePlan pl widthU heightU depth stage
+
+let chunkRepeatStage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    depth
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    if depth = 0u then invalidArg "depth" "chunkRepeatStage requires a positive depth."
+
+    let copySlice (chunk: Chunk<'T>) =
+        try
+            [ for _ in 0 .. int depth - 1 -> ChunkCore.ChunkFunctions.copyChunk chunk ]
+        finally
+            Chunk.decRef chunk
+
+    Stage.map $"chunkRepeatStage {depth}" (fun _ chunk -> copySlice chunk) (fun n -> n * uint64 depth) id
+    --> flattenList ()
+    |> Stage.withSliceCardinality SliceCardinality.unknown
+
 let releaseUnaryChunk name f memoryNeed : Stage<Chunk<'T>, Chunk<'U>> =
     let mapper _debug chunk =
         try
@@ -418,6 +544,14 @@ let inline divide<'T when 'T: equality
                        and 'T: (static member ( / ) : 'T * 'T -> 'T)> =
     map2< 'T, 'T, 'T> $"chunkDivide.{typeof<'T>.Name}" (fun a b -> a / b)
 
+let inline maximum<'T when 'T: equality and 'T: comparison
+                        and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    map2< 'T, 'T, 'T> $"chunkMaximum.{typeof<'T>.Name}" (fun a b -> if a > b then a else b)
+
+let inline minimum<'T when 'T: equality and 'T: comparison
+                        and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    map2< 'T, 'T, 'T> $"chunkMinimum.{typeof<'T>.Name}" (fun a b -> if a < b then a else b)
+
 let inline equal<'T when 'T: equality
                       and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
     map2< 'T, 'T, uint8> $"chunkEqual.{typeof<'T>.Name}" (fun a b -> if a = b then 1uy else 0uy)
@@ -461,6 +595,74 @@ let mask<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :>
     (outsideValue: 'T)
     : Stage<Chunk<'T> * Chunk<uint8>, Chunk<'T>> =
     map2 $"chunkMask.{typeof<'T>.Name}" (fun value maskValue -> if maskValue = binaryBackground then outsideValue else value)
+
+let private projectionTransform (transformName: string) =
+    match transformName.Trim().ToLowerInvariant().Replace("-", "").Replace("_", "").Replace(" ", "") with
+    | ""
+    | "identity" -> id
+    | "abs"
+    | "absolute" -> abs
+    | "squared"
+    | "square" -> fun value -> value * value
+    | "sqrtabs"
+    | "sqrt"
+    | "squareroot" -> fun value -> Math.Sqrt(Math.Abs value)
+    | "log1pabs"
+    | "log"
+    | "logabs" -> fun value -> Math.Log(1.0 + Math.Abs value)
+    | _ ->
+        invalidArg "transformName" $"Unknown projection transform '{transformName}'."
+
+let chunkSumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    transformName
+    : Stage<Chunk<'T>, Chunk<float>> =
+    let transform = projectionTransform transformName
+
+    let reducer (_debug: bool) (input: AsyncSeq<Chunk<'T>>) =
+        async {
+            let! state =
+                input
+                |> AsyncSeq.foldAsync
+                    (fun state chunk ->
+                        async {
+                            try
+                                let widthU, heightU, depthU = chunk.Size
+                                if depthU <> 1UL then
+                                    invalidArg "chunk" $"chunkSumProjection expects 2D slice chunks with depth 1, got {chunk.Size}."
+                                let width = int widthU
+                                let height = int heightU
+                                let pixels = (Chunk.span chunk).ToArray()
+                                let accumulator =
+                                    match state with
+                                    | None ->
+                                        Some(width, height, Array.zeroCreate<float> (width * height))
+                                    | Some(expectedWidth, expectedHeight, values) ->
+                                        if expectedWidth <> width || expectedHeight <> height then
+                                            invalidOp $"chunkSumProjection requires constant x-y slice size; got {width}x{height}, expected {expectedWidth}x{expectedHeight}."
+                                        Some(expectedWidth, expectedHeight, values)
+
+                                match accumulator with
+                                | None -> return None
+                                | Some(_, _, values) ->
+                                    for i in 0 .. pixels.Length - 1 do
+                                        values[i] <- values[i] + transform (Convert.ToDouble pixels[i])
+                                    return accumulator
+                            finally
+                                Chunk.decRef chunk
+                        })
+                    None
+
+            match state with
+            | None ->
+                return raise (InvalidOperationException "chunkSumProjection cannot reduce an empty chunk stream.")
+            | Some(width, height, values) ->
+                let output = Chunk.create<float> (uint64 width, uint64 height, 1UL)
+                let outputPixels = Chunk.span output
+                values.AsSpan().CopyTo outputPixels
+                return output
+        }
+
+    Stage.reduce $"chunkSumProjection {transformName}" reducer Streaming (fun n -> n * uint64 (chunkElementBytes<'T> + chunkElementBytes<float>)) id
 
 let private mapFloat32Vector name (scalarOp: float32 -> float32) (vectorOp: Vector<float32> -> Vector<float32>) (chunk: Chunk<float32>) =
     ChunkKernel.mapFloat32Vector name scalarOp vectorOp chunk
@@ -600,6 +802,20 @@ let castFromFloat32<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
             Chunk.decRef chunk
 
     Stage.map $"chunkCastFromFloat32.{typeof<'T>.Name}" mapper id id
+
+let thresholdRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    lower
+    upper
+    : Stage<Chunk<'T>, Chunk<uint8>> =
+    let lowerF = float32 lower
+    let upperF = float32 upper
+    let thresholdFloat32 =
+        map "chunkThresholdRange.Float32" (fun value -> if value >= lowerF && value <= upperF then 1uy else 0uy)
+
+    if typeof<'T> = typeof<float32> then
+        unbox (box thresholdFloat32)
+    else
+        castToFloat32<'T> --> thresholdFloat32
 
 let shiftScale<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> shift scale : Stage<Chunk<'T>, Chunk<'T>> =
     if typeof<'T> = typeof<float32> then

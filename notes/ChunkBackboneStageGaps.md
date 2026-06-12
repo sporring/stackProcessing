@@ -75,12 +75,46 @@ implementation before Chunk can act as the regular StackProcessing backbone.
     `Float32` slices through `signedDistanceBandNativeParallelCollect`
   - XY FFT for `Float32` chunks to complex64-interleaved `Float32` chunks,
     including a `ParallelCollect` variant
+  - StackProcessing facade and Studio compiler first-pass lowering for the
+    regular TIFF stack path now use Chunk sources/sinks for:
+    `readChunkSlices`, `writeChunkSlices`, `chunkZero`,
+    `chunkCoordinateX/Y/Z`, Chunk padding/crop/permutation, finite
+    differences, Gaussian/gradient/Sobel/Laplacian convenience stages,
+    zonohedral binary morphology, signed distance band, cast, clamp,
+    shift/scale, intensity window, threshold range, and normal/salt-pepper/shot
+    noise stages.
+  - Chunk stack source/stage conveniences: `readChunkSlicesRandom`,
+    `readChunkSlicesRange`, `chunkRepeat`, and `chunkRepeatStage`.
+  - Chunk Studio lowering for scalar image math, image-pair math,
+    comparisons, mask logic, sum projection, and the streaming object
+    workflow (`streamConnectedObjectsChunk`, `paintObjectsChunk`, and cropped
+    painting).
     
 
 ## Still Needing Chunk Versions
 
 - Stack-level facade functions that still expose only `Image<>` stages should
   gain Chunk-facing names or overloads once the API shape is clearer.
+- Studio-flush smoke test currently exposes these Image-only islands when the
+  default source/sink is switched to Chunk:
+  - slab TIFF readers (`readSlab`) and a Chunk-native policy for formerly
+    slab-shaped workflows
+  - `polygonMask` and Euler-transform source creation
+  - image stats, volume reducers, histogram reducers/quantiles, and chart/show
+    stages
+  - bias correction stages in `StackBias.fs` still lower as Image stages in
+    Studio despite the Chunk work started there
+  - serial registration/section stages still produce and consume Image streams
+  - connected-components/relabel/update translation-table Studio paths still
+    use Image stages even though Chunk SAUF labels exist
+  - complex construction/arithmetic, full FFT workflows, and complex IO/write
+    decisions still need Chunk policy beyond the current low-level XY FFT
+  - list-backed vector-image Studio boxes (`toVectorImage`, element/range,
+    color conversion, dot/cross/angle, PCA, structure tensor) need to lower to
+    `VectorChunk` stages or be explicitly marked legacy
+  - `speckleNoise`, bilateral filtering, grayscale morphology, label contour,
+    change-label, marching cubes, and keypoints remain
+    Image-backed in generated Studio graphs.
 - Slab bridges: `ofSlab` and `toSlab` need a Chunk-native shape. The current
   `Slab<'T>` record contains an `Image<'T>`, so either the record should become
   storage-polymorphic or a parallel `ChunkSlab<'T>` should be introduced.

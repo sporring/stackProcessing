@@ -293,6 +293,74 @@ let private processSlice connectivity ((stateNextLabel, active): uint64 * Map<ui
 
     (nextLabel, nextActive), completed |> Seq.toList
 
+let private processChunkSlice<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    connectivity
+    ((stateNextLabel, active): uint64 * Map<uint64, ActiveObject>)
+    z
+    (chunk: Chunk<'T>)
+    =
+    let widthU, heightU, depthU = chunk.Size
+    if depthU <> 1UL then
+        invalidArg "chunk" $"streamConnectedObjectsChunk expects 2D slice chunks with depth 1, got {chunk.Size}."
+    let width = int widthU
+    let height = int heightU
+    let zOffsets = zNeighborOffsets connectivity
+    let pixels = (Chunk.span chunk).ToArray()
+    let components =
+        connectedComponents2D connectivity z width height (fun x y -> foreground pixels[flatIndex2 width x y])
+
+    let activeNodes = active |> Map.toList |> List.map (fst >> Active)
+    let localNodes = components |> List.map (fun objectComponent -> Local objectComponent.Id)
+    let componentMap = components |> List.map (fun objectComponent -> objectComponent.Id, objectComponent) |> Map.ofList
+
+    let edges =
+        [ for KeyValue(activeLabel, activeObject) in active do
+              for objectComponent in components do
+                  if touchesPreviousFront zOffsets activeObject.Frontier objectComponent.Frontier then
+                      Active activeLabel, Local objectComponent.Id ]
+
+    let groups = connectedGroups (activeNodes @ localNodes) edges
+    let mutable nextLabel = stateNextLabel
+    let mutable nextActive = Map.empty<uint64, ActiveObject>
+    let completed = ResizeArray<StreamedObject>()
+
+    for group in groups do
+        let activeLabels =
+            group
+            |> List.choose (function Active label -> Some label | _ -> None)
+
+        let localIds =
+            group
+            |> List.choose (function Local id -> Some id | _ -> None)
+
+        match activeLabels, localIds with
+        | activeLabels, [] ->
+            activeLabels
+            |> List.choose (fun label -> active |> Map.tryFind label)
+            |> List.iter (toStreamedObject >> completed.Add)
+        | activeLabels, localIds ->
+            let label =
+                match activeLabels with
+                | [] ->
+                    let label = nextLabel
+                    nextLabel <- nextLabel + 1UL
+                    label
+                | labels ->
+                    labels |> List.min
+
+            let activeObjects =
+                activeLabels
+                |> List.choose (fun label -> active |> Map.tryFind label)
+
+            let localComponents =
+                localIds
+                |> List.choose (fun id -> componentMap |> Map.tryFind id)
+
+            let merged = mergeActiveAndLocal label activeObjects localComponents
+            nextActive <- nextActive |> Map.add label merged
+
+    (nextLabel, nextActive), completed |> Seq.toList
+
 let streamConnectedObjects<'T when 'T: equality> connectivity : Stage<Image<'T>, StreamedObject list> =
     let name = "streamConnectedObjects"
 
@@ -314,6 +382,52 @@ let streamConnectedObjects<'T when 'T: equality> connectivity : Stage<Image<'T>,
                             image.decRefCount()
 
                     state <- nextState
+                    yield completed
+                else
+                    more <- false
+
+            let _, active = state
+            let finalCompleted =
+                active
+                |> Map.toList
+                |> List.map (snd >> toStreamedObject)
+
+            if finalCompleted.Length > 0 then
+                yield finalCompleted
+        }
+
+    let pipe =
+        { Name = name
+          Apply = apply
+          Profile = Streaming }
+
+    Stage.fromPipe name (ProfileTransition.create Streaming Streaming) id id pipe
+
+let streamConnectedObjectsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    connectivity
+    : Stage<Chunk<'T>, StreamedObject list> =
+    let name = "streamConnectedObjectsChunk"
+
+    let apply _debug (input: AsyncSeq<Chunk<'T>>) =
+        asyncSeq {
+            let mutable state = 1UL, Map.empty<uint64, ActiveObject>
+            let enumerator = input.GetAsyncEnumerator()
+            let mutable more = true
+            let mutable z = 0
+
+            while more do
+                let! hasNext = enumerator.MoveNextAsync().AsTask() |> Async.AwaitTask
+
+                if hasNext then
+                    let chunk = enumerator.Current
+                    let nextState, completed =
+                        try
+                            processChunkSlice connectivity state z chunk
+                        finally
+                            Chunk.decRef chunk
+
+                    state <- nextState
+                    z <- z + 1
                     yield completed
                 else
                     more <- false
@@ -525,6 +639,34 @@ let paintObjects width height : Stage<StreamedObject list, Image<uint8>> =
     Stage.map "paintObjects" (fun _ -> paintObjectBatch width height) id id
     --> Stage.flatten "paintObjects: flatten"
 
+let private paintObjectChunkBatch width height (objects: StreamedObject list) =
+    if width = 0u then invalidArg (nameof width) "paintObjectsChunk width must be positive."
+    if height = 0u then invalidArg (nameof height) "paintObjectsChunk height must be positive."
+
+    let width = int width
+    let height = int height
+
+    objects
+    |> List.collect _.Positions
+    |> List.groupBy _.Z
+    |> List.sortBy fst
+    |> List.map (fun (_z, positions) ->
+        let chunk = Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
+        chunk.Bytes.AsSpan(0, chunk.ByteLength).Clear()
+        let pixels = Chunk.span chunk
+
+        for position in positions do
+            if position.X < 0 || position.X >= width || position.Y < 0 || position.Y >= height then
+                invalidOp $"Object position ({position.X},{position.Y},{position.Z}) is outside the requested paint chunk size {width}x{height}."
+
+            pixels[flatIndex2 width position.X position.Y] <- 1uy
+
+        chunk)
+
+let paintObjectsChunk width height : Stage<StreamedObject list, Chunk<uint8>> =
+    Stage.map "paintObjectsChunk" (fun _ -> paintObjectChunkBatch width height) id id
+    --> Stage.flatten "paintObjectsChunk: flatten"
+
 let private paintObjectCropped (object: StreamedObject) =
     let width = object.Bounds.MaxX - object.Bounds.MinX + 1
     let height = object.Bounds.MaxY - object.Bounds.MinY + 1
@@ -558,6 +700,38 @@ let private paintCroppedObjectBatch (objects: StreamedObject list) =
 let paintObjectsCropped : Stage<StreamedObject list, Image<uint8>> =
     Stage.map "paintObjectsCropped" (fun _ -> paintCroppedObjectBatch) id id
     --> Stage.flatten "paintObjectsCropped: flatten"
+
+let private paintCroppedObjectChunkBatch (objects: StreamedObject list) =
+    objects
+    |> List.collect (fun object ->
+        let width = object.Bounds.MaxX - object.Bounds.MinX + 1
+        let height = object.Bounds.MaxY - object.Bounds.MinY + 1
+
+        if width <= 0 || height <= 0 then
+            []
+        else
+            object.Positions
+            |> List.groupBy _.Z
+            |> List.sortBy fst
+            |> List.map (fun (_z, positions) ->
+                let chunk = Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
+                chunk.Bytes.AsSpan(0, chunk.ByteLength).Clear()
+                let pixels = Chunk.span chunk
+
+                for position in positions do
+                    let x = position.X - object.Bounds.MinX
+                    let y = position.Y - object.Bounds.MinY
+
+                    if x < 0 || x >= width || y < 0 || y >= height then
+                        invalidOp $"Object position ({position.X},{position.Y},{position.Z}) is outside its bounding box."
+
+                    pixels[flatIndex2 width x y] <- 1uy
+
+                chunk))
+
+let paintObjectsCroppedChunk : Stage<StreamedObject list, Chunk<uint8>> =
+    Stage.map "paintObjectsCroppedChunk" (fun _ -> paintCroppedObjectChunkBatch) id id
+    --> Stage.flatten "paintObjectsCroppedChunk: flatten"
 
 let private measurementsOfObject (object: StreamedObject) =
     { Label = object.Label

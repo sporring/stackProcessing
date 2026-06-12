@@ -68,6 +68,15 @@ module PipelineCodeGenerator =
         else
             trimmed
 
+    let private intArray3Literal (value: string) =
+        let trimmed = value.Trim()
+        let m = Regex.Match(trimmed, @"^\(?\s*(\d+)u?\s*,\s*(\d+)u?\s*,\s*(\d+)u?\s*\)?$")
+
+        if m.Success then
+            $"[| {m.Groups[1].Value}; {m.Groups[2].Value}; {m.Groups[3].Value} |]"
+        else
+            trimmed
+
     let private integerLiteralOrCast castName suffix (value: string) =
         let trimmed = value.Trim()
 
@@ -146,6 +155,22 @@ module PipelineCodeGenerator =
                     trimmed
                 else
                     $"System.Numerics.Complex({float64Literal trimmed}, 0.0)"
+
+    let private numericLiteralForPixelType pixelType value =
+        match pixelType with
+        | "uint8" -> numericLiteral UInt8 value
+        | "int8" -> numericLiteral Int8 value
+        | "uint16" -> numericLiteral UInt16 value
+        | "int16" -> numericLiteral Int16 value
+        | "uint32" -> numericLiteral UInt32 value
+        | "int32" -> numericLiteral Int32 value
+        | "uint64" -> numericLiteral UInt64 value
+        | "int64" -> numericLiteral Int64 value
+        | "float32" -> numericLiteral Float32 value
+        | "float" -> numericLiteral Float64 value
+        | "Image.ComplexFloat32" -> numericLiteral Complex64 value
+        | "System.Numerics.Complex" -> numericLiteral Complex value
+        | _ -> value
 
     let private literalValue basicType value =
         match basicType with
@@ -240,12 +265,12 @@ module PipelineCodeGenerator =
 
     let private imageOpImageFunctionName (node: SavedNode) =
         match savedParamValue "operation" node with
-        | "+" -> "addPair"
-        | "-" -> "subPair"
-        | "/" -> "divPair"
-        | "max" -> "maxOfPair"
-        | "min" -> "minOfPair"
-        | _ -> "mulPair"
+        | "+" -> "chunkAddPair"
+        | "-" -> "chunkSubPair"
+        | "/" -> "chunkDivPair"
+        | "max" -> "chunkMaxOfPair"
+        | "min" -> "chunkMinOfPair"
+        | _ -> "chunkMulPair"
 
     let private pairStageFunctionName (node: SavedNode) =
         match node.FunctionId with
@@ -267,25 +292,25 @@ module PipelineCodeGenerator =
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let comparison =
                 match savedParamValue "operation" node with
-                | "=" | "==" | "equal" -> "equal"
-                | "<>" | "!=" | "notEqual" -> "notEqual"
-                | ">=" | "greaterEqual" -> "greaterEqual"
-                | "<" | "less" -> "less"
-                | "<=" | "lessEqual" -> "lessEqual"
-                | _ -> "greater"
+                | "=" | "==" | "equal" -> "chunkEqual"
+                | "<>" | "!=" | "notEqual" -> "chunkNotEqual"
+                | ">=" | "greaterEqual" -> "chunkGreaterEqual"
+                | "<" | "less" -> "chunkLess"
+                | "<=" | "lessEqual" -> "chunkLessEqual"
+                | _ -> "chunkGreater"
             Some $"{comparison}<{pixelType}>"
         | "MaskLogic" ->
             let logic =
                 match savedParamValue "operation" node with
-                | "or" | "||" -> "maskOr"
-                | "xor" | "^" -> "maskXor"
-                | _ -> "maskAnd"
+                | "or" | "||" -> "chunkMaskOr"
+                | "xor" | "^" -> "chunkMaskXor"
+                | _ -> "chunkMaskAnd"
             Some logic
         | _ -> None
 
     let private pairCompositionOperator (node: SavedNode) =
         match node.FunctionId with
-        | "ImageOpImage" -> ">>=>"
+        | "ImageOpImage" -> ">=>"
         | _ -> ">=>"
 
     let private safeIdentifier (value: string) =
@@ -306,14 +331,14 @@ module PipelineCodeGenerator =
             | _ -> "*"
 
         match node.FunctionId, operation with
-        | "ImageOpScalar", "+" -> Some "imageAddScalar"
-        | "ImageOpScalar", "-" -> Some "imageSubScalar"
-        | "ImageOpScalar", "*" -> Some "imageMulScalar"
-        | "ImageOpScalar", "/" -> Some "imageDivScalar"
-        | "ScalarOpImage", "+" -> Some "scalarAddImage"
-        | "ScalarOpImage", "-" -> Some "scalarSubImage"
-        | "ScalarOpImage", "*" -> Some "scalarMulImage"
-        | "ScalarOpImage", "/" -> Some "scalarDivImage"
+        | "ImageOpScalar", "+" -> Some "chunkImageAddScalar"
+        | "ImageOpScalar", "-" -> Some "chunkImageSubScalar"
+        | "ImageOpScalar", "*" -> Some "chunkImageMulScalar"
+        | "ImageOpScalar", "/" -> Some "chunkImageDivScalar"
+        | "ScalarOpImage", "+" -> Some "chunkScalarAddImage"
+        | "ScalarOpImage", "-" -> Some "chunkScalarSubImage"
+        | "ScalarOpImage", "*" -> Some "chunkScalarMulImage"
+        | "ScalarOpImage", "/" -> Some "chunkScalarDivImage"
         | _ -> None
 
     let private isScalarImageFunction functionId =
@@ -348,18 +373,18 @@ module PipelineCodeGenerator =
 
     let private comparisonStageFunctionName (node: SavedNode) =
         match savedParamValue "operation" node with
-        | "=" | "==" | "equal" -> "equal"
-        | "<>" | "!=" | "notEqual" -> "notEqual"
-        | ">=" | "greaterEqual" -> "greaterEqual"
-        | "<" | "less" -> "less"
-        | "<=" | "lessEqual" -> "lessEqual"
-        | _ -> "greater"
+        | "=" | "==" | "equal" -> "chunkEqual"
+        | "<>" | "!=" | "notEqual" -> "chunkNotEqual"
+        | ">=" | "greaterEqual" -> "chunkGreaterEqual"
+        | "<" | "less" -> "chunkLess"
+        | "<=" | "lessEqual" -> "chunkLessEqual"
+        | _ -> "chunkGreater"
 
     let private maskLogicStageFunctionName (node: SavedNode) =
         match savedParamValue "operation" node with
-        | "or" | "||" -> "maskOr"
-        | "xor" | "^" -> "maskXor"
-        | _ -> "maskAnd"
+        | "or" | "||" -> "chunkMaskOr"
+        | "xor" | "^" -> "chunkMaskXor"
+        | _ -> "chunkMaskAnd"
 
     let private scalarTypeName (node: SavedNode) =
         match node.FunctionId with
@@ -979,7 +1004,7 @@ module PipelineCodeGenerator =
             let width = parameterValue "width"
             let height = parameterValue "height"
             let depth = parameterValue "depth"
-            $"|> zero<{pixelType}> {width} {height} {depth}" |> sourcePrefix availableMemory
+            $"|> chunkZero<{pixelType}> {width} {height} {depth}" |> sourcePrefix availableMemory
         | "PolygonMask" ->
             let availableMemory = parameterValue "availableMemory"
             let width = parameterValue "width"
@@ -997,19 +1022,19 @@ module PipelineCodeGenerator =
             let width = parameterValue "width"
             let height = parameterValue "height"
             let depth = parameterValue "depth"
-            $"|> coordinateX<float> {width} {height} {depth}" |> sourcePrefix availableMemory
+            $"|> chunkCoordinateX<float> {width} {height} {depth}" |> sourcePrefix availableMemory
         | "CoordinateY" ->
             let availableMemory = parameterValue "availableMemory"
             let width = parameterValue "width"
             let height = parameterValue "height"
             let depth = parameterValue "depth"
-            $"|> coordinateY<float> {width} {height} {depth}" |> sourcePrefix availableMemory
+            $"|> chunkCoordinateY<float> {width} {height} {depth}" |> sourcePrefix availableMemory
         | "CoordinateZ" ->
             let availableMemory = parameterValue "availableMemory"
             let width = parameterValue "width"
             let height = parameterValue "height"
             let depth = parameterValue "depth"
-            $"|> coordinateZ<float> {width} {height} {depth}" |> sourcePrefix availableMemory
+            $"|> chunkCoordinateZ<float> {width} {height} {depth}" |> sourcePrefix availableMemory
         | "NormalNoise" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
@@ -1018,7 +1043,7 @@ module PipelineCodeGenerator =
             let depth = parameterValue "depth"
             let mean = parameterValue "mean"
             let std = parameterValue "std"
-            $"|> normalNoise<{pixelType}> {width} {height} {depth} {mean} {std}" |> sourcePrefix availableMemory
+            $"|> chunkZero<{pixelType}> {width} {height} {depth}{Environment.NewLine}>=> chunkAddNormalNoise<{pixelType}> {mean} {std}" |> sourcePrefix availableMemory
         | "SaltAndPepperNoise" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
@@ -1026,7 +1051,7 @@ module PipelineCodeGenerator =
             let height = parameterValue "height"
             let depth = parameterValue "depth"
             let probability = parameterValue "probability"
-            $"|> saltAndPepperNoise<{pixelType}> {width} {height} {depth} {probability}" |> sourcePrefix availableMemory
+            $"|> chunkZero<{pixelType}> {width} {height} {depth}{Environment.NewLine}>=> chunkAddSaltAndPepperNoise<{pixelType}> {probability}" |> sourcePrefix availableMemory
         | "ShotNoise" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
@@ -1034,7 +1059,7 @@ module PipelineCodeGenerator =
             let height = parameterValue "height"
             let depth = parameterValue "depth"
             let scale = parameterValue "scale"
-            $"|> shotNoise<{pixelType}> {width} {height} {depth} {scale}" |> sourcePrefix availableMemory
+            $"|> chunkZero<{pixelType}> {width} {height} {depth}{Environment.NewLine}>=> chunkAddShotNoise<{pixelType}> {scale}" |> sourcePrefix availableMemory
         | "SpeckleNoise" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
@@ -1087,7 +1112,7 @@ module PipelineCodeGenerator =
                 let xAxis = parameterValue "xAxis"
                 $"|> readNexusRandom<{pixelType}> {depth} {input} {datasetPath} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
             | _ ->
-                $"|> readRandom<{pixelType}> {depth} {input} {suffix}" |> sourcePrefix availableMemory
+                $"|> readChunkSlicesRandom<{pixelType}> {depth} {input} {suffix}" |> sourcePrefix availableMemory
         | "EstimateHistogram" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
@@ -1125,7 +1150,7 @@ module PipelineCodeGenerator =
                 let xAxis = parameterValue "xAxis"
                 $"|> readNexusRange<{pixelType}> {first} {step} {last} {input} {datasetPath} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
             | _ ->
-                $"|> readRange<{pixelType}> {first} {step} {last} {input} {suffix}" |> sourcePrefix availableMemory
+                $"|> readChunkSlicesRange<{pixelType}> {first} {step} {last} {input} {suffix}" |> sourcePrefix availableMemory
         | "ReadSlab" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
@@ -1178,7 +1203,7 @@ module PipelineCodeGenerator =
             | "NeXus/HDF5" ->
                 $"|> readNexusSlab<{pixelType}> {input} {datasetPath} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
             | _ ->
-                $"|> read<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
+                $"|> readChunkSlices<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
         | "Resize" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let width = parameterValue "width"
@@ -1195,7 +1220,7 @@ module PipelineCodeGenerator =
             $"|> resample<{pixelType}> {factorX} {factorY} {factorZ} {interpolation}"
         | "Repeat" ->
             let depth = parameterValue "depth"
-            $">=> repeatStage {depth}"
+            $">=> chunkRepeatStage {depth}"
         | "WriteChunks" ->
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
@@ -1232,7 +1257,7 @@ module PipelineCodeGenerator =
                 let xAxis = parameterValue "xAxis"
                 $">=> writeNexus {output} {datasetPath} {depth} {chunkX} {chunkY} {chunkZ} {frameAxis} {yAxis} {xAxis}"
             | _ ->
-                $">=> write {output} {suffix}"
+                $">=> writeChunkSlices {output} {suffix}"
         | "WriteMesh" ->
             let output = quotedParameter "output"
             let format = quotedParameter "format"
@@ -1380,7 +1405,7 @@ module PipelineCodeGenerator =
         | "SumProjection" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let functionName = savedParamValue "function" node
-            $">=> sumProjection<{pixelType}> {quote functionName}"
+            $">=> chunkSumProjection<{pixelType}> {quote functionName}"
         | "UnaryImageFunction" ->
             $">=> {unaryImageFunctionName node}"
         | "ComplexRe" ->
@@ -1450,10 +1475,12 @@ module PipelineCodeGenerator =
             $"{pairCompositionOperator node} {pairStageFunctionName node |> Option.get}"
         | "SmoothWGauss" ->
             let sigma = parameterValue "sigma"
-            let outputRegionMode = parameterValue "outputRegionMode" |> optionQualified "ImageFunctions"
-            let boundaryCondition = parameterValue "boundaryCondition" |> optionQualified "ImageFunctions"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> smoothWGauss {sigma} {outputRegionMode} {boundaryCondition} {windowSize}"
+            let pixelType = pipelinePixelType "Float32"
+            let radius =
+                match parameterValue "windowSize" |> optionUInt with
+                | "None" -> $"(int (System.Math.Ceiling(3.0 * ({sigma}))))"
+                | someWindow -> $"(int ((Option.get {someWindow} - 1u) / 2u))"
+            $">=> gaussianFilterNativeParallelCollect<{pixelType}> {sigma} {radius} 1"
         | "Convolve" ->
             let kernel = parameterValue "kernel"
             let outputRegionMode = parameterValue "outputRegionMode" |> optionQualified "ImageFunctions"
@@ -1463,24 +1490,29 @@ module PipelineCodeGenerator =
         | "FiniteDiff" ->
             let direction = parameterValue "direction"
             let order = parameterValue "order"
-            $">=> finiteDiff {direction} {order}"
+            let pixelType = pipelinePixelType "Float32"
+            match direction.Trim().TrimEnd('u', 'U').ToLowerInvariant() with
+            | "0" | "x" -> $">=> finiteDiffNativeXParallelCollect<{pixelType}> {order} 1"
+            | "1" | "y" -> $">=> finiteDiffNativeYParallelCollect<{pixelType}> {order} 1"
+            | "2" | "z" -> $">=> finiteDiffNativeZParallelCollect<{pixelType}> {order} 1"
+            | _ -> $">=> finiteDiffNativeXParallelCollect<{pixelType}> {order} 1"
         | "Clamp" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let lower = parameterValue "lower"
             let upper = parameterValue "upper"
-            $">=> clamp<{pixelType}> {lower} {upper}"
+            $">=> chunkClamp<{pixelType}> {lower} {upper}"
         | "ShiftScale" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let shift = parameterValue "shift"
             let scale = parameterValue "scale"
-            $">=> shiftScale<{pixelType}> {shift} {scale}"
+            $">=> chunkShiftScale<{pixelType}> {shift} {scale}"
         | "IntensityStretch" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let inputMinimum = parameterValue "inputMinimum"
             let inputMaximum = parameterValue "inputMaximum"
             let outputMinimum = parameterValue "outputMinimum"
             let outputMaximum = parameterValue "outputMaximum"
-            $">=> intensityStretch<{pixelType}> {inputMinimum} {inputMaximum} {outputMinimum} {outputMaximum}"
+            $">=> chunkIntensityWindow<{pixelType}> {inputMinimum} {inputMaximum} {outputMinimum} {outputMaximum}"
         | "HistogramEqualization" ->
             let histogram = parameterValue "histogram"
             $">=> histogramEqualization {histogram}"
@@ -1492,8 +1524,8 @@ module PipelineCodeGenerator =
             let afterY = parameterValue "afterY"
             let beforeZ = parameterValue "beforeZ"
             let afterZ = parameterValue "afterZ"
-            let value = parameterValue "value"
-            $">=> createPadding<{pixelType}> {beforeX} {afterX} {beforeY} {afterY} {beforeZ} {afterZ} {value}"
+            let value = parameterValue "value" |> numericLiteralForPixelType pixelType
+            $">=> chunkPad<{pixelType}> {beforeX} {afterX} {beforeY} {afterY} {beforeZ} {afterZ} {value}"
         | "Crop" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let beforeX = parameterValue "beforeX"
@@ -1502,7 +1534,7 @@ module PipelineCodeGenerator =
             let afterY = parameterValue "afterY"
             let beforeZ = parameterValue "beforeZ"
             let afterZ = parameterValue "afterZ"
-            $">=> crop<{pixelType}> {beforeX} {afterX} {beforeY} {afterY} {beforeZ} {afterZ}"
+            $">=> chunkCrop<{pixelType}> {beforeX} {afterX} {beforeY} {afterY} {beforeZ} {afterZ}"
         | "SmoothWMedian" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let radius = parameterValue "radius"
@@ -1515,17 +1547,13 @@ module PipelineCodeGenerator =
             let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> smoothWBilateral<{pixelType}> {domainSigma} {rangeSigma} {windowSize}"
         | "GradientMagnitude" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> gradientMagnitude<{pixelType}> {windowSize}"
+            let sigma = "1.0"
+            $">=> gradientMagnitudeNativeParallelCollect {sigma} 3 1"
         | "SobelEdge" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> sobelEdge<{pixelType}> {windowSize}"
+            $">=> sobelMagnitudeNativeParallelCollect 1"
         | "Laplacian" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> laplacian<{pixelType}> {windowSize}"
+            let sigma = "1.0"
+            $">=> laplacianNativeParallelCollect {sigma} 3 1"
         | "GrayscaleErode" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let radius = parameterValue "radius"
@@ -1567,7 +1595,7 @@ module PipelineCodeGenerator =
         | "MaskLogic" ->
             $">=> {maskLogicStageFunctionName node}"
         | "MaskNot" ->
-            ">=> maskNot"
+            ">=> chunkMaskNot"
         | "BinaryContour" ->
             let fullyConnected = parameterValue "fullyConnected"
             let windowSize = parameterValue "windowSize" |> optionUInt
@@ -1661,22 +1689,26 @@ module PipelineCodeGenerator =
             let zUnit = parameterValue "zUnit"
             $">=> pointPairDistances {xUnit} {yUnit} {zUnit}"
         | "AddNormalNoise" ->
+            let pixelType = pipelinePixelType "Float64"
             let mean = parameterValue "mean"
             let std = parameterValue "std"
-            $">=> addNormalNoise {mean} {std}"
+            $">=> chunkAddNormalNoise<{pixelType}> {mean} {std}"
         | "AddSaltAndPepperNoise" ->
+            let pixelType = pipelinePixelType "Float64"
             let probability = parameterValue "probability"
-            $">=> addSaltAndPepperNoise {probability}"
+            $">=> chunkAddSaltAndPepperNoise<{pixelType}> {probability}"
         | "AddShotNoise" ->
+            let pixelType = pipelinePixelType "Float64"
             let scale = parameterValue "scale"
-            $">=> addShotNoise {scale}"
+            $">=> chunkAddShotNoise<{pixelType}> {scale}"
         | "AddSpeckleNoise" ->
             let std = parameterValue "std"
             $">=> addSpeckleNoise {std}"
         | "Threshold" ->
+            let pixelType = pipelinePixelType "Float32"
             let lower = parameterValue "lower"
             let upper = parameterValue "upper"
-            $">=> threshold {lower} {upper}"
+            $">=> chunkThresholdRange<{pixelType}> {lower} {upper}"
         | "WindowSlabRoundtrip" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let windowSize = parameterValue "windowSize"
@@ -1700,26 +1732,22 @@ module PipelineCodeGenerator =
             $">=> dilate {radius}"
         | "DilateZonohedral" ->
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> dilateZonohedral {radius} {windowSize}"
+            $">=> chunkBinaryDilateZonohedral {radius}"
         | "ErodeZonohedral" ->
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> erodeZonohedral {radius} {windowSize}"
+            $">=> chunkBinaryErodeZonohedral {radius}"
         | "Opening" ->
             let radius = parameterValue "radius"
             $">=> opening {radius}"
         | "OpeningZonohedral" ->
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> openingZonohedral {radius} {windowSize}"
+            $">=> chunkBinaryOpeningZonohedral {radius}"
         | "Closing" ->
             let radius = parameterValue "radius"
             $">=> closing {radius}"
         | "ClosingZonohedral" ->
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> closingZonohedral {radius} {windowSize}"
+            $">=> chunkBinaryClosingZonohedral {radius}"
         | "ConnectedComponents" ->
             let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> connectedComponents {windowSize}"
@@ -1783,7 +1811,7 @@ module PipelineCodeGenerator =
             $">=> phaseCongruencyKeypoints<{pixelType}> {sigma} {threshold} {stride}"
         | "StreamConnectedObjects" ->
             let connectivity = parameterValue "connectivity"
-            $">=> streamConnectedObjects<uint8> ObjectConnectivity.{connectivity}"
+            $">=> streamConnectedObjectsChunk<uint8> ObjectConnectivity.{connectivity}"
         | "MeasureObjects" ->
             ">=> measureObjects"
         | "ObjectSizeStats" ->
@@ -1793,13 +1821,13 @@ module PipelineCodeGenerator =
         | "PaintObjects" ->
             let width = parameterValue "width"
             let height = parameterValue "height"
-            $">=> paintObjects {width} {height}"
+            $">=> paintObjectsChunk {width} {height}"
         | "PaintObjectsCropped" ->
-            $">=> paintObjectsCropped"
+            $">=> paintObjectsCroppedChunk"
         | "SignedDistanceBand" ->
             let bandRadius = parameterValue "bandRadius"
             let stride = parameterValue "stride"
-            $">=> signedDistanceBand {bandRadius} {stride}"
+            $">=> chunkSignedDistanceBandNativeParallelCollect {bandRadius} {stride} 1"
         | "ComponentTranslationTable" ->
             let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> makeConnectedComponentTranslationTable {windowSize}"
@@ -1808,9 +1836,8 @@ module PipelineCodeGenerator =
             let translationTable = parameterValue "translationTable"
             $">=> updateConnectedComponents {windowSize} {translationTable}"
         | "PermuteAxes" ->
-            let axes = parameterValue "axes" |> uintTuple3Literal
-            let tileSize = parameterValue "tileSize"
-            $">=> permuteAxes {axes} {tileSize}"
+            let axes = parameterValue "axes" |> intArray3Literal
+            $">=> chunkPermuteAxes {axes}"
         | "ResampleAffine" ->
             let lerp = parameterValue "lerp"
             let windowSize = parameterValue "windowSize" |> optionInt
@@ -1822,7 +1849,7 @@ module PipelineCodeGenerator =
         | "Cast" ->
             let sourceType = pixelTypeNameFromParameter "sourceType" "Float64" node
             let targetType = pixelTypeNameFromParameter "targetType" "Float64" node
-            $">=> cast<{sourceType},{targetType}>"
+            $">=> chunkCast<{sourceType},{targetType}>"
         | _ ->
             $"// Unsupported element: {node.FunctionId}"
 

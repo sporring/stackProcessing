@@ -116,6 +116,14 @@ let readSlabStacked<'T when 'T: equality> = StackIO.readSlabStacked<'T>
 let readSlabAsWindows<'T when 'T: equality> = StackIO.readSlabAsWindows<'T>
 let readSlab<'T when 'T: equality> = StackIO.readSlab<'T>
 let readChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = StackIO.readChunkSlices<'T>
+let readChunkSlicesRandom<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = StackIO.readChunkSlicesRandom<'T>
+let readChunkSlicesRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = StackIO.readChunkSlicesRange<'T>
+let chunkZero<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.chunkZero<'T>
+let chunkCoordinateX<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.chunkCoordinateX<'T>
+let chunkCoordinateY<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.chunkCoordinateY<'T>
+let chunkCoordinateZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.chunkCoordinateZ<'T>
+let chunkRepeat<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.chunkRepeat<'T>
+let chunkRepeatStage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.chunkRepeatStage<'T>
 let chunkPad<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.pad<'T>
 let chunkCrop<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.crop<'T>
 let chunkSqueeze<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.squeeze<'T>
@@ -128,6 +136,50 @@ let chunkSignedDistanceBandNativeParallelCollect = ChunkFunctions.signedDistance
 let chunkVectorDotFloat32 = ChunkFunctions.vectorDotFloat32
 let chunkVectorMagnitudeFloat32 = ChunkFunctions.vectorMagnitudeFloat32
 let chunkVectorAngleToFloat32 = ChunkFunctions.vectorAngleToFloat32
+let chunkSumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.chunkSumProjection<'T>
+let chunkThresholdRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.thresholdRange<'T>
+let chunkClamp<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.clamp<'T>
+let chunkShiftScale<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.shiftScale<'T>
+let chunkIntensityWindow<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.intensityWindow<'T>
+let chunkCastToUInt8<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.castToUInt8<'T>
+let chunkCastToFloat32<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.castToFloat32<'T>
+let chunkCastFromFloat32<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.castFromFloat32<'T>
+let chunkCast<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct and 'S :> System.ValueType
+                         and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> : Stage<Chunk<'S>, Chunk<'T>> =
+    if typeof<'S> = typeof<'T> then
+        unbox (box (StackCore.identityStage "chunkCast.identity"))
+    elif typeof<'T> = typeof<float32> then
+        unbox (box (ChunkFunctions.castToFloat32<'S>))
+    elif typeof<'T> = typeof<uint8> then
+        unbox (box (ChunkFunctions.castToUInt8<'S>))
+    elif typeof<'S> = typeof<float32> then
+        unbox (box (ChunkFunctions.castFromFloat32<'T>))
+    else
+        ChunkFunctions.castToFloat32<'S> --> ChunkFunctions.castFromFloat32<'T>
+let inline chunkImageAddScalar value = ChunkFunctions.addScalar value
+let inline chunkImageSubScalar value = ChunkFunctions.subScalar value
+let inline chunkImageMulScalar value = ChunkFunctions.mulScalar value
+let inline chunkImageDivScalar value = ChunkFunctions.divScalar value
+let inline chunkScalarAddImage value = ChunkFunctions.scalarAdd value
+let inline chunkScalarSubImage value = ChunkFunctions.scalarSub value
+let inline chunkScalarMulImage value = ChunkFunctions.scalarMul value
+let inline chunkScalarDivImage value = ChunkFunctions.scalarDiv value
+let inline chunkAddPair<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType and 'T: (static member ( + ) : 'T * 'T -> 'T)> = ChunkFunctions.add<'T>
+let inline chunkSubPair<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType and 'T: (static member ( - ) : 'T * 'T -> 'T)> = ChunkFunctions.subtract<'T>
+let inline chunkMulPair<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType and 'T: (static member ( * ) : 'T * 'T -> 'T)> = ChunkFunctions.multiply<'T>
+let inline chunkDivPair<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType and 'T: (static member ( / ) : 'T * 'T -> 'T)> = ChunkFunctions.divide<'T>
+let inline chunkMaxOfPair<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.maximum<'T>
+let inline chunkMinOfPair<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.minimum<'T>
+let chunkEqual<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.equal<'T>
+let chunkNotEqual<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.notEqual<'T>
+let chunkGreater<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.greater<'T>
+let chunkGreaterEqual<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.greaterEqual<'T>
+let chunkLess<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.less<'T>
+let chunkLessEqual<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.lessEqual<'T>
+let chunkMaskAnd = ChunkFunctions.maskAnd
+let chunkMaskOr = ChunkFunctions.maskOr
+let chunkMaskXor = ChunkFunctions.maskXor
+let chunkMaskNot = ChunkFunctions.maskNot
 let convolveNativeXParallelCollect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.convolveNativeXParallelCollect<'T>
 let convolveNativeYParallelCollect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.convolveNativeYParallelCollect<'T>
 let convolveNativeZParallelCollect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.convolveNativeZParallelCollect<'T>
@@ -155,6 +207,10 @@ let sobelZNativeParallelCollect<'T when 'T: equality and 'T: (new: unit -> 'T) a
 let chunkAddNormalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.addNormalNoise<'T>
 let chunkAddSaltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.addSaltAndPepperNoise<'T>
 let chunkAddShotNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.addShotNoise<'T>
+let chunkBinaryDilateZonohedral = ChunkFunctions.binaryDilateZonohedral
+let chunkBinaryErodeZonohedral = ChunkFunctions.binaryErodeZonohedral
+let chunkBinaryOpeningZonohedral = ChunkFunctions.binaryOpeningZonohedral
+let chunkBinaryClosingZonohedral = ChunkFunctions.binaryClosingZonohedral
 let readZarrSlabStacked<'T when 'T: equality> = StackIO.readZarrSlabStacked<'T>
 let readZarrSlab<'T when 'T: equality> = StackIO.readZarrSlab<'T>
 let readZarrRandom<'T when 'T: equality> = StackIO.readZarrRandom<'T>
@@ -246,10 +302,13 @@ let stitchManifestImages<'T when 'T: equality> = StackStitching.stitchManifestIm
 
 // //////////////////// StackObjects
 let streamConnectedObjects<'T when 'T: equality> = StackObjects.streamConnectedObjects<'T>
+let streamConnectedObjectsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = StackObjects.streamConnectedObjectsChunk<'T>
 let removeSmallObjects = StackObjects.removeSmallObjects
 let fillSmallHoles = StackObjects.fillSmallHoles
 let paintObjects = StackObjects.paintObjects
 let paintObjectsCropped = StackObjects.paintObjectsCropped
+let paintObjectsChunk = StackObjects.paintObjectsChunk
+let paintObjectsCroppedChunk = StackObjects.paintObjectsCroppedChunk
 let measureObjects = StackObjects.measureObjects
 let objectSizes = StackObjects.objectSizes
 let objectSizeStats = StackObjects.objectSizeStats

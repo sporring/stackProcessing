@@ -747,6 +747,82 @@ let readChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
     |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
+let private readSelectedChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (name: string)
+    (inputDir: string)
+    (suffix: string)
+    (selectFiles: string[] -> string[])
+    (sourcePeekFields: (string * string) list)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+    ensureDirectTiffChunkRead<'T> suffix
+    let sourceFiles = getStackFiles inputDir suffix
+    if sourceFiles.Length = 0 then
+        stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
+
+    let files = selectFiles sourceFiles
+    if files.Length = 0 then
+        stopWithInputError $"{name} selected no {suffixDescription suffix} files from input stack directory: {inputDir}"
+
+    let width, height, rowBytes, scanlineSize = inspectChunkTiffSlice<'T> files[0]
+    let elementBytes = uint64 rowBytes * uint64 height
+    let sourcePeek =
+        SourcePeek.create
+            name
+            elementBytes
+            (Some(uint64 files.Length))
+            (Map.ofList
+                ([ "kind", "chunk-tiff-slices"
+                   "inputDir", inputDir
+                   "suffix", suffix
+                   "width", string width
+                   "height", string height
+                   "depth", string files.Length
+                   "sourceDepth", string sourceFiles.Length
+                   "pixelType", typeof<'T>.Name
+                   "scanlineSize", string scanlineSize ]
+                 @ sourcePeekFields))
+
+    let mapper (i: int) =
+        let fileName = files[i]
+        if pl.debug then
+            printfn $"[{name}] Reading chunk slice {i}: {fileName} as {typeof<'T>.Name}"
+        let chunk = readChunkTiffSlice<'T> fileName
+        let chunkWidth, chunkHeight, _ = chunk.Size
+        if chunkWidth <> uint64 width || chunkHeight <> uint64 height then
+            Chunk.decRef chunk
+            invalidOp $"Input slice '{fileName}' has shape {chunkWidth}x{chunkHeight}, expected {width}x{height}."
+        chunk
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memoryNeed _ = elementBytes
+    let elementTransformation _ = uint64 width * uint64 height
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        StageTimeCostModel.ioRead Source (Some $"{name}.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> 1UL)
+    let stage =
+        Stage.init name (uint files.Length) mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    Plan.createWithOptimizer stage pl.memAvail elementBytes elementBytes (uint64 files.Length) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
+    |> Plan.withSourcePeek sourcePeek
+
+let readChunkSlicesRandom<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (count: uint)
+    inputDir
+    suffix
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+    readSelectedChunkSlices<'T>
+        "readChunkSlicesRandom"
+        inputDir
+        suffix
+        (Array.randomChoices (int count))
+        [ "count", string count ]
+        pl
+
 let private isTiffVolumePath (filename: string) =
     match Path.GetExtension(filename).ToLowerInvariant() with
     | ".tif"
@@ -1335,6 +1411,22 @@ let private rangeFilter first step last files =
     let sorted = Array.sort files
     rangeIndices first step last sorted.Length
     |> Array.map (fun index -> sorted[index])
+
+let readChunkSlicesRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    first
+    step
+    last
+    inputDir
+    suffix
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+    readSelectedChunkSlices<'T>
+        "readChunkSlicesRange"
+        inputDir
+        suffix
+        (rangeFilter first step last)
+        [ "first", string first; "step", string step; "last", string last ]
+        pl
 
 let readRange<'T when 'T: equality> (first: uint) (step: int) (last: uint) (inputDir: string) (suffix: string) (pl: Plan<unit, unit>) : Plan<unit, Image<'T>> =
     let info = getStackInfo inputDir suffix
