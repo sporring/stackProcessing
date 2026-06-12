@@ -13,10 +13,10 @@ let main args =
         | _ -> "../data/rotatingBoxes", "../tmp/objectsImage"
 
     src
-    |> read<uint8> input ".tiff"
-    >=> streamConnectedObjects<uint8> ObjectConnectivity.TwentySix
-    >=> paintObjects 512u 384u
-    >=> write output ".tiff"
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> streamConnectedObjectsChunk<uint8> ObjectConnectivity.TwentySix
+    >=> paintObjectsChunk 512u 384u
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     0

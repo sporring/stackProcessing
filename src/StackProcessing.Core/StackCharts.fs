@@ -92,10 +92,10 @@ let private chunkToSeqSeq<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T:
         rows[y] <- row
     rows |> Seq.map (fun row -> row :> seq<float>)
 
-let showChunkWithLabels<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> colorMap title xAxis yAxis chunk =
+let showChunkWithLabels<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> colorMap title xAxis yAxis (chunk: Chunk<'T>) =
     Chart.Heatmap(chunkToSeqSeq chunk, ColorScale = colorScale colorMap)
     |> applyChartLabels title xAxis yAxis
     |> Chart.show
 
-let showChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> chunk =
+let showChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
     showChunkWithLabels "Viridis" "" "" "" chunk

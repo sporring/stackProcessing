@@ -2111,7 +2111,7 @@ let generatorSuite =
             Expect.stringContains code ">=> openingZonohedral 2u None" "Zonohedral binary opening should lower with radius and optional window size."
             Expect.stringContains code ">=> closingZonohedral 2u None" "Zonohedral binary closing should lower with radius and optional window size."
 
-        testCase "connected component pair stream writes chunk labels through teeFst before reducing" <| fun _ ->
+        testCase "connected components lower to direct Chunk label slices" <| fun _ ->
             let read =
                 node "read" "Read"
                     [ p "availableMemory" "1024" false
@@ -2122,27 +2122,22 @@ let generatorSuite =
             let connected =
                 node "connected" "ConnectedComponents" [ p "windowSize" "15" false ]
 
-            let writeSlabSlices =
-                node "writeSlabSlices" "WriteSlabSlices"
-                    [ p "output" "tmp" false
-                      p "suffix" ".mha" false
-                      p "windowSize" "15" false ]
-
-            let table =
-                node "table" "ComponentTranslationTable" [ p "windowSize" "15" false ]
+            let cast =
+                node "cast" "Cast"
+                    [ p "sourceType" "UInt32" false
+                      p "targetType" "UInt8" false ]
 
             let code =
                 graph
-                    [ read; connected; writeSlabSlices; table ]
+                    [ read; connected; cast ]
                     [ edge "read" "output" 0 "connected" "input" 0
-                      edge "connected" "output" 0 "writeSlabSlices" "input" 0
-                      edge "writeSlabSlices" "output" 0 "table" "input" 0 ]
+                      edge "connected" "output" 0 "cast" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> connectedComponents (Some 15u)" "Connected components should produce label/count pairs."
-            Expect.stringContains code ">=> teeFst (writeSlabSlices \"tmp\" \".mha\" 15u)" "Slab-slice writing should be an explicit tee over the first tuple element."
-            Expect.stringContains code ">=> makeConnectedComponentTranslationTable (Some 15u)" "Translation table should consume the pair stream."
-            Expect.stringContains code "|> drain" "The reducer should be drained."
+            Expect.stringContains code ">=> chunkConnectedComponentsSauf3DUInt8UInt32ParallelCollect 15 System.Environment.ProcessorCount" "Connected components should produce compact Chunk label slices directly."
+            Expect.stringContains code ">=> chunkCast<uint32,uint8>" "Label slices should feed regular image stages."
+            Expect.isFalse (code.Contains "writeSlabSlices") "Connected components should not need slab temp writes."
+            Expect.isFalse (code.Contains "makeConnectedComponentTranslationTable") "Connected components should not need a second translation-table reducer."
 
         testCase "tap connected to print becomes tapIt lambda with stream value name" <| fun _ ->
             let read =

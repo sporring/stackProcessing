@@ -14,10 +14,10 @@ let main args =
         | _ -> "../data/rotatingBoxes", "../tmp/sumProjection"
 
     src
-    |> read<uint8> input ".tiff"
-    >=> sumProjection<uint8> "Identity"
-    >=> cast<float, uint8>
-    >=> write output ".tiff"
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> chunkSumProjection<uint8> "Identity"
+    >=> chunkCast<float, uint8>
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     printfn "Wrote summed projection to %s" output

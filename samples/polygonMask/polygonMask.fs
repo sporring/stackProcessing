@@ -17,11 +17,11 @@ let main args =
           { X = 44.0; Y = 50.0 }
           { X = 12.0; Y = 42.0 } ]
 
-    let mask = polygonMask 64u 64u polygon
+    let mask = chunkPolygonMask 64u 64u polygon
 
     src
-    |> repeat mask 16u
-    >=> write output ".tiff"
+    |> chunkRepeat mask 16u
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     0

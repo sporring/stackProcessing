@@ -616,11 +616,155 @@ let vectorMagnitudeFloat32 : Stage<VectorChunk<float32>, Chunk<float32>> =
         Chunk.vectorMagnitudeFloat32
         (fun n -> 2UL * chunkMemoryNeed<float32> n)
 
+let vector3ToColorFloat32 inputMinimum inputMaximum : Stage<VectorChunk<float32>, VectorChunk<uint8>> =
+    releaseUnaryVectorToVectorChunk
+        "chunkVector3ToColorFloat32"
+        (Chunk.vector3ToColorFloat32 inputMinimum inputMaximum)
+        (fun n -> n * uint64 (chunkElementBytes<float32> + chunkElementBytes<uint8>))
+
 let vectorAngleToFloat32 reference : Stage<VectorChunk<float32>, Chunk<float32>> =
     releaseUnaryVectorChunk
         "chunkVectorAngleToFloat32"
         (Chunk.vectorAngleToFloat32 reference)
         (fun n -> 2UL * chunkMemoryNeed<float32> n)
+
+let PCAFloat32 components : Stage<VectorChunk<float32>, VectorChunk<float32>> =
+    if components < 2u then invalidArg "components" "Chunk PCA needs at least two vector components."
+    let componentsI = int components
+
+    let outputVector (values: float list) : VectorChunk<float32> =
+        let chunk = Chunk.create<float32> (uint64 values.Length, 1UL, 1UL)
+        let pixels = Chunk.span chunk
+        let valuesArray = values |> List.toArray
+        for i in 0 .. valuesArray.Length - 1 do
+            pixels[i] <- float32 valuesArray[i]
+        { SpatialSize = (1UL, 1UL, 1UL)
+          Components = uint32 values.Length
+          Chunk = chunk }
+
+    let reducer (_debug: bool) (input: AsyncSeq<VectorChunk<float32>>) =
+        async {
+            let! state =
+                input
+                |> AsyncSeq.foldAsync
+                    (fun state vector ->
+                        async {
+                            try
+                                if vector.Components <> uint32 componentsI then
+                                    invalidArg "vector" $"Chunk PCA expected {componentsI}-component vector chunks, got {vector.Components} components."
+
+                                let pixels = (Chunk.vectorSpan vector).ToArray()
+                                let spatialCount = pixels.Length / componentsI
+                                let mutable state = state
+
+                                for i in 0 .. spatialCount - 1 do
+                                    let values = [ for c in 0 .. componentsI - 1 -> float pixels[i * componentsI + c] ]
+                                    state <- addPcaVector state values
+
+                                return state
+                            finally
+                                Chunk.decRef vector.Chunk
+                        })
+                    (zeroPcaAccumulator componentsI)
+
+            let eigen = pcaEigenSystem state
+            let eigenvalues = eigen |> List.map fst
+            return
+                [ yield outputVector eigenvalues
+                  for _, vector in eigen do
+                      yield outputVector vector ]
+        }
+
+    Stage.reduce "chunkPCAFloat32" reducer Streaming (fun _ -> uint64 ((componentsI + 1) * componentsI * sizeof<float32>)) (fun _ -> uint64 (componentsI + 1))
+    --> flattenList ()
+
+let private structureTensorOuterProductFloat32 : Stage<VectorChunk<float32>, VectorChunk<float32>> =
+    let mapper (vector: VectorChunk<float32>) =
+        if vector.Components <> 3u then
+            invalidArg "vector" $"chunkStructureTensorOuterProductFloat32 expected a 3-component gradient, got {vector.Components}."
+
+        let width, height, depth = vector.SpatialSize
+        let output = Chunk.create<float32> (width * 6UL, height, depth)
+        try
+            let inputPixels = Chunk.vectorSpan vector
+            let outputVector: VectorChunk<float32> =
+                { SpatialSize = vector.SpatialSize
+                  Components = 6u
+                  Chunk = output }
+            let outputPixels = Chunk.vectorSpan outputVector
+            let spatialCount = inputPixels.Length / 3
+            for i in 0 .. spatialCount - 1 do
+                let gx = inputPixels[i * 3]
+                let gy = inputPixels[i * 3 + 1]
+                let gz = inputPixels[i * 3 + 2]
+                let o = i * 6
+                outputPixels[o] <- gx * gx
+                outputPixels[o + 1] <- gx * gy
+                outputPixels[o + 2] <- gx * gz
+                outputPixels[o + 3] <- gy * gy
+                outputPixels[o + 4] <- gy * gz
+                outputPixels[o + 5] <- gz * gz
+            outputVector
+        with
+        | _ ->
+            Chunk.decRef output
+            reraise()
+
+    releaseUnaryVectorToVectorChunk
+        "chunkStructureTensorOuterProductFloat32"
+        mapper
+        (fun n -> n * uint64 (chunkElementBytes<float32> * (3 + 6)))
+
+let private tensorEigenMatrixValuesFloat32 xx xy xz yy yz zz =
+    let matrix =
+        { m00 = float xx; m01 = float xy; m02 = float xz
+          m10 = float xy; m11 = float yy; m12 = float yz
+          m20 = float xz; m21 = float yz; m22 = float zz }
+    let eigen = symmetricEigen matrix
+    let values = eigen |> List.map (fst >> float32)
+    let vectors =
+        eigen
+        |> List.collect (fun (_, v) -> [ float32 v.x; float32 v.y; float32 v.z ])
+    values @ vectors
+
+let private structureTensorEigenMatrixFloat32 : Stage<VectorChunk<float32>, VectorChunk<float32>> =
+    let mapper (tensor: VectorChunk<float32>) =
+        if tensor.Components <> 6u then
+            invalidArg "tensor" $"chunkStructureTensorEigenMatrixFloat32 expected a 6-component tensor, got {tensor.Components}."
+
+        let width, height, depth = tensor.SpatialSize
+        let output = Chunk.create<float32> (width * 12UL, height, depth)
+        try
+            let inputPixels = Chunk.vectorSpan tensor
+            let outputVector: VectorChunk<float32> =
+                { SpatialSize = tensor.SpatialSize
+                  Components = 12u
+                  Chunk = output }
+            let outputPixels = Chunk.vectorSpan outputVector
+            let spatialCount = inputPixels.Length / 6
+            for i in 0 .. spatialCount - 1 do
+                let p = i * 6
+                let values =
+                    tensorEigenMatrixValuesFloat32
+                        inputPixels[p]
+                        inputPixels[p + 1]
+                        inputPixels[p + 2]
+                        inputPixels[p + 3]
+                        inputPixels[p + 4]
+                        inputPixels[p + 5]
+                let o = i * 12
+                for k in 0 .. 11 do
+                    outputPixels[o + k] <- values[k]
+            outputVector
+        with
+        | _ ->
+            Chunk.decRef output
+            reraise()
+
+    releaseUnaryVectorToVectorChunk
+        "chunkStructureTensorEigenMatrixFloat32"
+        mapper
+        (fun n -> n * uint64 (chunkElementBytes<float32> * (6 + 12)))
 
 let private zeroFloat32ChunkLike _index (source: Chunk<float32>) =
     let width, height, depth = source.Size
@@ -713,6 +857,14 @@ let gradientMagnitudeNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigm
 
 let gradientMagnitudeNativeParallelCollect sigma radius workers : Stage<Chunk<float32>, Chunk<float32>> =
     gradientMagnitudeNativeParallelCollectXYZ sigma radius sigma radius sigma radius workers
+
+let structureTensorNativeParallelCollect sigma radius rho _rhoRadius workers : Stage<Chunk<float32>, VectorChunk<float32>> =
+    if rho > 0.0 then
+        invalidArg "rho" "Chunk structureTensor currently supports rho <= 0.0; component smoothing is still pending."
+
+    gradientVectorNativeParallelCollect sigma radius workers
+    --> structureTensorOuterProductFloat32
+    --> structureTensorEigenMatrixFloat32
 
 let hessianUpperNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers : Stage<Chunk<float32>, VectorChunk<float32>> =
     let smooth = gaussianSmoothFloat32XYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers
@@ -1140,8 +1292,11 @@ let addShotNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct a
 
 type DenseHistogram = ChunkKernel.DenseHistogram
 type LeftEdgeHistogram = ChunkKernel.LeftEdgeHistogram
+type ChunkStats = ChunkKernel.ChunkStats
 
 let addCountsInto target source = ChunkKernel.addCountsInto target source
+let computeChunkStats<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> chunk = ChunkKernel.computeStats<'T> chunk
+let addChunkStats = ChunkKernel.addStats
 let histogramDictionaryBytes<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> bytes byteLength = ChunkKernel.histogramDictionaryBytes<'T> bytes byteLength
 let addDictionaryInto<'T when 'T: equality> (target: Dictionary<'T, uint64>) (source: Dictionary<'T, uint64>) = ChunkKernel.addDictionaryInto target source
 let dictionaryToMap<'T when 'T: comparison> (counts: Dictionary<'T, uint64>) = ChunkKernel.dictionaryToMap counts
@@ -1164,6 +1319,65 @@ let histogramDenseCounts<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: 
 let histogramDense<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> chunk = ChunkKernel.histogramDense<'T> chunk
 let histogramLeftEdgeCounts<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> leftEdges chunk = ChunkKernel.histogramLeftEdgeCounts<'T> leftEdges chunk
 let histogramLeftEdges<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> leftEdges chunk = ChunkKernel.histogramLeftEdges<'T> leftEdges chunk
+
+let private toImageStats (stats: ChunkStats) : ImageFunctions.ImageStats =
+    { NumPixels =
+          if stats.NumPixels > uint64 UInt32.MaxValue then
+              UInt32.MaxValue
+          else
+              uint stats.NumPixels
+      Mean = stats.Mean
+      Std = stats.Std
+      Min = stats.Min
+      Max = stats.Max
+      Sum = stats.Sum
+      Var = stats.Var }
+
+let computeStats<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    ()
+    : Stage<Chunk<'T>, ImageFunctions.ImageStats> =
+    let reducer _debug (input: AsyncSeq<Chunk<'T>>) =
+        async {
+            let mutable stats = ChunkKernel.zeroStats
+            for chunk in input do
+                try
+                    stats <- ChunkKernel.addStats stats (ChunkKernel.computeStats<'T> chunk)
+                finally
+                    Chunk.decRef chunk
+            return toImageStats stats
+        }
+
+    Stage.reduce $"chunkComputeStats.{typeof<'T>.Name}" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
+
+let volume xUnit yUnit zUnit : Stage<Chunk<uint8>, float> =
+    if xUnit <= 0.0 then invalidArg "xUnit" "xUnit must be positive."
+    if yUnit <= 0.0 then invalidArg "yUnit" "yUnit must be positive."
+    if zUnit <= 0.0 then invalidArg "zUnit" "zUnit must be positive."
+
+    let voxelVolume = xUnit * yUnit * zUnit
+    let reducer _debug (input: AsyncSeq<Chunk<uint8>>) =
+        async {
+            let mutable total = 0.0
+            for chunk in input do
+                try
+                    let pixels = chunk.Bytes
+                    let mutable foreground = 0UL
+                    let mutable i = 0
+                    while i < chunk.ByteLength do
+                        match pixels[i] with
+                        | 0uy -> ()
+                        | 1uy -> foreground <- foreground + 1UL
+                        | value -> invalidOp $"chunkVolume expects a UInt8 0-1 mask stream; got pixel value {value}."
+                        i <- i + 1
+
+                    total <- total + float foreground * voxelVolume
+                finally
+                    Chunk.decRef chunk
+
+            return total
+        }
+
+    Stage.reduce "chunkVolume" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
 
 let histogramReducer<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> () =
     let reducer _debug (input: AsyncSeq<Chunk<'T>>) =
@@ -1288,6 +1502,138 @@ let histogramFixedBinsReducer<'T when 'T: equality and 'T: (new: unit -> 'T) and
             [| for i in 0 .. int bins - 1 -> firstLeftEdge + float i * step |]
     histogramLeftEdgesReducer<'T> edges
 
+let histogramEqualizationDense<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    dense
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    let mapper _debug chunk =
+        try
+            ChunkKernel.histogramEqualizationDense<'T> dense chunk
+        finally
+            Chunk.decRef chunk
+
+    Stage.map $"chunkHistogramEqualizationDense.{typeof<'T>.Name}" mapper (fun n -> 2UL * chunkMemoryNeed<'T> n) id
+
+let histogramEqualizationLeftEdges<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    histogram
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    let mapper _debug chunk =
+        try
+            ChunkKernel.histogramEqualizationLeftEdges<'T> histogram chunk
+        finally
+            Chunk.decRef chunk
+
+    Stage.map $"chunkHistogramEqualizationLeftEdges.{typeof<'T>.Name}" mapper (fun n -> 2UL * chunkMemoryNeed<'T> n) id
+
+let histogramEqualizationSparse<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    counts
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    let mapper _debug chunk =
+        try
+            ChunkKernel.histogramEqualizationSparse<'T> counts chunk
+        finally
+            Chunk.decRef chunk
+
+    Stage.map $"chunkHistogramEqualizationSparse.{typeof<'T>.Name}" mapper (fun n -> 2UL * chunkMemoryNeed<'T> n) id
+
+let histogramEqualization<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (histogram: obj)
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    match histogram with
+    | :? DenseHistogram as dense ->
+        histogramEqualizationDense<'T> dense
+    | :? LeftEdgeHistogram as leftEdges ->
+        histogramEqualizationLeftEdges<'T> leftEdges
+    | :? Histogram<'T> as exact ->
+        histogramEqualizationSparse<'T> exact.Counts
+    | :? Map<'T, uint64> as counts ->
+        histogramEqualizationSparse<'T> counts
+    | null ->
+        nullArg "histogram"
+    | other ->
+        invalidArg "histogram" $"Chunk histogram equalization expected DenseHistogram, LeftEdgeHistogram, Histogram<{typeof<'T>.Name}>, or Map<{typeof<'T>.Name}, uint64>, got {other.GetType().Name}."
+
+let private quantilesFromPairs quantileValues (pairs: (float * uint64) seq) =
+    let ordered =
+        pairs
+        |> Seq.filter (fun (_, count) -> count > 0UL)
+        |> Seq.sortBy fst
+        |> Seq.toArray
+
+    if ordered.Length = 0 then
+        invalidArg "histogram" "Cannot estimate quantiles from an empty histogram."
+
+    let total = ordered |> Array.sumBy snd
+    if total = 0UL then
+        invalidArg "histogram" "Cannot estimate quantiles from a histogram with zero total count."
+
+    quantileValues
+    |> List.map (fun quantile ->
+        if quantile < 0.0 || quantile > 1.0 || Double.IsNaN quantile || Double.IsInfinity quantile then
+            invalidArg "quantiles" "Quantiles must be finite numbers between 0 and 1."
+
+        let target = uint64 (ceil (quantile * float total)) |> max 1UL
+        let mutable cumulative = 0UL
+        ordered
+        |> Array.pick (fun (value, count) ->
+            cumulative <- cumulative + count
+            if cumulative >= target then Some value else None))
+
+let private denseQuantilePairs = function
+    | DenseHistogram.UInt8Counts counts ->
+        counts |> Seq.mapi (fun i count -> float i, count)
+    | DenseHistogram.Int8Counts counts ->
+        counts |> Seq.mapi (fun i count -> float (i + int SByte.MinValue), count)
+    | DenseHistogram.UInt16Counts counts ->
+        counts |> Seq.mapi (fun i count -> float i, count)
+    | DenseHistogram.Int16Counts counts ->
+        counts |> Seq.mapi (fun i count -> float (i + int Int16.MinValue), count)
+
+let quantiles (quantileValues: float list) (histogram: obj) =
+    match histogram with
+    | :? DenseHistogram as dense ->
+        dense |> denseQuantilePairs |> quantilesFromPairs quantileValues
+    | :? LeftEdgeHistogram as leftEdges ->
+        if leftEdges.LeftEdges.Length <> leftEdges.Counts.Length then
+            invalidArg "histogram" $"Left-edge histogram has {leftEdges.LeftEdges.Length} edges but {leftEdges.Counts.Length} counts."
+        Seq.zip leftEdges.LeftEdges leftEdges.Counts
+        |> quantilesFromPairs quantileValues
+    | :? Histogram<uint8> as exact ->
+        exact.Counts |> Seq.map (fun pair -> float pair.Key, pair.Value) |> quantilesFromPairs quantileValues
+    | :? Histogram<int8> as exact ->
+        exact.Counts |> Seq.map (fun pair -> float pair.Key, pair.Value) |> quantilesFromPairs quantileValues
+    | :? Histogram<uint16> as exact ->
+        exact.Counts |> Seq.map (fun pair -> float pair.Key, pair.Value) |> quantilesFromPairs quantileValues
+    | :? Histogram<int16> as exact ->
+        exact.Counts |> Seq.map (fun pair -> float pair.Key, pair.Value) |> quantilesFromPairs quantileValues
+    | :? Histogram<int32> as exact ->
+        exact.Counts |> Seq.map (fun pair -> float pair.Key, pair.Value) |> quantilesFromPairs quantileValues
+    | :? Histogram<uint32> as exact ->
+        exact.Counts |> Seq.map (fun pair -> float pair.Key, pair.Value) |> quantilesFromPairs quantileValues
+    | :? Histogram<float32> as exact ->
+        exact.Counts |> Seq.map (fun pair -> float pair.Key, pair.Value) |> quantilesFromPairs quantileValues
+    | :? Histogram<float> as exact ->
+        exact.Counts |> Seq.map (fun pair -> pair.Key, pair.Value) |> quantilesFromPairs quantileValues
+    | :? Map<uint8, uint64> as counts ->
+        counts |> Seq.map (fun pair -> float pair.Key, pair.Value) |> quantilesFromPairs quantileValues
+    | :? Map<int8, uint64> as counts ->
+        counts |> Seq.map (fun pair -> float pair.Key, pair.Value) |> quantilesFromPairs quantileValues
+    | :? Map<uint16, uint64> as counts ->
+        counts |> Seq.map (fun pair -> float pair.Key, pair.Value) |> quantilesFromPairs quantileValues
+    | :? Map<int16, uint64> as counts ->
+        counts |> Seq.map (fun pair -> float pair.Key, pair.Value) |> quantilesFromPairs quantileValues
+    | :? Map<int32, uint64> as counts ->
+        counts |> Seq.map (fun pair -> float pair.Key, pair.Value) |> quantilesFromPairs quantileValues
+    | :? Map<uint32, uint64> as counts ->
+        counts |> Seq.map (fun pair -> float pair.Key, pair.Value) |> quantilesFromPairs quantileValues
+    | :? Map<float32, uint64> as counts ->
+        counts |> Seq.map (fun pair -> float pair.Key, pair.Value) |> quantilesFromPairs quantileValues
+    | :? Map<float, uint64> as counts ->
+        counts |> Seq.map (fun pair -> pair.Key, pair.Value) |> quantilesFromPairs quantileValues
+    | null ->
+        nullArg "histogram"
+    | other ->
+        invalidArg "histogram" $"Chunk quantiles expected DenseHistogram, LeftEdgeHistogram, Histogram<T>, or Map<T, uint64>, got {other.GetType().Name}."
+
 let convolveFixedKernel<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> kernel =
     StackConvolve.convolveFixedKernel<'T> kernel
 let convolveFixedKernelParallel<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> kernel windowSize =
@@ -1364,3 +1710,9 @@ let binaryOpeningZonohedral radius = StackBinaryMorphology.binaryOpeningZonohedr
 let binaryOpeningZonohedralParallel radius windowSize = StackBinaryMorphology.binaryOpeningZonohedralParallel radius windowSize
 let binaryClosingZonohedral radius = StackBinaryMorphology.binaryClosingZonohedral radius
 let binaryClosingZonohedralParallel radius windowSize = StackBinaryMorphology.binaryClosingZonohedralParallel radius windowSize
+let binaryWhiteTopHatZonohedral radius = StackBinaryMorphology.binaryWhiteTopHatZonohedral radius
+let binaryWhiteTopHatZonohedralParallel radius windowSize = StackBinaryMorphology.binaryWhiteTopHatZonohedralParallel radius windowSize
+let binaryBlackTopHatZonohedral radius = StackBinaryMorphology.binaryBlackTopHatZonohedral radius
+let binaryBlackTopHatZonohedralParallel radius windowSize = StackBinaryMorphology.binaryBlackTopHatZonohedralParallel radius windowSize
+let binaryGradientZonohedral radius = StackBinaryMorphology.binaryGradientZonohedral radius
+let binaryGradientZonohedralParallel radius windowSize = StackBinaryMorphology.binaryGradientZonohedralParallel radius windowSize

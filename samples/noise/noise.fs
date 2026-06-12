@@ -8,10 +8,11 @@ let main args =
 
     let histogram =
         src
-        |> normalNoise<float> 64u 64u 64u 0.0 50.0
-        >=> smoothWGauss 3.0 (Some ImageFunctions.Valid) None None
-        >=> cast<float, uint8>
-        >=> imHistogramFixedBins 0.0 255.0 256u
+        |> chunkZero<float32> 64u 64u 64u
+        >=> chunkAddNormalNoise<float32> 0.0 50.0
+        >=> gaussianFilterNativeParallelCollect<float32> 3.0 9 4
+        >=> chunkCast<float32, uint8>
+        >=> chunkHistogramFixedBins<uint8> 0.0 255.0 256u
         >=> histogramCounts
         |> drain
 

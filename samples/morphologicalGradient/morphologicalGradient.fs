@@ -1,4 +1,4 @@
-// Compute the grayscale morphological gradient of a stack.
+// Compute the binary zonohedral morphological gradient of a mask stack.
 open StackProcessing
 
 [<EntryPoint>]
@@ -13,9 +13,10 @@ let main args =
         | _ -> "../data/volume", "../tmp/morphologicalGradient"
 
     src
-    |> read<uint8> input ".tiff"
-    >=> morphologicalGradient<uint8> 3u None
-    >=> write output ".tiff"
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> chunkThresholdRange<uint8> 1 255
+    >=> chunkBinaryGradientZonohedral 3u
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     0

@@ -554,3 +554,52 @@ let binaryClosingZonohedral radius : Stage<Chunk<uint8>, Chunk<uint8>> =
 let binaryClosingZonohedralParallel radius windowSize : Stage<Chunk<uint8>, Chunk<uint8>> =
     Stage.compose (binaryDilateZonohedralParallel radius windowSize) (binaryErodeZonohedralParallel radius windowSize)
 
+let private binaryDifferenceStage name : Stage<Chunk<uint8> * Chunk<uint8>, Chunk<uint8>> =
+    let mapper _debug ((a, b): Chunk<uint8> * Chunk<uint8>) =
+        try
+            if a.Size <> b.Size then
+                invalidArg "b" $"{name} expects paired chunks with identical sizes, got {a.Size} and {b.Size}."
+
+            let output = Chunk.create<uint8> a.Size
+            try
+                let aPixels = Chunk.span<uint8> a
+                let bPixels = Chunk.span<uint8> b
+                let outputPixels = Chunk.span<uint8> output
+                let mutable i = 0
+                while i < aPixels.Length do
+                    outputPixels[i] <- if aPixels[i] <> binaryBackground && bPixels[i] = binaryBackground then binaryForeground else binaryBackground
+                    i <- i + 1
+                output
+            with
+            | _ ->
+                Chunk.decRef output
+                reraise()
+        finally
+            Chunk.decRef a
+            Chunk.decRef b
+
+    Stage.map name mapper (fun n -> 3UL * n) id
+
+let binaryWhiteTopHatZonohedral radius : Stage<Chunk<uint8>, Chunk<uint8>> =
+    fork (Stage.map "chunkBinaryWhiteTopHatZonohedral.input" (fun _ chunk -> chunk) id id, binaryOpeningZonohedral radius)
+    --> binaryDifferenceStage "chunkBinaryWhiteTopHatZonohedral"
+
+let binaryWhiteTopHatZonohedralParallel radius windowSize : Stage<Chunk<uint8>, Chunk<uint8>> =
+    fork (Stage.map $"chunkBinaryWhiteTopHatZonohedral.parallel{windowSize}.input" (fun _ chunk -> chunk) id id, binaryOpeningZonohedralParallel radius windowSize)
+    --> binaryDifferenceStage $"chunkBinaryWhiteTopHatZonohedral.parallel{windowSize}"
+
+let binaryBlackTopHatZonohedral radius : Stage<Chunk<uint8>, Chunk<uint8>> =
+    fork (binaryClosingZonohedral radius, Stage.map "chunkBinaryBlackTopHatZonohedral.input" (fun _ chunk -> chunk) id id)
+    --> binaryDifferenceStage "chunkBinaryBlackTopHatZonohedral"
+
+let binaryBlackTopHatZonohedralParallel radius windowSize : Stage<Chunk<uint8>, Chunk<uint8>> =
+    fork (binaryClosingZonohedralParallel radius windowSize, Stage.map $"chunkBinaryBlackTopHatZonohedral.parallel{windowSize}.input" (fun _ chunk -> chunk) id id)
+    --> binaryDifferenceStage $"chunkBinaryBlackTopHatZonohedral.parallel{windowSize}"
+
+let binaryGradientZonohedral radius : Stage<Chunk<uint8>, Chunk<uint8>> =
+    fork (binaryDilateZonohedral radius, binaryErodeZonohedral radius)
+    --> binaryDifferenceStage "chunkBinaryGradientZonohedral"
+
+let binaryGradientZonohedralParallel radius windowSize : Stage<Chunk<uint8>, Chunk<uint8>> =
+    fork (binaryDilateZonohedralParallel radius windowSize, binaryErodeZonohedralParallel radius windowSize)
+    --> binaryDifferenceStage $"chunkBinaryGradientZonohedral.parallel{windowSize}"

@@ -12,8 +12,9 @@ let main args =
         | _ -> "../tmp/saltAndPepperNoise"
 
     src
-    |> saltAndPepperNoise<uint8> 64u 64u 64u 0.02
-    >=> write output ".tiff"
+    |> chunkZero<uint8> 64u 64u 64u
+    >=> chunkAddSaltAndPepperNoise<uint8> 0.02
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     0

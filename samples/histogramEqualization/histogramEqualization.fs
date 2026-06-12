@@ -14,15 +14,14 @@ let main args =
 
     let histogram =
         src
-        |> readRandom<uint8> 8u input ".tiff"
-        >=> imHistogram ()
+        |> readChunkSlicesRandom<uint8> 8u input ".tiff"
+        >=> chunkHistogramDense<uint8> ()
         |> drain
 
     src
-    |> read<uint8> input ".tiff"
-    >=> histogramEqualization histogram
-    >=> cast<float, uint8>
-    >=> write output ".tiff"
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> chunkHistogramEqualization<uint8> (histogram :> obj)
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     0

@@ -1517,8 +1517,9 @@ module PipelineCodeGenerator =
             let outputMaximum = parameterValue "outputMaximum"
             $">=> chunkIntensityWindow<{pixelType}> {inputMinimum} {inputMaximum} {outputMinimum} {outputMaximum}"
         | "HistogramEqualization" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let histogram = parameterValue "histogram"
-            $">=> histogramEqualization {histogram}"
+            $">=> chunkHistogramEqualization<{pixelType}> ({histogram} :> obj)"
         | "CreatePadding" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let beforeX = parameterValue "beforeX"
@@ -1578,20 +1579,29 @@ module PipelineCodeGenerator =
             let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> grayscaleClosing<{pixelType}> {radius} {windowSize}"
         | "WhiteTopHat" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> whiteTopHat<{pixelType}> {radius} {windowSize}"
+            let windowSize = savedParamValue "windowSize" node
+            if String.Equals(windowSize.Trim(), "None", StringComparison.OrdinalIgnoreCase) then
+                $">=> chunkBinaryWhiteTopHatZonohedral {radius}"
+            else
+                let windowSize = numericLiteral Int32 windowSize
+                $">=> chunkBinaryWhiteTopHatZonohedralParallel {radius} {windowSize}"
         | "BlackTopHat" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> blackTopHat<{pixelType}> {radius} {windowSize}"
+            let windowSize = savedParamValue "windowSize" node
+            if String.Equals(windowSize.Trim(), "None", StringComparison.OrdinalIgnoreCase) then
+                $">=> chunkBinaryBlackTopHatZonohedral {radius}"
+            else
+                let windowSize = numericLiteral Int32 windowSize
+                $">=> chunkBinaryBlackTopHatZonohedralParallel {radius} {windowSize}"
         | "MorphologicalGradient" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> morphologicalGradient<{pixelType}> {radius} {windowSize}"
+            let windowSize = savedParamValue "windowSize" node
+            if String.Equals(windowSize.Trim(), "None", StringComparison.OrdinalIgnoreCase) then
+                $">=> chunkBinaryGradientZonohedral {radius}"
+            else
+                let windowSize = numericLiteral Int32 windowSize
+                $">=> chunkBinaryGradientZonohedralParallel {radius} {windowSize}"
         | "ImageComparison" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             $">=> {comparisonStageFunctionName node}<{pixelType}>"
@@ -1626,7 +1636,8 @@ module PipelineCodeGenerator =
             let toLabel = parameterValue "toLabel"
             $">=> changeLabel<{pixelType}> {fromLabel} {toLabel}"
         | "ComputeStats" ->
-            ">=> computeStats ()"
+            let pixelType = pipelinePixelType "Float64"
+            $">=> chunkComputeStats<{pixelType}> ()"
         | "SurfaceArea" ->
             let xUnit = parameterValue "xUnit"
             let yUnit = parameterValue "yUnit"
@@ -1636,7 +1647,7 @@ module PipelineCodeGenerator =
             let xUnit = parameterValue "xUnit"
             let yUnit = parameterValue "yUnit"
             let zUnit = parameterValue "zUnit"
-            $">=> volume {xUnit} {yUnit} {zUnit}"
+            $">=> chunkVolume {xUnit} {yUnit} {zUnit}"
         | "FitBiasModel" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let order = parameterValue "order"
@@ -1752,7 +1763,12 @@ module PipelineCodeGenerator =
             let radius = parameterValue "radius"
             $">=> chunkBinaryClosingZonohedral {radius}"
         | "ConnectedComponents" ->
-            ">=> chunkConnectedComponentsSauf3DUInt8UInt32 ()"
+            let windowSize = savedParamValue "windowSize" node
+            if String.Equals(windowSize.Trim(), "None", StringComparison.OrdinalIgnoreCase) then
+                ">=> chunkConnectedComponentsSauf3DUInt8UInt32 ()"
+            else
+                let windowSize = numericLiteral Int32 windowSize
+                $">=> chunkConnectedComponentsSauf3DUInt8UInt32ParallelCollect {windowSize} System.Environment.ProcessorCount"
         | "RelabelComponents" ->
             let minimumObjectSize = parameterValue "minimumObjectSize"
             let windowSize = parameterValue "windowSize" |> optionUInt
@@ -2628,7 +2644,7 @@ module PipelineCodeGenerator =
 
                     { Name = name
                       Dependencies = parameterBindingDependencies node |> Set.remove name
-                      Text = $"let {name} = quantiles [{quantileValues}] {histogram}" })
+                      Text = $"let {name} = chunkQuantiles [{quantileValues}] ({histogram} :> obj)" })
 
             let stackInfoBindings =
                 let stackInfoProducerBindings =

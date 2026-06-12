@@ -25,11 +25,7 @@
       "parameters": [
         { "key": "type", "value": "UInt8", "useInput": false },
         { "key": "histogram", "value": "histogram", "useInput": true } ] },
-    { "id": "cast", "functionId": "Cast", "x": 560.0, "y": 220.0,
-      "parameters": [
-        { "key": "sourceType", "value": "Float64", "useInput": false },
-        { "key": "targetType", "value": "UInt8", "useInput": false } ] },
-    { "id": "write", "functionId": "Write", "x": 760.0, "y": 220.0,
+    { "id": "write", "functionId": "Write", "x": 560.0, "y": 220.0,
       "parameters": [
         { "key": "format", "value": "Image stack", "useInput": false },
         { "key": "output", "value": "../tmp/histogramEqualization", "useInput": false },
@@ -39,7 +35,6 @@
     { "fromNode": "histReadRandom", "fromKind": "dataOutput", "fromPort": 0, "toNode": "histData", "toKind": "dataInput", "toPort": 0 },
     { "fromNode": "histData", "fromKind": "reducerOutput", "fromPort": 0, "toNode": "equalize", "toKind": "parameterInput", "toPort": 1 },
     { "fromNode": "read", "fromKind": "dataOutput", "fromPort": 0, "toNode": "equalize", "toKind": "dataInput", "toPort": 0 },
-    { "fromNode": "equalize", "fromKind": "dataOutput", "fromPort": 0, "toNode": "cast", "toKind": "dataInput", "toPort": 0 },
-    { "fromNode": "cast", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 }
+    { "fromNode": "equalize", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 }
   ]
 }

@@ -250,7 +250,7 @@ module BuiltInCatalog =
       "Linearly maps an input intensity range to an output intensity range using the same shift/scale semantics as shiftScale. Values are not clipped: pixels outside the input range continue linearly outside the output range. This is useful with computeStats or quantiles when the source min/max or robust quantile limits are estimated in an earlier reducer pass."
 
   let private histogramEqualizationDescription =
-      "Applies 3D histogram equalization from a histogram map estimated over the connected stack or a representative sample. The stage streams slices and emits Float64 values in the range 0..1. Histogram bins are treated as an empirical cumulative distribution, with interpolation between sampled bin keys so readRandom estimates can still be used on continuous-valued images."
+      "Applies 3D histogram equalization from a dense, sparse exact, or fixed-bin Chunk histogram estimated over the connected stack or a representative sample. The stage streams chunks and preserves the selected pixel type."
 
   let private quantilesDescription =
       "Estimates quantile values from a histogram map. q1 is always emitted. q2, q3, q4, and q5 are optional output slots controlled by the corresponding enabled parameters. Each q value must be between 0 and 1. The result is based on the cumulative histogram counts, so accuracy depends on the histogram key resolution."
@@ -1671,7 +1671,7 @@ module BuiltInCatalog =
           Description = histogramEqualizationDescription
           Aliases = [ "intensity"; "histogram"; "equalize"; "equalization"; "contrast"; "cdf"; "3d" ]
           Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Float64" imageFloat64 ]
+          Outputs = [ makePort "Number" imageAny ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "histogram" "Histogram" "" BasicType.Map ] }
@@ -1860,41 +1860,38 @@ module BuiltInCatalog =
 
         { Id = "WhiteTopHat"
           DisplayName = "whiteTopHat"
-          Category = "Grayscale Morphology"
-          Summary = "Extract small bright grayscale details."
-          Description = grayscaleMorphologyDescription
-          Aliases = [ "grayscale"; "morphology"; "white"; "top"; "hat"; "bright"; "filter" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Number" imageAny ]
+          Category = "Binary Morphology"
+          Summary = "Extract small foreground binary details."
+          Description = "Binary white top-hat computes mask minus zonohedral opening. It expects UInt8 0/1 masks and preserves UInt8 output."
+          Aliases = [ "binary"; "morphology"; "white"; "top"; "hat"; "foreground"; "zonohedral" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters =
-              [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+              [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
                 makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "BlackTopHat"
           DisplayName = "blackTopHat"
-          Category = "Grayscale Morphology"
-          Summary = "Extract small dark grayscale details."
-          Description = grayscaleMorphologyDescription
-          Aliases = [ "grayscale"; "morphology"; "black"; "top"; "hat"; "dark"; "filter" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Number" imageAny ]
+          Category = "Binary Morphology"
+          Summary = "Extract small background binary holes."
+          Description = "Binary black top-hat computes zonohedral closing minus mask. It expects UInt8 0/1 masks and preserves UInt8 output."
+          Aliases = [ "binary"; "morphology"; "black"; "top"; "hat"; "background"; "holes"; "zonohedral" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters =
-              [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+              [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
                 makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "MorphologicalGradient"
           DisplayName = "morphologicalGradient"
-          Category = "Grayscale Morphology"
-          Summary = "Compute local grayscale morphological contrast."
-          Description = grayscaleMorphologyDescription
-          Aliases = [ "grayscale"; "morphology"; "gradient"; "edge"; "contrast"; "filter" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Number" imageAny ]
+          Category = "Binary Morphology"
+          Summary = "Compute a binary zonohedral boundary band."
+          Description = "Binary morphological gradient computes zonohedral dilation minus zonohedral erosion. It expects UInt8 0/1 masks and preserves UInt8 output."
+          Aliases = [ "binary"; "morphology"; "gradient"; "edge"; "boundary"; "zonohedral" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters =
-              [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+              [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
                 makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "BinaryContour"
@@ -2094,7 +2091,7 @@ module BuiltInCatalog =
           Description = connectedComponentsDescription
           Aliases = [ "components"; "labels"; "segmentation" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
-          Outputs = [ makePort "Labels + count" connectedComponentLabels ]
+          Outputs = [ makePort "UInt32 labels" (PortType.Image UInt32) ]
           Parameters = [ makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "StreamConnectedObjects"

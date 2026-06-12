@@ -55,9 +55,9 @@ let showChartXY = StackCharts.showChartXY
 let showChartXYWithLabels = StackCharts.showChartXYWithLabels
 let showImage = StackCharts.showImage
 let showImageWithLabels = StackCharts.showImageWithLabels
-let showChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> chunk =
+let showChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> (chunk: StackCore.Chunk<'T>) =
     StackCharts.showChunk<'T> chunk
-let showChunkWithLabels<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> colorMap title xAxis yAxis chunk =
+let showChunkWithLabels<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> colorMap title xAxis yAxis (chunk: StackCore.Chunk<'T>) =
     StackCharts.showChunkWithLabels<'T> colorMap title xAxis yAxis chunk
 
 // //////////////////// StackIO
@@ -143,6 +143,7 @@ let chunkShow<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 
 let chunkSignedDistanceBandNativeParallelCollect = ChunkFunctions.signedDistanceBandNativeParallelCollect
 let chunkVectorDotFloat32 = ChunkFunctions.vectorDotFloat32
 let chunkVectorMagnitudeFloat32 = ChunkFunctions.vectorMagnitudeFloat32
+let chunkVector3ToColorFloat32 = ChunkFunctions.vector3ToColorFloat32
 let chunkVectorAngleToFloat32 = ChunkFunctions.vectorAngleToFloat32
 let chunkToVectorImage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.toVectorImage<'T>
 let chunkVectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> (componentId: uint) = ChunkFunctions.vectorElement<'T> componentId
@@ -156,6 +157,8 @@ let chunkVectorMagnitude = ChunkFunctions.vectorMagnitude
 let chunkVectorCross3D = ChunkFunctions.vectorCross3D
 let chunkVectorAngleTo = ChunkFunctions.vectorAngleTo
 let chunkPCA = ChunkFunctions.PCA
+let chunkPCAFloat32 = ChunkFunctions.PCAFloat32
+let chunkStructureTensorNativeParallelCollect = ChunkFunctions.structureTensorNativeParallelCollect
 let chunkSelectGroupedVectorOutput = ChunkFunctions.selectGroupedVectorOutput
 let chunkToComplex64 = ChunkFunctions.toComplex64
 let chunkPolarToComplex64 = ChunkFunctions.polarToComplex64
@@ -171,6 +174,13 @@ let chunkHistogram<'T when 'T: equality and 'T: comparison and 'T: (new: unit ->
 let chunkHistogramDense<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.histogramDenseReducer<'T>
 let chunkHistogramLeftEdges<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.histogramLeftEdgesReducer<'T>
 let chunkHistogramFixedBins<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.histogramFixedBinsReducer<'T>
+let chunkComputeStats<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.computeStats<'T>
+let chunkHistogramEqualizationDense<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.histogramEqualizationDense<'T>
+let chunkHistogramEqualizationLeftEdges<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.histogramEqualizationLeftEdges<'T>
+let chunkHistogramEqualizationSparse<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.histogramEqualizationSparse<'T>
+let chunkHistogramEqualization<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.histogramEqualization<'T>
+let chunkQuantiles = ChunkFunctions.quantiles
+let chunkVolume = ChunkFunctions.volume
 let chunkSumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.chunkSumProjection<'T>
 let chunkThresholdRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.thresholdRange<'T>
 let chunkClamp<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> System.ValueType> = ChunkFunctions.clamp<'T>
@@ -246,6 +256,12 @@ let chunkBinaryDilateZonohedral = ChunkFunctions.binaryDilateZonohedral
 let chunkBinaryErodeZonohedral = ChunkFunctions.binaryErodeZonohedral
 let chunkBinaryOpeningZonohedral = ChunkFunctions.binaryOpeningZonohedral
 let chunkBinaryClosingZonohedral = ChunkFunctions.binaryClosingZonohedral
+let chunkBinaryWhiteTopHatZonohedral = ChunkFunctions.binaryWhiteTopHatZonohedral
+let chunkBinaryWhiteTopHatZonohedralParallel = ChunkFunctions.binaryWhiteTopHatZonohedralParallel
+let chunkBinaryBlackTopHatZonohedral = ChunkFunctions.binaryBlackTopHatZonohedral
+let chunkBinaryBlackTopHatZonohedralParallel = ChunkFunctions.binaryBlackTopHatZonohedralParallel
+let chunkBinaryGradientZonohedral = ChunkFunctions.binaryGradientZonohedral
+let chunkBinaryGradientZonohedralParallel = ChunkFunctions.binaryGradientZonohedralParallel
 let readZarrSlabStacked<'T when 'T: equality> = StackIO.readZarrSlabStacked<'T>
 let readZarrSlab<'T when 'T: equality> = StackIO.readZarrSlab<'T>
 let readZarrRandom<'T when 'T: equality> = StackIO.readZarrRandom<'T>

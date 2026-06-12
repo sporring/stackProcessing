@@ -21,12 +21,12 @@ let main arg =
           { X = 40.0; Y = 40.0 }
           { X = 24.0; Y = 40.0 } ]
 
-    let mask = polygonMask width height polygon
+    let mask = chunkPolygonMask width height polygon
 
     let movingMask transformName =
         src
-        |> repeat mask 1u
-        >=> createByEuler2DTransformFromImage<uint8> depth (euler2DTransformPath width height depth transformName)
+        |> chunkRepeat mask 1u
+        >=> chunkCreateByEuler2DTransformFromChunk<uint8> depth (chunkEuler2DTransformPath width height depth transformName)
 
     let diagonal =
         movingMask "Diagonal"
@@ -38,10 +38,10 @@ let main arg =
         movingMask "AntiDiagonal"
 
     (
-        (diagonal, topDown) ||> zip >>=> maxOfPair >=> tap "first",
+        (diagonal, topDown) ||> zip >=> chunkMaxOfPair<uint8> >=> tap "first",
         antiDiagonal >=> tap "second"
-    ) ||> zip >>=> maxOfPair
-    >=> write output ".tiff"
+    ) ||> zip >=> chunkMaxOfPair<uint8>
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     0

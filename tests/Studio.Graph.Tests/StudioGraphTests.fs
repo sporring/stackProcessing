@@ -235,12 +235,12 @@ let catalogSuite =
             Expect.equal chart.Parameters.[0].Key "kind" "Chart should expose the chart kind first."
             Expect.equal chart.Parameters.[1].Type BasicType.Map "Chart input should be map-like histogram data."
 
-        testCase "connected component catalog uses pair and reducer types" <| fun _ ->
+        testCase "connected component catalog exposes direct Chunk label images" <| fun _ ->
             let connected = BuiltInCatalog.find "ConnectedComponents"
             let table = BuiltInCatalog.find "ComponentTranslationTable"
 
-            Expect.equal connected.Outputs.[0].Type (Tuple(Image UInt64, Scalar(BasicType.Numeric UInt64))) "Connected components should stream labels with object counts."
-            Expect.equal table.Inputs.[0].Type (Tuple(Image UInt64, Scalar(BasicType.Numeric UInt64))) "Translation-table reducer should consume connected-component pairs."
+            Expect.equal connected.Outputs.[0].Type (Image UInt32) "Connected components should stream compact UInt32 label slices directly."
+            Expect.equal table.Inputs.[0].Type (Tuple(Image UInt64, Scalar(BasicType.Numeric UInt64))) "The legacy translation-table reducer still consumes connected-component pairs."
             Expect.equal table.Outputs.[0].Type (Custom "TranslationTable") "Translation-table output should be a custom parameter value."
 
         testCase "find fails clearly for missing function" <| fun _ ->

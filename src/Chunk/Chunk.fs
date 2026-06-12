@@ -654,6 +654,27 @@ let vectorMagnitudeFloat32 (vector: VectorChunk<float32>) =
         decRef output
         reraise()
 
+let vector3ToColorFloat32 inputMinimum inputMaximum (vector: VectorChunk<float32>) =
+    validateVectorStorage "vector" vector
+    if inputMaximum <= inputMinimum then
+        invalidArg "inputMaximum" "vector3ToColorFloat32 input maximum must be greater than input minimum."
+    if vector.Components <> 3u then
+        invalidArg "vector" $"vector3ToColorFloat32 expects 3 components, got {vector.Components}."
+
+    let output = createVectorChunk<uint8> vector.SpatialSize 3u
+    try
+        let inputPixels = vectorSpan vector
+        let outputPixels = vectorSpan output
+        let scale = 255.0f / (inputMaximum - inputMinimum)
+        for i in 0 .. inputPixels.Length - 1 do
+            let value = (inputPixels[i] - inputMinimum) * scale
+            outputPixels[i] <- byte (max 0.0f (min 255.0f (MathF.Round value)))
+        output
+    with
+    | _ ->
+        decRef output.Chunk
+        reraise()
+
 let vectorAngleToFloat32 (reference: float32 list) (vector: VectorChunk<float32>) =
     validateVectorStorage "vector" vector
     let components = checkedComponents vector.Components

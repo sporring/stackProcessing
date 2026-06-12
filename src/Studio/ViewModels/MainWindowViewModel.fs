@@ -1007,6 +1007,7 @@ module private HighValueFilterNode =
         [ "Clamp"
           "ShiftScale"
           "IntensityStretch"
+          "HistogramEqualization"
           "CreatePadding"
           "Crop"
           "SmoothWMedian"
@@ -1018,17 +1019,13 @@ module private HighValueFilterNode =
           "GrayscaleDilate"
           "GrayscaleOpening"
           "GrayscaleClosing"
-          "WhiteTopHat"
-          "BlackTopHat"
-          "MorphologicalGradient"
           "LabelContour"
           "ChangeLabel"
           "SerialPolynomialBiasCorrect" ]
         |> Set.ofList
 
     let typedImageInputFunctionIds =
-        [ "HistogramEqualization"
-          "ImageComparison"
+        [ "ImageComparison"
           "FitBiasModel"
           "FitBiasModelMasked"
           "CorrectBias"
@@ -1062,9 +1059,6 @@ module private HighValueFilterNode =
           "GrayscaleDilate"
           "GrayscaleOpening"
           "GrayscaleClosing"
-          "WhiteTopHat"
-          "BlackTopHat"
-          "MorphologicalGradient"
           "OtsuThresholdFromHistogram"
           "MomentsThresholdFromHistogram"
           "MarchingCubes"

@@ -247,6 +247,96 @@ let private writeChunkTiffSlice<'T when 'T: equality> fileName (chunk: Chunk<'T>
     if not (tiff.WriteDirectory()) then
         invalidOp $"Failed to write TIFF directory to '{fileName}'."
 
+let private inspectColorChunkTiffSlice fileName =
+    use tiff = Tiff.Open(fileName, "r")
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for RGB TIFF reading."
+
+    let width = uint (ImageIO.tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
+    let height = uint (ImageIO.tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
+    if width = 0u || height = 0u then
+        invalidOp $"RGB TIFF slice '{fileName}' has invalid page dimensions {width}x{height}."
+
+    let bitsPerSample = ImageIO.tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 8
+    let samplesPerPixel = ImageIO.tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 3
+    let sampleFormat =
+        ImageIO.tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
+        |> enum<SampleFormat>
+    let planarConfig =
+        ImageIO.tiffFieldIntDefaulted tiff TiffTag.PLANARCONFIG (int PlanarConfig.CONTIG)
+        |> enum<PlanarConfig>
+
+    if bitsPerSample <> 8 || sampleFormat <> SampleFormat.UINT || samplesPerPixel <> 3 || planarConfig <> PlanarConfig.CONTIG then
+        invalidOp $"RGB TIFF slices must be contiguous 8-bit unsigned RGB, got bits={bitsPerSample}, format={sampleFormat}, samples={samplesPerPixel}, planar={planarConfig} in '{fileName}'."
+
+    let rowBytes = int width * 3
+    width, height, rowBytes, max rowBytes (tiff.ScanlineSize())
+
+let private readColorChunkTiffSlice fileName : VectorChunk<uint8> =
+    use tiff = Tiff.Open(fileName, "r")
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for RGB TIFF reading."
+
+    let width, height, rowBytes, scanlineSize = inspectColorChunkTiffSlice fileName
+    let chunk = Chunk.create<uint8> (uint64 width * 3UL, uint64 height, 1UL)
+    let vector: VectorChunk<uint8> =
+        { SpatialSize = (uint64 width, uint64 height, 1UL)
+          Components = 3u
+          Chunk = chunk }
+    try
+        if scanlineSize <= rowBytes then
+            for row in 0 .. int height - 1 do
+                if not (tiff.ReadScanline(chunk.Bytes, row * rowBytes, row, int16 0)) then
+                    invalidOp $"Failed to read RGB TIFF scanline {row} from '{fileName}'."
+        else
+            let scratch = System.Buffers.ArrayPool<byte>.Shared.Rent(scanlineSize)
+            try
+                for row in 0 .. int height - 1 do
+                    if not (tiff.ReadScanline(scratch, row)) then
+                        invalidOp $"Failed to read RGB TIFF scanline {row} from '{fileName}'."
+                    Buffer.BlockCopy(scratch, 0, chunk.Bytes, row * rowBytes, rowBytes)
+            finally
+                System.Buffers.ArrayPool<byte>.Shared.Return(scratch)
+        vector
+    with
+    | _ ->
+        Chunk.decRef chunk
+        reraise()
+
+let private writeColorChunkTiffSlice fileName (vector: VectorChunk<uint8>) =
+    if vector.Components <> 3u then
+        invalidArg "vector" $"writeColorChunkSlices expects 3-component RGB vectors, got {vector.Components} components."
+    let width, height, depth = vector.SpatialSize
+    if depth <> 1UL then
+        invalidArg "vector" $"writeColorChunkSlices expects 2D color slice chunks with depth 1, got {vector.SpatialSize}."
+    if vector.Chunk.Size <> (width * 3UL, height, 1UL) then
+        invalidArg "vector" $"RGB vector chunk storage size {vector.Chunk.Size} does not match spatial size {vector.SpatialSize}."
+
+    let rowBytes = int width * 3
+    if vector.Chunk.ByteLength < rowBytes * int height then
+        invalidArg "vector" $"RGB vector chunk byte length {vector.Chunk.ByteLength} is smaller than the TIFF page payload {rowBytes * int height}."
+
+    use tiff = Tiff.Open(fileName, ImageIO.tiffWriteMode fileName)
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for RGB TIFF writing."
+
+    tiff.SetField(TiffTag.IMAGEWIDTH, int width) |> ignore
+    tiff.SetField(TiffTag.IMAGELENGTH, int height) |> ignore
+    tiff.SetField(TiffTag.SAMPLESPERPIXEL, 3) |> ignore
+    tiff.SetField(TiffTag.BITSPERSAMPLE, 8) |> ignore
+    tiff.SetField(TiffTag.SAMPLEFORMAT, SampleFormat.UINT) |> ignore
+    tiff.SetField(TiffTag.PHOTOMETRIC, Photometric.RGB) |> ignore
+    tiff.SetField(TiffTag.PLANARCONFIG, PlanarConfig.CONTIG) |> ignore
+    tiff.SetField(TiffTag.ROWSPERSTRIP, int height) |> ignore
+    tiff.SetField(TiffTag.COMPRESSION, Compression.NONE) |> ignore
+
+    for row in 0 .. int height - 1 do
+        if not (tiff.WriteScanline(vector.Chunk.Bytes, row * rowBytes, row, int16 0)) then
+            invalidOp $"Failed to write RGB TIFF scanline {row} to '{fileName}'."
+
+    if not (tiff.WriteDirectory()) then
+        invalidOp $"Failed to write RGB TIFF directory to '{fileName}'."
+
 let private runTask (task: Task<'T>) : 'T =
     task.GetAwaiter().GetResult()
 
@@ -821,6 +911,120 @@ let readChunkSlicesRandom<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T:
         suffix
         (Array.randomChoices (int count))
         [ "count", string count ]
+        pl
+
+let private readSelectedColorChunkSlices
+    (name: string)
+    (inputDir: string)
+    (suffix: string)
+    (selectFiles: string[] -> string[])
+    (sourcePeekFields: (string * string) list)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, VectorChunk<uint8>> =
+    if not (isTiffStackSuffix suffix) then
+        invalidArg "suffix" $"Color chunk slice IO currently supports TIFF stacks only; got suffix '{suffix}'."
+
+    let sourceFiles = getStackFiles inputDir suffix
+    if sourceFiles.Length = 0 then
+        stopWithInputError $"No {suffixDescription suffix} files found in RGB input stack directory: {inputDir}"
+
+    let files = selectFiles sourceFiles
+    if files.Length = 0 then
+        stopWithInputError $"{name} selected no {suffixDescription suffix} files from RGB input stack directory: {inputDir}"
+
+    let width, height, rowBytes, scanlineSize = inspectColorChunkTiffSlice files[0]
+    let elementBytes = uint64 rowBytes * uint64 height
+    let sourcePeek =
+        SourcePeek.create
+            name
+            elementBytes
+            (Some(uint64 files.Length))
+            (Map.ofList
+                ([ "kind", "chunk-rgb-tiff-slices"
+                   "inputDir", inputDir
+                   "suffix", suffix
+                   "width", string width
+                   "height", string height
+                   "depth", string files.Length
+                   "sourceDepth", string sourceFiles.Length
+                   "pixelType", "Color"
+                   "components", "3"
+                   "scanlineSize", string scanlineSize ]
+                 @ sourcePeekFields))
+
+    let mapper (i: int) =
+        let fileName = files[i]
+        if pl.debug then
+            printfn $"[{name}] Reading RGB chunk slice {i}: {fileName}"
+        let vector = readColorChunkTiffSlice fileName
+        let chunkWidth, chunkHeight, _ = vector.SpatialSize
+        if chunkWidth <> uint64 width || chunkHeight <> uint64 height then
+            Chunk.decRef vector.Chunk
+            invalidOp $"Input RGB slice '{fileName}' has shape {chunkWidth}x{chunkHeight}, expected {width}x{height}."
+        vector
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memoryNeed _ = elementBytes
+    let elementTransformation _ = uint64 width * uint64 height
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        StageTimeCostModel.ioRead Source (Some $"{name}.Color") (fun _ -> elementBytes) (fun _ -> 1UL)
+    let stage =
+        Stage.init name (uint files.Length) mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    Plan.createWithOptimizer stage pl.memAvail elementBytes elementBytes (uint64 files.Length) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
+    |> Plan.withSourcePeek sourcePeek
+
+let readColorChunkSlices inputDir suffix (pl: Plan<unit, unit>) : Plan<unit, VectorChunk<uint8>> =
+    readSelectedColorChunkSlices
+        "readColorChunkSlices"
+        inputDir
+        suffix
+        id
+        []
+        pl
+
+let readColorChunkSlicesRandom (count: uint) inputDir suffix (pl: Plan<unit, unit>) : Plan<unit, VectorChunk<uint8>> =
+    readSelectedColorChunkSlices
+        "readColorChunkSlicesRandom"
+        inputDir
+        suffix
+        (Array.randomChoices (int count))
+        [ "count", string count ]
+        pl
+
+let private colorRangeIndices (first: uint) step (last: uint) depth =
+    if step = 0 then invalidArg "step" "Range step must be non-zero."
+    let depthU = uint depth
+    if depthU = 0u then [||]
+    else
+        let last = min last (depthU - 1u)
+        let first = min first (depthU - 1u)
+        let indices = ResizeArray<int>()
+        if step > 0 then
+            let mutable i = int first
+            while i <= int last do
+                indices.Add i
+                i <- i + step
+        else
+            let mutable i = int first
+            while i >= int last do
+                indices.Add i
+                i <- i + step
+        indices.ToArray()
+
+let readColorChunkSlicesRange (first: uint) (step: int) (last: uint) inputDir suffix (pl: Plan<unit, unit>) : Plan<unit, VectorChunk<uint8>> =
+    readSelectedColorChunkSlices
+        "readColorChunkSlicesRange"
+        inputDir
+        suffix
+        (fun files -> colorRangeIndices first step last files.Length |> Array.map (fun index -> files[index]))
+        [ "first", string first
+          "step", string step
+          "last", string last ]
         pl
 
 let private isTiffVolumePath (filename: string) =
@@ -2372,6 +2576,35 @@ let writeChunkSlices<'T when 'T: equality> (outputDir: string) (suffix: string) 
             (fun _ -> 1UL)
 
     Stage.mapi $"writeChunkSlices \"{outputDir}/*{suffix}\"" mapper memoryNeed id
+    |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+
+let writeColorChunkSlices (outputDir: string) (suffix: string) : Stage<VectorChunk<uint8>, unit> =
+    if not (isTiffStackSuffix suffix) then
+        invalidArg "suffix" $"writeColorChunkSlices currently supports TIFF stack output only; got suffix '{suffix}'."
+    Directory.CreateDirectory(outputDir) |> ignore
+    let cleaned = lazy (cleanImageSeriesFiles outputDir suffix)
+
+    let mapper (debug: bool) (idx: int64) (vector: VectorChunk<uint8>) =
+        cleaned.Force()
+        let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
+        try
+            if debug then
+                printfn $"[writeColorChunkSlices] Saved RGB chunk slice {idx} to {fileName}"
+            writeColorChunkTiffSlice fileName vector
+        finally
+            Chunk.decRef vector.Chunk
+
+    let memoryNeed = id
+    let memoryModel = StageMemoryModel.fromSinglePeak Iter memoryNeed
+    let timeCostModel =
+        imageIoCost<uint8>
+            "write"
+            Iter
+            $"writeColorChunkSlices.{suffixCostLabel suffix}.Color"
+            (fun input -> inputValue input)
+            (fun _ -> 1UL)
+
+    Stage.mapi $"writeColorChunkSlices \"{outputDir}/*{suffix}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 
 let writeSlabSlices<'T when 'T: equality> (outputDir: string) (suffix: string) (_winSz: uint) : Stage<Image<'T>, Image<'T>> =

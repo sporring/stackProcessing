@@ -14,8 +14,8 @@ let main arg =
             "../data/volume"
 
     src
-    |> read<uint8> input ".tiff"
-    >=> computeStats () --> print ()
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> chunkComputeStats<uint8> () --> print ()
     |> sink
 
     0

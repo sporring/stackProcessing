@@ -75,6 +75,7 @@ module Chunk =
     let mapVectorElementsFloat32 = ChunkPrimitive.mapVectorElementsFloat32
     let vectorDotFloat32 = ChunkPrimitive.vectorDotFloat32
     let vectorMagnitudeFloat32 = ChunkPrimitive.vectorMagnitudeFloat32
+    let vector3ToColorFloat32 = ChunkPrimitive.vector3ToColorFloat32
     let vectorAngleToFloat32 = ChunkPrimitive.vectorAngleToFloat32
     let inline toIndex width height x y z = ChunkPrimitive.toIndex width height x y z
     let inline ofIndex width height index = ChunkPrimitive.ofIndex width height index

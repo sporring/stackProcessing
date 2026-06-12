@@ -134,8 +134,8 @@ implementation before Chunk can act as the regular StackProcessing backbone.
     beyond the current low-level XY FFT and complex64-interleaved scalar helpers
   - structure tensor still needs a `VectorChunk` stage or should be explicitly
     marked legacy
-  - `speckleNoise`, bilateral filtering, grayscale morphology, label contour,
-    and change-label are not being ported for now.
+  - speckle noise, bilateral filtering, grayscale morphology, label contour,
+    and change-label are shelved and not being ported for now.
 - Slab bridges: `ofSlab` and `toSlab` need a Chunk-native shape. The current
   `Slab<'T>` record contains an `Image<'T>`, so either the record should become
   storage-polymorphic or a parallel `ChunkSlab<'T>` should be introduced.
@@ -152,6 +152,69 @@ implementation before Chunk can act as the regular StackProcessing backbone.
   label contour and exact spherical morphology.
 - Stack/unstack still need a Chunk policy. The simple structural single-Chunk
   transforms now live in `ChunkFunctions`.
+
+## Sample And Graph Status
+
+Preferred storage types for Chunk examples are `uint8`, `uint16`, `float32`,
+and complex64-interleaved `float32` where the algorithm supports them. The
+updated DSL samples intentionally use those types where it makes sense; a few
+Chunk stages still produce `float` internally, for example bias correction.
+
+Chunk-upgraded DSL samples now include:
+
+- `samples/createByEuler2DTransform`
+- `samples/showImage`
+- `samples/polygonMask`
+- `samples/noise`
+- `samples/shotNoise`
+- `samples/saltAndPepperNoise`
+- `samples/addSaltAndPepperNoise`
+- `samples/harris3DKeypoints`
+- `samples/hessianKeypoints`
+- `samples/forstner3DKeypoints`
+- `samples/siftKeypoints`
+- `samples/biasCorrection`
+- `samples/serialTransform`
+- `samples/objectsImage`
+- `samples/objectsMarchingCubes`
+- `samples/connectedComponents` for the hand-written DSL path. It now uses the
+  Chunk SAUF relabel/stitch phase directly and writes relabelled `uint32`
+  label slices without `WriteSlabSlices` or a temporary MHA stack.
+- `samples/sumProjection`
+- `samples/signedDistanceBand`
+- `samples/laplacian`
+- `samples/gradientMagnitude`
+- `samples/sobelEdge`
+- `samples/histogram`
+- `samples/histogramShared`
+- `samples/computeStats`
+- `samples/normalize`
+- `samples/quantileClamp`
+- `samples/histogramEqualization`
+- `samples/meshMeasurement`
+- `samples/blackTopHat`
+- `samples/whiteTopHat`
+- `samples/morphologicalGradient`
+
+Studio JSON graphs that use the corresponding boxes lower through the new
+Chunk stages automatically; their box IDs are mostly unchanged because the
+compiler now selects Chunk-backed stages for those boxes.
+
+Sample JSON graphs that still are not supported without Image or Slabs:
+
+- `samples/fft` because full FFT/inverse/shift workflows remain Image-backed.
+- `samples/structureTensor` and `samples/pcaGradientDirection` JSON graphs
+  because the handwritten DSL paths are Chunk-native now, but Studio vector
+  boxes still need a clear Float32 lowering policy and true RGB/vector sink
+  policy.
+- `samples/volume` because the standalone sample still needs the same
+  threshold-to-Chunk-volume cleanup now used by `samples/meshMeasurement`.
+- `samples/resize`, `samples/randomRigidTransform`,
+  `samples/affineKeypointRegistration`, and `samples/serialBiasCorrect`
+  because those geometric/registration variants still use Image-only paths.
+- `samples/binaryContour`, `samples/fillSmallHoles`, and
+  `samples/removeSmallObjects` because those morphology/object cleanup paths
+  remain Image-backed or intentionally deferred.
 
 ## Design Notes
 

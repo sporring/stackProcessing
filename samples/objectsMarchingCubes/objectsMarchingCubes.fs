@@ -19,8 +19,8 @@ let main args =
         Directory.CreateDirectory(directory) |> ignore
 
     src
-    |> read<uint8> input ".tiff"
-    >=> marchingCubes<uint8> 0.5
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> marchingCubesChunk<uint8> 0.5
     >=> writeMesh output ".obj"
     |> sink
 

@@ -13,11 +13,9 @@ let main args =
         | _ -> "../data/rotatingBoxes", "../tmp/signedDistanceBand"
 
     src
-    |> read<uint8> input ".tiff"
-    >=> imageDivScalar<uint8> 255uy
-    >=> signedDistanceBand 8u 4u
-    >=> cast<float, float32>
-    >=> write output ".tiff"
+    |> readChunkSlices<uint8> input ".tiff"
+    >=> chunkSignedDistanceBandNativeParallelCollect 8u 4u 4
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     0

@@ -631,6 +631,85 @@ module ChunkFunctions =
 
     let inline getMinMax chunk = minMax chunk
 
+    type ChunkStats =
+        { NumPixels: uint64
+          Mean: float
+          Std: float
+          Min: float
+          Max: float
+          Sum: float
+          Var: float }
+
+    let zeroStats =
+        { NumPixels = 0UL
+          Mean = 0.0
+          Std = 0.0
+          Min = Double.PositiveInfinity
+          Max = Double.NegativeInfinity
+          Sum = 0.0
+          Var = 0.0 }
+
+    let addStats (a: ChunkStats) (b: ChunkStats) =
+        if a.NumPixels = 0UL then
+            b
+        elif b.NumPixels = 0UL then
+            a
+        else
+            let nA = float a.NumPixels
+            let nB = float b.NumPixels
+            let n = nA + nB
+            let delta = b.Mean - a.Mean
+            let mean = a.Mean + delta * nB / n
+            let m2A = a.Var * max 0.0 (nA - 1.0)
+            let m2B = b.Var * max 0.0 (nB - 1.0)
+            let m2 = m2A + m2B + delta * delta * nA * nB / n
+            let var = if n > 1.0 then m2 / (n - 1.0) else 0.0
+
+            { NumPixels = a.NumPixels + b.NumPixels
+              Mean = mean
+              Std = sqrt var
+              Min = min a.Min b.Min
+              Max = max a.Max b.Max
+              Sum = a.Sum + b.Sum
+              Var = var }
+
+    let computeStats<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        (chunk: Chunk<'T>)
+        =
+        let values = span<'T> chunk
+        if values.Length = 0 then
+            zeroStats
+        else
+            let first = Convert.ToDouble(box values[0])
+            let mutable count = 1UL
+            let mutable mean = first
+            let mutable m2 = 0.0
+            let mutable minimum = first
+            let mutable maximum = first
+            let mutable sum = first
+            let mutable i = 1
+
+            while i < values.Length do
+                let value = Convert.ToDouble(box values[i])
+                count <- count + 1UL
+                let n = float count
+                let delta = value - mean
+                mean <- mean + delta / n
+                m2 <- m2 + delta * (value - mean)
+                if value < minimum then minimum <- value
+                if value > maximum then maximum <- value
+                sum <- sum + value
+                i <- i + 1
+
+            let var = if count > 1UL then m2 / float (count - 1UL) else 0.0
+            { NumPixels = count
+              Mean = mean
+              Std = sqrt var
+              Min = minimum
+              Max = maximum
+              Sum = sum
+              Var = var }
+
     let inline private clampRoundToByte (value: float32) =
         if Single.IsNaN value || value <= 0.0f then
             0uy
@@ -2132,3 +2211,169 @@ module ChunkFunctions =
         (chunk: Chunk<'T>)
         =
         histogramLeftEdgesBytes<'T> leftEdges chunk.Bytes chunk.ByteLength
+
+    let private denseDomain = function
+        | UInt8Counts counts -> counts, 0.0, 255.0
+        | Int8Counts counts -> counts, float SByte.MinValue, float SByte.MaxValue
+        | UInt16Counts counts -> counts, 0.0, float UInt16.MaxValue
+        | Int16Counts counts -> counts, float Int16.MinValue, float Int16.MaxValue
+
+    let private totalCounts (counts: uint64[]) =
+        counts |> Array.fold (fun acc count -> acc + count) 0UL
+
+    let private denseEqualizationLut dense =
+        let counts, outputMinimum, outputMaximum = denseDomain dense
+        let total = totalCounts counts
+        if total = 0UL then
+            invalidArg "histogram" "Histogram equalization needs at least one counted pixel."
+
+        let scale = (outputMaximum - outputMinimum) / float total
+        let lut = Array.zeroCreate<float> counts.Length
+        let mutable cumulative = 0UL
+        for i in 0 .. counts.Length - 1 do
+            cumulative <- cumulative + counts[i]
+            lut[i] <- outputMinimum + float cumulative * scale
+        lut
+
+    let private exactEqualizationLut<'T when 'T: comparison> (counts: Map<'T, uint64>) =
+        if counts.IsEmpty then
+            invalidArg "histogram" "Histogram equalization needs at least one counted pixel."
+
+        let ordered = counts |> Seq.map (fun pair -> pair.Key, pair.Value) |> Seq.sortBy fst |> Seq.toArray
+        let total = ordered |> Array.sumBy snd
+        if total = 0UL then
+            invalidArg "histogram" "Histogram equalization needs at least one counted pixel."
+
+        let minimum = ordered[0] |> fst |> box |> Convert.ToDouble
+        let maximum = ordered[ordered.Length - 1] |> fst |> box |> Convert.ToDouble
+        let scale =
+            if maximum = minimum then
+                0.0
+            else
+                (maximum - minimum) / float total
+
+        let lut = Dictionary<'T, float>()
+        let mutable cumulative = 0UL
+        for value, count in ordered do
+            cumulative <- cumulative + count
+            lut[value] <- minimum + float cumulative * scale
+        lut
+
+    let private leftEdgeEqualizationLut (histogram: LeftEdgeHistogram) =
+        let edges = validateLeftEdges histogram.LeftEdges
+        if histogram.Counts.Length <> edges.Length then
+            invalidArg "histogram" $"Left-edge histogram has {edges.Length} edges but {histogram.Counts.Length} counts."
+        let total = totalCounts histogram.Counts
+        if total = 0UL then
+            invalidArg "histogram" "Histogram equalization needs at least one counted pixel."
+
+        let outputMinimum = edges[0]
+        let outputMaximum = edges[edges.Length - 1]
+        let scale =
+            if outputMaximum = outputMinimum then
+                0.0
+            else
+                (outputMaximum - outputMinimum) / float total
+        let lut = Array.zeroCreate<float> edges.Length
+        let mutable cumulative = 0UL
+        for i in 0 .. edges.Length - 1 do
+            cumulative <- cumulative + histogram.Counts[i]
+            lut[i] <- outputMinimum + float cumulative * scale
+        edges, lut
+
+    let private convertEqualized<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: float) =
+        let t = typeof<'T>
+        if t = typeof<uint8> then
+            box (clampRoundToByte (float32 value)) :?> 'T
+        elif t = typeof<int8> then
+            box (clampRoundToSByte (float32 value)) :?> 'T
+        elif t = typeof<uint16> then
+            box (clampRoundToUInt16 (float32 value)) :?> 'T
+        elif t = typeof<int16> then
+            box (clampRoundToInt16 (float32 value)) :?> 'T
+        elif t = typeof<int32> then
+            box (clampRoundToInt32 (float32 value)) :?> 'T
+        elif t = typeof<uint32> then
+            box (uint32 (max 0.0 (min (float UInt32.MaxValue) (Math.Round value)))) :?> 'T
+        elif t = typeof<float32> then
+            box (float32 value) :?> 'T
+        elif t = typeof<float> then
+            box value :?> 'T
+        else
+            Convert.ChangeType(value, t) :?> 'T
+
+    let histogramEqualizationDense<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        dense
+        (chunk: Chunk<'T>)
+        =
+        let lut = denseEqualizationLut dense
+        let output = create<'T> chunk.Size
+        try
+            let inputPixels = span<'T> chunk
+            let outputPixels = span<'T> output
+            let t = typeof<'T>
+            if t = typeof<uint8> then
+                for i in 0 .. inputPixels.Length - 1 do
+                    let value = unbox<uint8> (box inputPixels[i])
+                    outputPixels[i] <- convertEqualized<'T> lut[int value]
+            elif t = typeof<int8> then
+                let offset = -int SByte.MinValue
+                for i in 0 .. inputPixels.Length - 1 do
+                    let value = unbox<int8> (box inputPixels[i])
+                    outputPixels[i] <- convertEqualized<'T> lut[int value + offset]
+            elif t = typeof<uint16> then
+                for i in 0 .. inputPixels.Length - 1 do
+                    let value = unbox<uint16> (box inputPixels[i])
+                    outputPixels[i] <- convertEqualized<'T> lut[int value]
+            elif t = typeof<int16> then
+                let offset = -int Int16.MinValue
+                for i in 0 .. inputPixels.Length - 1 do
+                    let value = unbox<int16> (box inputPixels[i])
+                    outputPixels[i] <- convertEqualized<'T> lut[int value + offset]
+            else
+                invalidArg "T" $"Dense histogram equalization supports UInt8, Int8, UInt16, and Int16 chunks, got {t.Name}."
+            output
+        with
+        | _ ->
+            decRef output
+            reraise()
+
+    let histogramEqualizationSparse<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        counts
+        (chunk: Chunk<'T>)
+        =
+        let lut = exactEqualizationLut counts
+        let output = create<'T> chunk.Size
+        try
+            let inputPixels = span<'T> chunk
+            let outputPixels = span<'T> output
+            for i in 0 .. inputPixels.Length - 1 do
+                match lut.TryGetValue inputPixels[i] with
+                | true, value -> outputPixels[i] <- convertEqualized<'T> value
+                | false, _ -> outputPixels[i] <- inputPixels[i]
+            output
+        with
+        | _ ->
+            decRef output
+            reraise()
+
+    let histogramEqualizationLeftEdges<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        histogram
+        (chunk: Chunk<'T>)
+        =
+        let edges, lut = leftEdgeEqualizationLut histogram
+        let output = create<'T> chunk.Size
+        try
+            let inputPixels = span<'T> chunk
+            let outputPixels = span<'T> output
+            for i in 0 .. inputPixels.Length - 1 do
+                let value = Convert.ToDouble(box inputPixels[i])
+                if Double.IsNaN value || Double.IsInfinity value then
+                    outputPixels[i] <- inputPixels[i]
+                else
+                    outputPixels[i] <- convertEqualized<'T> lut[leftEdgeBin edges value]
+            output
+        with
+        | _ ->
+            decRef output
+            reraise()

@@ -13,10 +13,10 @@ let main args =
         | _ -> "../data/volume", "../tmp/sobelEdge"
 
     src
-    |> read<float> input ".tiff"
-    >=> sobelEdge<float> None
-    >=> cast<float, uint8>
-    >=> write output ".tiff"
+    |> readChunkSlices<float32> input ".tiff"
+    >=> sobelMagnitudeNativeParallelCollect 4
+    >=> chunkCast<float32, uint8>
+    >=> writeChunkSlices output ".tiff"
     |> sink
 
     0

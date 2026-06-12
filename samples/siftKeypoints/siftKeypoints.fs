@@ -12,8 +12,9 @@ let main args =
         | _ -> "../tmp/siftKeypoints"
 
     src
-    |> normalNoise<float> 64u 64u 64u 128.0 25.0
-    >=> siftKeypoints<float> 3.0 1.6 4u 0.1 16u
+    |> chunkZero<float32> 64u 64u 64u
+    >=> chunkAddNormalNoise<float32> 128.0 25.0
+    >=> chunkSiftKeypoints<float32> 3.0 1.6 4u 0.1 16u
     >=> writePointSet output ".csv"
     |> sink
 
