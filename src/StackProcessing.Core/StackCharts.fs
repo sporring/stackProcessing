@@ -1,6 +1,8 @@
 module StackCharts
 
+open System
 open Plotly.NET
+open StackCore
 
 let private applyChartLabels title xAxis yAxis chart =
     let withTitle =
@@ -71,3 +73,29 @@ let showImageWithLabels colorMap title xAxis yAxis image =
 
 let showImage image =
     showImageWithLabels "Viridis" "" "" "" image
+
+let private chunkToSeqSeq<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
+    let width64, height64, depth64 = chunk.Size
+    if depth64 <> 1UL then
+        invalidArg "chunk" $"showChunk expects 2D slice chunks with depth 1, got {chunk.Size}."
+    if width64 > uint64 Int32.MaxValue || height64 > uint64 Int32.MaxValue then
+        invalidArg "chunk" $"showChunk dimensions must fit Int32, got {chunk.Size}."
+
+    let width = int width64
+    let height = int height64
+    let pixels = Chunk.span chunk
+    let rows = Array.zeroCreate<float[]> height
+    for y in 0 .. height - 1 do
+        let row = Array.zeroCreate<float> width
+        for x in 0 .. width - 1 do
+            row[x] <- Convert.ToDouble(pixels[Chunk.toIndex width height x y 0])
+        rows[y] <- row
+    rows |> Seq.map (fun row -> row :> seq<float>)
+
+let showChunkWithLabels<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> colorMap title xAxis yAxis chunk =
+    Chart.Heatmap(chunkToSeqSeq chunk, ColorScale = colorScale colorMap)
+    |> applyChartLabels title xAxis yAxis
+    |> Chart.show
+
+let showChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> chunk =
+    showChunkWithLabels "Viridis" "" "" "" chunk

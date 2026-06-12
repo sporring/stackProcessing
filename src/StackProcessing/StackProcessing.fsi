@@ -145,6 +145,22 @@ val showImageWithLabels:
   (string -> string -> string -> string -> Image.Image<'a> -> unit)
     when 'a: equality
 
+val showChunk<'T
+                when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+                     'T :> System.ValueType> :
+  chunk: StackCore.Chunk<int> -> unit
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val showChunkWithLabels<'T
+                          when 'T: equality and 'T: (new: unit -> 'T) and
+                               'T: struct and 'T :> System.ValueType> :
+  colorMap: string ->
+    title: string ->
+    xAxis: string -> yAxis: string -> chunk: StackCore.Chunk<int> -> unit
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
 type FileInfo = ImageFunctions.FileInfo
 
 type ChunkInfo = StackIO.ChunkInfo
@@ -387,6 +403,24 @@ val chunkCoordinateZ<'T
     when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
          'T :> System.ValueType
 
+val chunkPolygonMask:
+  (uint -> uint -> StackCore.Polygon2D -> StackCore.Chunk<uint8>)
+
+val chunkEuler2DTransformPath:
+  (uint ->
+     uint -> uint -> string -> uint -> (float * float * float) * (float * float))
+
+val chunkCreateByEuler2DTransformFromChunk<'T
+                                             when 'T: equality and
+                                                  'T: (new: unit -> 'T) and
+                                                  'T: struct and
+                                                  'T :> System.ValueType> :
+  (uint ->
+     (uint -> (float * float * float) * (float * float)) ->
+     StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
 val chunkRepeat<'T
                   when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
                        'T :> System.ValueType> :
@@ -475,6 +509,13 @@ val chunkEuler2DRotateNative<'T
     when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
          'T :> System.ValueType
 
+val chunkShow<'T
+                when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+                     'T :> System.ValueType> :
+  ((StackCore.Chunk<'T> -> unit) -> StackCore.Stage<StackCore.Chunk<'T>,unit>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
 val chunkSignedDistanceBandNativeParallelCollect:
   (uint32 ->
      uint32 ->
@@ -490,6 +531,138 @@ val chunkVectorMagnitudeFloat32:
 val chunkVectorAngleToFloat32:
   (float32 list ->
      StackCore.Stage<StackCore.VectorChunk<float32>,StackCore.Chunk<float32>>)
+
+val chunkToVectorImage<'T
+                         when 'T: equality and 'T: (new: unit -> 'T) and
+                              'T: struct and 'T :> System.ValueType> :
+  StackCore.Stage<(StackCore.Chunk<'T> * StackCore.Chunk<'T>),
+                  StackCore.VectorChunk<'T>>
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkVectorElement:
+  componentId: uint ->
+    StackCore.Stage<StackCore.VectorChunk<'T>,StackCore.Chunk<'T>>
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkVectorRange:
+  firstComponent: uint ->
+    componentCount: uint ->
+    StackCore.Stage<StackCore.VectorChunk<'T>,StackCore.VectorChunk<'T>>
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkAppendVectorElement<'T
+                               when 'T: equality and 'T: (new: unit -> 'T) and
+                                    'T: struct and 'T :> System.ValueType> :
+  StackCore.Stage<(StackCore.VectorChunk<'T> * StackCore.Chunk<'T>),
+                  StackCore.VectorChunk<'T>>
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkVectorMapElements:
+  (string ->
+     StackCore.Stage<StackCore.VectorChunk<float>,StackCore.VectorChunk<float>>)
+
+val chunkVector3ToColor:
+  (float ->
+     float ->
+     StackCore.Stage<StackCore.VectorChunk<float>,StackCore.VectorChunk<uint8>>)
+
+val chunkColorToVector3:
+  (float ->
+     float ->
+     StackCore.Stage<StackCore.VectorChunk<uint8>,StackCore.VectorChunk<float>>)
+
+val chunkVectorDot:
+  StackCore.Stage<(StackCore.VectorChunk<float> * StackCore.VectorChunk<float>),
+                  StackCore.Chunk<float>>
+
+val chunkVectorMagnitude:
+  StackCore.Stage<StackCore.VectorChunk<float>,StackCore.Chunk<float>>
+
+val chunkVectorCross3D:
+  StackCore.Stage<(StackCore.VectorChunk<float> * StackCore.VectorChunk<float>),
+                  StackCore.VectorChunk<float>>
+
+val chunkVectorAngleTo:
+  (float list ->
+     StackCore.Stage<StackCore.VectorChunk<float>,StackCore.Chunk<float>>)
+
+val chunkPCA:
+  (uint32 ->
+     StackCore.Stage<StackCore.VectorChunk<float>,StackCore.VectorChunk<float>>)
+
+val chunkSelectGroupedVectorOutput:
+  (uint ->
+     uint ->
+     StackCore.Stage<StackCore.VectorChunk<'a>,StackCore.VectorChunk<'a>>)
+    when 'a: equality
+
+val chunkToComplex64:
+  StackCore.Stage<(StackCore.Chunk<float> * StackCore.Chunk<float>),
+                  StackCore.Chunk<float32>>
+
+val chunkPolarToComplex64:
+  StackCore.Stage<(StackCore.Chunk<float> * StackCore.Chunk<float>),
+                  StackCore.Chunk<float32>>
+
+val chunkComplex64Real:
+  StackCore.Stage<StackCore.Chunk<float32>,StackCore.Chunk<float>>
+
+val chunkComplex64Imag:
+  StackCore.Stage<StackCore.Chunk<float32>,StackCore.Chunk<float>>
+
+val chunkComplex64Modulus:
+  StackCore.Stage<StackCore.Chunk<float32>,StackCore.Chunk<float>>
+
+val chunkComplex64Argument:
+  StackCore.Stage<StackCore.Chunk<float32>,StackCore.Chunk<float>>
+
+val chunkComplex64Conjugate:
+  StackCore.Stage<StackCore.Chunk<float32>,StackCore.Chunk<float32>>
+
+val chunkConnectedComponentsSauf3DUInt8UInt32:
+  (unit -> StackCore.Stage<StackCore.Chunk<uint8>,StackCore.Chunk<uint32>>)
+
+val chunkConnectedComponentsSauf3DUInt8UInt32ParallelCollect:
+  (int -> int -> StackCore.Stage<StackCore.Chunk<uint8>,StackCore.Chunk<uint32>>)
+
+val chunkConnectedComponentsSauf3DUInt8:
+  (unit -> StackCore.Stage<StackCore.Chunk<uint8>,StackCore.Chunk<uint64>>)
+
+val chunkHistogram<'T
+                     when 'T: comparison and 'T: (new: unit -> 'T) and
+                          'T: struct and 'T :> System.ValueType> :
+  (unit -> SlimPipeline.Stage<StackCore.Chunk<'T>,StackCore.Histogram<'T>>)
+    when 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkHistogramDense<'T
+                          when 'T: comparison and 'T: (new: unit -> 'T) and
+                               'T: struct and 'T :> System.ValueType> :
+  (unit -> SlimPipeline.Stage<StackCore.Chunk<'T>,StackCore.Histogram<'T>>)
+    when 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkHistogramLeftEdges<'T
+                              when 'T: equality and 'T: (new: unit -> 'T) and
+                                   'T: struct and 'T :> System.ValueType> :
+  (float seq ->
+     SlimPipeline.Stage<StackCore.Chunk<'T>,StackCore.Histogram<float>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkHistogramFixedBins<'T
+                              when 'T: equality and 'T: (new: unit -> 'T) and
+                                   'T: struct and 'T :> System.ValueType> :
+  (float ->
+     float ->
+     uint32 ->
+     SlimPipeline.Stage<StackCore.Chunk<'T>,StackCore.Histogram<float>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
 
 val chunkSumProjection<'T
                          when 'T: equality and 'T: (new: unit -> 'T) and
@@ -1854,6 +2027,13 @@ val marchingCubes<'T when 'T: equality> :
   (float -> StackCore.Stage<StackCore.Image<'T>,StackMesh.TriangleSet>)
     when 'T: equality
 
+val marchingCubesChunk<'T
+                         when 'T: equality and 'T: (new: unit -> 'T) and
+                              'T: struct and 'T :> System.ValueType> :
+  (float -> StackCore.Stage<StackCore.Chunk<'T>,StackMesh.TriangleSet>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
 val surfaceArea:
   (float -> float -> float -> StackCore.Stage<StackMesh.TriangleSet,float>)
 
@@ -1899,6 +2079,70 @@ val siftKeypoints<'T when 'T: equality> :
      uint ->
      float -> uint -> StackCore.Stage<StackCore.Image<'T>,StackPoints.PointSet>)
     when 'T: equality
+
+val chunkDogKeypoints<'T
+                        when 'T: equality and 'T: (new: unit -> 'T) and
+                             'T: struct and 'T :> System.ValueType> :
+  (float ->
+     float ->
+     uint ->
+     float -> uint -> StackCore.Stage<StackCore.Chunk<'T>,StackPoints.PointSet>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkLogBlobKeypoints<'T
+                            when 'T: equality and 'T: (new: unit -> 'T) and
+                                 'T: struct and 'T :> System.ValueType> :
+  (float ->
+     float -> uint -> StackCore.Stage<StackCore.Chunk<'T>,StackPoints.PointSet>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkHessianKeypoints<'T
+                            when 'T: equality and 'T: (new: unit -> 'T) and
+                                 'T: struct and 'T :> System.ValueType> :
+  (float ->
+     string ->
+     float -> uint -> StackCore.Stage<StackCore.Chunk<'T>,StackPoints.PointSet>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkHarris3DKeypoints<'T
+                             when 'T: equality and 'T: (new: unit -> 'T) and
+                                  'T: struct and 'T :> System.ValueType> :
+  (float ->
+     float ->
+     float ->
+     float -> uint -> StackCore.Stage<StackCore.Chunk<'T>,StackPoints.PointSet>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkForstner3DKeypoints<'T
+                               when 'T: equality and 'T: (new: unit -> 'T) and
+                                    'T: struct and 'T :> System.ValueType> :
+  (float ->
+     float ->
+     float -> uint -> StackCore.Stage<StackCore.Chunk<'T>,StackPoints.PointSet>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkPhaseCongruencyKeypoints<'T
+                                    when 'T: equality and 'T: (new: unit -> 'T) and
+                                         'T: struct and 'T :> System.ValueType> :
+  (float ->
+     float -> uint -> StackCore.Stage<StackCore.Chunk<'T>,StackPoints.PointSet>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkSiftKeypoints<'T
+                         when 'T: equality and 'T: (new: unit -> 'T) and
+                              'T: struct and 'T :> System.ValueType> :
+  (float ->
+     float ->
+     uint ->
+     float -> uint -> StackCore.Stage<StackCore.Chunk<'T>,StackPoints.PointSet>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
 
 val resize<'T when 'T: equality> :
   (uint ->
@@ -2060,6 +2304,52 @@ val serialApplyManifestInBoundingBox<'T when 'T: equality> :
   (StackSerialSections.SerialSliceManifest ->
      obj -> StackCore.Stage<StackCore.Image<'T>,StackCore.Image<'T>>)
     when 'T: equality
+
+val chunkSerialEstTrans<'T
+                          when 'T: equality and 'T: (new: unit -> 'T) and
+                               'T: struct and 'T :> System.ValueType> :
+  (int ->
+     string ->
+     float ->
+     float ->
+     StackCore.Stage<StackCore.Chunk<'T>,
+                     (StackCore.Chunk<'T> *
+                      StackSerialSections.SerialSliceManifest)>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkSerialEstBoundingBox<'T when 'T: equality> :
+  StackCore.Stage<(StackCore.Chunk<'T> * StackSerialSections.SerialSliceManifest),
+                  StackSerialSections.SerialVolumeGeometry> when 'T: equality
+
+val chunkSerialApplyTrans<'T
+                            when 'T: equality and 'T: (new: unit -> 'T) and
+                                 'T: struct and 'T :> System.ValueType> :
+  ('T ->
+     StackSerialSections.SerialVolumeGeometry option ->
+     StackCore.Stage<(StackCore.Chunk<'T> *
+                      StackSerialSections.SerialSliceManifest),
+                     StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
+
+val chunkSerialTransChunk<'T when 'T: equality> :
+  StackCore.Stage<(StackCore.Chunk<'T> * StackSerialSections.SerialSliceManifest),
+                  StackCore.Chunk<'T>> when 'T: equality
+
+val chunkSerialTransManifest<'T when 'T: equality> :
+  StackCore.Stage<(StackCore.Chunk<'T> * StackSerialSections.SerialSliceManifest),
+                  StackSerialSections.SerialSliceManifest> when 'T: equality
+
+val chunkSerialApplyManifestInBoundingBox<'T
+                                            when 'T: equality and
+                                                 'T: (new: unit -> 'T) and
+                                                 'T: struct and
+                                                 'T :> System.ValueType> :
+  (StackSerialSections.SerialSliceManifest ->
+     'T -> StackCore.Stage<StackCore.Chunk<'T>,StackCore.Chunk<'T>>)
+    when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and
+         'T :> System.ValueType
 
 val quantiles:
   (float list -> StackCore.Histogram<'a> -> float list) when 'a: comparison

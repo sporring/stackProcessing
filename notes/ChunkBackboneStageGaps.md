@@ -89,6 +89,32 @@ implementation before Chunk can act as the regular StackProcessing backbone.
     comparisons, mask logic, sum projection, and the streaming object
     workflow (`streamConnectedObjectsChunk`, `paintObjectsChunk`, and cropped
     painting).
+  - Chunk Studio lowering for polygon masks, bias correction
+    (`fitBiasModelChunk*`/`correctBiasChunk*`), vector dot/cross/angle,
+    `VectorChunk` PCA, and marching cubes over Chunk slices.
+  - More `VectorChunk` list-backed replacements: component range,
+    append-element, element mapping, vector-to-color, and color-to-vector
+    stages. These are native Chunk operations, but Studio still needs a clear
+    sink/display policy for vector-valued outputs.
+  - Complex64-interleaved Chunk construction and scalar operations:
+    real/imaginary composition, polar composition, real, imaginary, modulus,
+    argument, and conjugate. These share the same doubled-width `[re; im]`
+    `Chunk<float32>` convention as the existing Chunk FFT/Zarr path.
+  - Chunk keypoint stages for DoG/SIFT, LoG blob, Hessian, Harris3D, Forstner3D,
+    and phase-congruency detectors. They use pure dense-volume Gaussian
+    smoothing now; emitted Z is currently window-local because plain
+    `Chunk<'T>` slices do not carry an absolute slice index.
+  - A first Chunk-native serial-section subset: slice-to-slice translation
+    estimation by SSD, serial bounding-box reduction, manifest extraction, and
+    nearest-neighbour transform application. The old affine/SIFT serial
+    registration behavior is not fully reproduced yet.
+  - Euler-transform source creation now builds the polygon mask as a
+    `Chunk<uint8>`, repeats it as Chunk slices, casts to the requested output
+    type, and emits transformed slices through the native Chunk Euler 2D path.
+  - Chunk image display and histogram chart lowering exist for Studio:
+    `ShowImage` lowers through `chunkShow`/`showChunkWithLabels`, and
+    `ImHistogram`/`ImHistogramData` use Chunk histogram reducers before the
+    existing chart helpers.
     
 
 ## Still Needing Chunk Versions
@@ -99,33 +125,28 @@ implementation before Chunk can act as the regular StackProcessing backbone.
   default source/sink is switched to Chunk:
   - slab TIFF readers (`readSlab`) and a Chunk-native policy for formerly
     slab-shaped workflows
-  - `polygonMask` and Euler-transform source creation
-  - image stats, volume reducers, histogram reducers/quantiles, and chart/show
-    stages
-  - bias correction stages in `StackBias.fs` still lower as Image stages in
-    Studio despite the Chunk work started there
-  - serial registration/section stages still produce and consume Image streams
-  - connected-components/relabel/update translation-table Studio paths still
-    use Image stages even though Chunk SAUF labels exist
-  - complex construction/arithmetic, full FFT workflows, and complex IO/write
-    decisions still need Chunk policy beyond the current low-level XY FFT
-  - list-backed vector-image Studio boxes (`toVectorImage`, element/range,
-    color conversion, dot/cross/angle, PCA, structure tensor) need to lower to
-    `VectorChunk` stages or be explicitly marked legacy
+  - image stats, volume reducers, histogram quantiles/equalization, and the
+    remaining scalar/vector chart or display policies
+  - connected-components relabel/update translation-table Studio paths still
+    use Image stages; the direct Chunk SAUF label stage exists, but the old
+    labels-plus-object-count tuple shape is intentionally not recreated yet
+  - full FFT workflows and complex IO/write decisions still need Chunk policy
+    beyond the current low-level XY FFT and complex64-interleaved scalar helpers
+  - structure tensor still needs a `VectorChunk` stage or should be explicitly
+    marked legacy
   - `speckleNoise`, bilateral filtering, grayscale morphology, label contour,
-    change-label, marching cubes, and keypoints remain
-    Image-backed in generated Studio graphs.
+    and change-label are not being ported for now.
 - Slab bridges: `ofSlab` and `toSlab` need a Chunk-native shape. The current
   `Slab<'T>` record contains an `Image<'T>`, so either the record should become
   storage-polymorphic or a parallel `ChunkSlab<'T>` should be introduced.
 - Higher-level vector-valued operations still need Chunk stages or kernels:
-  structure-tensor helpers and vector color conversion.
+  structure-tensor helpers.
 - Some geometric and resampling operations remain Image/ITK paths for now.
   Affine resampling has a first simple Chunk-slice stage, but it still needs
   optimization before it should be considered final.
-- Full FFT workflows and complex-valued arithmetic remain Image/ITK paths.
-  The Chunk path currently has native XY FFT for `Float32` chunks to
-  complex64-interleaved `Float32` storage. Also, it needs speedup!
+- Full FFT workflows remain Image/ITK paths. The Chunk path currently has
+  native XY FFT for `Float32` chunks to complex64-interleaved `Float32` storage
+  plus simple complex64-interleaved scalar helpers. Also, it needs speedup!
 - Exact or ITK-backed neighbourhood filters still need either native Chunk
   versions or explicit bridge decisions:
   label contour and exact spherical morphology.

@@ -9,6 +9,7 @@ open System.Threading.Tasks
 open FSharp.Control
 open SlimPipeline
 open StackCore
+open TinyLinAlg
 
 module ChunkKernel = ChunkCore.ChunkFunctions
 
@@ -110,6 +111,73 @@ let chunkCoordinateZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: stru
     let stage = chunkSourceStage $"chunkCoordinateZ.{typeof<'T>.Name}" width height depth mapper |> Some
     chunkSourcePlan pl width height depth stage
 
+let private pointInPolygon (polygon: Polygon2D) x y =
+    let px = float x + 0.5
+    let py = float y + 0.5
+    let vertices = polygon |> List.toArray
+    let mutable inside = false
+
+    if vertices.Length >= 3 then
+        let mutable j = vertices.Length - 1
+        for i in 0 .. vertices.Length - 1 do
+            let xi = vertices[i].X
+            let yi = vertices[i].Y
+            let xj = vertices[j].X
+            let yj = vertices[j].Y
+            let crosses = (yi > py) <> (yj > py)
+            if crosses then
+                let xIntersect = (xj - xi) * (py - yi) / (yj - yi) + xi
+                if px < xIntersect then
+                    inside <- not inside
+            j <- i
+
+    inside
+
+let chunkPolygonMask
+    (width: uint)
+    (height: uint)
+    (polygon: Polygon2D)
+    : Chunk<uint8> =
+    if width = 0u then invalidArg "width" "chunkPolygonMask width must be positive."
+    if height = 0u then invalidArg "height" "chunkPolygonMask height must be positive."
+
+    let chunk = Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
+    chunk.Bytes.AsSpan(0, chunk.ByteLength).Clear()
+    let pixels = Chunk.span chunk
+    let widthI = int width
+    let heightI = int height
+
+    for y in 0 .. heightI - 1 do
+        for x in 0 .. widthI - 1 do
+            if pointInPolygon polygon x y then
+                pixels[Chunk.toIndex widthI heightI x y 0] <- 1uy
+
+    chunk
+
+let euler2DTransformPath (width: uint) (height: uint) (depth: uint) (transform: string) =
+    if width = 0u then invalidArg "width" "chunkEuler2DTransformPath requires a positive width."
+    if height = 0u then invalidArg "height" "chunkEuler2DTransformPath requires a positive height."
+    if depth = 0u then invalidArg "depth" "chunkEuler2DTransformPath requires a positive depth."
+
+    let centerX = float width / 2.0 - 0.5
+    let centerY = float height / 2.0 - 0.5
+
+    fun (i: uint) ->
+        let dx = float i
+        let angle = 2.0 * Math.PI * float i / float depth
+
+        match transform.Trim().ToLowerInvariant() with
+        | "antidiagonal"
+        | "anti diagonal"
+        | "anti-diagonal" ->
+            (centerX, centerY, angle), (float width - dx - centerX, dx - centerY)
+        | "topdown"
+        | "top down"
+        | "top-down" ->
+            (centerX, centerY, angle), (0.0, dx - centerY)
+        | _ ->
+            (centerX, centerY, angle), (0.0, 0.0)
+
 let chunkRepeat<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (chunk: Chunk<'T>)
     (depth: uint)
@@ -147,6 +215,32 @@ let chunkRepeatStage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: stru
     --> flattenList ()
     |> Stage.withSliceCardinality SliceCardinality.unknown
 
+let createByEuler2DTransformFromChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (depth: uint)
+    (transform: uint -> (float * float * float) * (float * float))
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    if depth = 0u then invalidArg "depth" "createByEuler2DTransformFromChunk requires a positive depth."
+
+    let mapper _debug _idx (chunk: Chunk<'T>) =
+        try
+            let _width, _height, chunkDepth = chunk.Size
+            if chunkDepth <> 1UL then
+                invalidArg "chunk" $"createByEuler2DTransformFromChunk expects 2D slice chunks with depth 1, got {chunk.Size}."
+
+            [ for i in 0 .. int depth - 1 ->
+                let rotation, translation = transform (uint i)
+                ChunkKernel.euler2DTransformNativeChunk<'T> rotation translation chunk ]
+        finally
+            Chunk.decRef chunk
+
+    Stage.mapi
+        $"chunkCreateByEuler2DTransformFromChunk.{typeof<'T>.Name}.{depth}"
+        mapper
+        (fun n -> n * uint64 depth)
+        (fun _ -> uint64 depth)
+    --> flattenList ()
+    |> Stage.withSliceCardinality (SliceCardinality.reduceTo (uint64 depth))
+
 let releaseUnaryChunk name f memoryNeed : Stage<Chunk<'T>, Chunk<'U>> =
     let mapper _debug chunk =
         try
@@ -180,6 +274,15 @@ let releaseBinaryChunk name f memoryNeed : Stage<Chunk<'T> * Chunk<'U>, Chunk<'V
     Stage.map name mapper memoryNeed id
 
 let releaseUnaryVectorChunk name f memoryNeed : Stage<VectorChunk<'T>, Chunk<'U>> =
+    let mapper _debug (vector: VectorChunk<'T>) =
+        try
+            f vector
+        finally
+            Chunk.decRef vector.Chunk
+
+    Stage.map name mapper memoryNeed id
+
+let releaseUnaryVectorToVectorChunk name f memoryNeed : Stage<VectorChunk<'T>, VectorChunk<'U>> =
     let mapper _debug (vector: VectorChunk<'T>) =
         try
             f vector
@@ -266,6 +369,18 @@ let euler2DRotateNative<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: s
         (ChunkKernel.euler2DRotateNativeChunk<'T> center angle)
         (fun n -> 2UL * chunkMemoryNeed<'T> n)
 
+let show<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (plt: Chunk<'T> -> unit)
+    : Stage<Chunk<'T>, unit> =
+    let consumer (debug: bool) (idx: int) (chunk: Chunk<'T>) =
+        try
+            if debug && DebugLevel.current() >= 2u then printfn "[chunkShow] Showing chunk %d" idx
+            plt chunk
+        finally
+            Chunk.decRef chunk
+
+    Stage.consumeWith "chunkShow" consumer id
+
 let private zeroUInt8ChunkLike _index (source: Chunk<uint8>) =
     let width, height, depth = source.Size
     if depth <> 1UL then
@@ -323,6 +438,171 @@ let connectedComponentsSauf3DUInt8 () = StackConnectedComponents.connectedCompon
 
 let fftXYFloat32ToComplex64Interleaved = StackFFT.fftXYFloat32ToComplex64Interleaved
 let fftXYFloat32ToComplex64InterleavedParallelCollect workers = StackFFT.fftXYFloat32ToComplex64InterleavedParallelCollect workers
+let toComplex64 = StackFFT.toComplex64
+let polarToComplex64 = StackFFT.polarToComplex64
+let complex64Real = StackFFT.complex64Real
+let complex64Imag = StackFFT.complex64Imag
+let complex64Modulus = StackFFT.complex64Modulus
+let complex64Argument = StackFFT.complex64Argument
+let complex64Conjugate = StackFFT.complex64Conjugate
+
+let toVectorImage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    : Stage<Chunk<'T> * Chunk<'T>, VectorChunk<'T>> =
+    let mapper (a: Chunk<'T>) (b: Chunk<'T>) =
+        try
+            Chunk.toVectorImage [ a; b ]
+        finally
+            Chunk.decRef a
+            Chunk.decRef b
+
+    Stage.map $"chunkToVectorImage.{typeof<'T>.Name}" (fun _ (a, b) -> mapper a b) (fun n -> 4UL * chunkMemoryNeed<'T> n) id
+
+let vectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (componentId: uint)
+    : Stage<VectorChunk<'T>, Chunk<'T>> =
+    releaseUnaryVectorChunk
+        $"chunkVectorElement.{typeof<'T>.Name}.{componentId}"
+        (Chunk.vectorElement<'T> componentId)
+        (fun n -> 2UL * chunkMemoryNeed<'T> n)
+
+let vectorRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (firstComponent: uint)
+    (componentCount: uint)
+    : Stage<VectorChunk<'T>, VectorChunk<'T>> =
+    let stageName = $"chunkVectorRange.{typeof<'T>.Name}.{firstComponent}.{componentCount}"
+    releaseUnaryVectorToVectorChunk stageName (Chunk.vectorRange<'T> firstComponent componentCount) (fun n -> 2UL * chunkMemoryNeed<'T> n)
+
+let appendVectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    : Stage<VectorChunk<'T> * Chunk<'T>, VectorChunk<'T>> =
+    let mapper _debug ((vector, element): VectorChunk<'T> * Chunk<'T>) =
+        try
+            Chunk.appendVectorElement vector element
+        finally
+            Chunk.decRef vector.Chunk
+            Chunk.decRef element
+
+    Stage.map $"chunkAppendVectorElement.{typeof<'T>.Name}" mapper (fun n -> 3UL * chunkMemoryNeed<'T> n) id
+
+let private vectorElementFunction functionName =
+    match functionName with
+    | "sqrt" -> sqrt
+    | "square" -> fun x -> x * x
+    | "abs" -> abs
+    | "log" -> log
+    | "exp" -> exp
+    | other -> invalidArg "functionName" $"Unsupported vector element function '{other}'."
+
+let vectorMapElements functionName : Stage<VectorChunk<float>, VectorChunk<float>> =
+    let f = vectorElementFunction functionName
+    releaseUnaryVectorToVectorChunk
+        $"chunkVectorMapElements.{functionName}"
+        (Chunk.mapVectorElements f)
+        (fun n -> 2UL * chunkMemoryNeed<float> n)
+
+let vector3ToColor inputMinimum inputMaximum : Stage<VectorChunk<float>, VectorChunk<uint8>> =
+    releaseUnaryVectorToVectorChunk "chunkVector3ToColor" (Chunk.vector3ToColor inputMinimum inputMaximum) (fun n -> n * uint64 (chunkElementBytes<float> + chunkElementBytes<uint8>))
+
+let colorToVector3 outputMinimum outputMaximum : Stage<VectorChunk<uint8>, VectorChunk<float>> =
+    releaseUnaryVectorToVectorChunk "chunkColorToVector3" (Chunk.colorToVector3 outputMinimum outputMaximum) (fun n -> n * uint64 (chunkElementBytes<uint8> + chunkElementBytes<float>))
+
+let vectorDot : Stage<VectorChunk<float> * VectorChunk<float>, Chunk<float>> =
+    releaseBinaryVectorChunk
+        "chunkVectorDot"
+        Chunk.vectorDot
+        (fun n -> 3UL * chunkMemoryNeed<float> n)
+
+let vectorMagnitude : Stage<VectorChunk<float>, Chunk<float>> =
+    releaseUnaryVectorChunk
+        "chunkVectorMagnitude"
+        Chunk.vectorMagnitude
+        (fun n -> 2UL * chunkMemoryNeed<float> n)
+
+let vectorCross3D : Stage<VectorChunk<float> * VectorChunk<float>, VectorChunk<float>> =
+    let mapper _debug ((a, b): VectorChunk<float> * VectorChunk<float>) =
+        try
+            Chunk.vectorCross3D a b
+        finally
+            Chunk.decRef a.Chunk
+            Chunk.decRef b.Chunk
+
+    Stage.map "chunkVectorCross3D" mapper (fun n -> 3UL * chunkMemoryNeed<float> n) id
+
+let vectorAngleTo reference : Stage<VectorChunk<float>, Chunk<float>> =
+    releaseUnaryVectorChunk
+        "chunkVectorAngleTo"
+        (Chunk.vectorAngleTo reference)
+        (fun n -> 2UL * chunkMemoryNeed<float> n)
+
+let PCA components : Stage<VectorChunk<float>, VectorChunk<float>> =
+    if components < 2u then invalidArg "components" "Chunk PCA needs at least two vector components."
+    let componentsI = int components
+
+    let outputVector (values: float list) : VectorChunk<float> =
+        let chunk = Chunk.create<float> (uint64 values.Length, 1UL, 1UL)
+        let pixels = Chunk.span chunk
+        let valuesArray = values |> List.toArray
+        for i in 0 .. valuesArray.Length - 1 do
+            pixels[i] <- valuesArray[i]
+        { SpatialSize = (1UL, 1UL, 1UL)
+          Components = uint32 values.Length
+          Chunk = chunk }
+
+    let reducer (_debug: bool) (input: AsyncSeq<VectorChunk<float>>) =
+        async {
+            let! state =
+                input
+                |> AsyncSeq.foldAsync
+                    (fun state vector ->
+                        async {
+                            try
+                                if vector.Components <> uint32 componentsI then
+                                    invalidArg "vector" $"Chunk PCA expected {componentsI}-component vector chunks, got {vector.Components} components."
+
+                                let pixels = (Chunk.vectorSpan vector).ToArray()
+                                let spatialCount = pixels.Length / componentsI
+                                let mutable state = state
+
+                                for i in 0 .. spatialCount - 1 do
+                                    let values = [ for c in 0 .. componentsI - 1 -> pixels[i * componentsI + c] ]
+                                    state <- addPcaVector state values
+
+                                return state
+                            finally
+                                Chunk.decRef vector.Chunk
+                        })
+                    (zeroPcaAccumulator componentsI)
+
+            let eigen = pcaEigenSystem state
+            let eigenvalues = eigen |> List.map fst
+            return
+                [ yield outputVector eigenvalues
+                  for _, vector in eigen do
+                      yield outputVector vector ]
+        }
+
+    Stage.reduce "chunkPCA" reducer Streaming (fun _ -> uint64 ((componentsI + 1) * componentsI * sizeof<float>)) (fun _ -> uint64 (componentsI + 1))
+    --> flattenList ()
+
+let selectGroupedVectorOutput<'T when 'T: equality>
+    (groupSize: uint)
+    (part: uint)
+    : Stage<VectorChunk<'T>, VectorChunk<'T>> =
+    if groupSize = 0u then
+        invalidArg "groupSize" "chunkSelectGroupedVectorOutput: groupSize must be positive."
+    if part >= groupSize then
+        invalidArg "part" $"chunkSelectGroupedVectorOutput: part must be smaller than groupSize ({groupSize})."
+
+    Stage.mapi
+        "chunkSelectGroupedVectorOutput"
+        (fun _ index vector ->
+            if uint (index % int64 groupSize) = part then
+                [ vector ]
+            else
+                Chunk.decRef vector.Chunk
+                [])
+        id
+        (fun slices -> (slices + uint64 groupSize - 1UL) / uint64 groupSize)
+    --> flattenList ()
 
 let vectorDotFloat32 : Stage<VectorChunk<float32> * VectorChunk<float32>, Chunk<float32>> =
     releaseBinaryVectorChunk
@@ -994,6 +1274,19 @@ let histogramLeftEdgesReducer<'T when 'T: equality and 'T: (new: unit -> 'T) and
         }
 
     Stage.reduce $"chunkHistogramLeftEdges.{typeof<'T>.Name}" reducer Streaming (fun _ -> uint64 edges.Length * 8UL) (fun _ -> 1UL)
+
+let histogramFixedBinsReducer<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    firstLeftEdge
+    lastLeftEdge
+    bins =
+    if bins = 0u then invalidArg "bins" "chunkHistogramFixedBins needs at least one bin."
+    let edges =
+        if bins = 1u then
+            [| firstLeftEdge |]
+        else
+            let step = (lastLeftEdge - firstLeftEdge) / float (bins - 1u)
+            [| for i in 0 .. int bins - 1 -> firstLeftEdge + float i * step |]
+    histogramLeftEdgesReducer<'T> edges
 
 let convolveFixedKernel<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> kernel =
     StackConvolve.convolveFixedKernel<'T> kernel

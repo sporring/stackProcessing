@@ -358,7 +358,7 @@ let toVectorImage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct 
             decRef output.Chunk
             reraise()
 
-let vectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> componentId (vector: VectorChunk<'T>) =
+let vectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (componentId: uint) (vector: VectorChunk<'T>) =
     validateVectorStorage "vector" vector
     let selectedComponent = int componentId
     let components = checkedComponents vector.Components
@@ -375,6 +375,32 @@ let vectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct 
     with
     | _ ->
         decRef output
+        reraise()
+
+let vectorRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (firstComponent: uint) (componentCount: uint) (vector: VectorChunk<'T>) =
+    validateVectorStorage "vector" vector
+    if componentCount = 0u then
+        invalidArg "componentCount" "vectorRange needs at least one component."
+    if firstComponent + componentCount > vector.Components then
+        invalidArg "componentCount" $"vectorRange requested {firstComponent}..{firstComponent + componentCount - 1u}, but vector has {vector.Components} components."
+
+    let inputComponents = checkedComponents vector.Components
+    let outputComponents = checkedComponents componentCount
+    let first = int firstComponent
+    let output = createVectorChunk<'T> vector.SpatialSize componentCount
+    try
+        let inputPixels = vectorSpan vector
+        let outputPixels = vectorSpan output
+        let spatialCount = outputPixels.Length / outputComponents
+
+        for i in 0 .. spatialCount - 1 do
+            for c in 0 .. outputComponents - 1 do
+                outputPixels[vectorFlatIndex i outputComponents c] <- inputPixels[vectorFlatIndex i inputComponents (first + c)]
+
+        output
+    with
+    | _ ->
+        decRef output.Chunk
         reraise()
 
 let appendVectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (vector: VectorChunk<'T>) (element: Chunk<'T>) =
@@ -410,6 +436,47 @@ let mapVectorElements (f: float -> float) (vector: VectorChunk<float>) =
         let outputPixels = vectorSpan output
         for i in 0 .. inputPixels.Length - 1 do
             outputPixels[i] <- f inputPixels[i]
+        output
+    with
+    | _ ->
+        decRef output.Chunk
+        reraise()
+
+let vector3ToColor inputMinimum inputMaximum (vector: VectorChunk<float>) =
+    validateVectorStorage "vector" vector
+    if inputMaximum <= inputMinimum then
+        invalidArg "inputMaximum" "vector3ToColor input maximum must be greater than input minimum."
+    if vector.Components <> 3u then
+        invalidArg "vector" $"vector3ToColor expects 3 components, got {vector.Components}."
+
+    let output = createVectorChunk<uint8> vector.SpatialSize 3u
+    try
+        let inputPixels = vectorSpan vector
+        let outputPixels = vectorSpan output
+        let scale = 255.0 / (inputMaximum - inputMinimum)
+        for i in 0 .. inputPixels.Length - 1 do
+            let value = (inputPixels[i] - inputMinimum) * scale
+            outputPixels[i] <- byte (max 0.0 (min 255.0 (Math.Round value)))
+        output
+    with
+    | _ ->
+        decRef output.Chunk
+        reraise()
+
+let colorToVector3 outputMinimum outputMaximum (vector: VectorChunk<uint8>) =
+    validateVectorStorage "vector" vector
+    if outputMaximum <= outputMinimum then
+        invalidArg "outputMaximum" "colorToVector3 output maximum must be greater than output minimum."
+    if vector.Components <> 3u then
+        invalidArg "vector" $"colorToVector3 expects 3 components, got {vector.Components}."
+
+    let output = createVectorChunk<float> vector.SpatialSize 3u
+    try
+        let inputPixels = vectorSpan vector
+        let outputPixels = vectorSpan output
+        let scale = (outputMaximum - outputMinimum) / 255.0
+        for i in 0 .. inputPixels.Length - 1 do
+            outputPixels[i] <- outputMinimum + float inputPixels[i] * scale
         output
     with
     | _ ->
