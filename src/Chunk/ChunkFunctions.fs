@@ -209,6 +209,62 @@ module ChunkFunctions =
             int outputStart,
             int outputCount)
 
+        [<DllImport(LibraryPath, EntryPoint = "sp_convolve_int8_slices")>]
+        extern void convolveInt8Slices(
+            nativeint slices,
+            nativeint outputs,
+            nativeint kernel,
+            int width,
+            int height,
+            int windowLength,
+            int kernelWidth,
+            int kernelHeight,
+            int kernelDepth,
+            int outputStart,
+            int outputCount)
+
+        [<DllImport(LibraryPath, EntryPoint = "sp_convolve_uint16_slices")>]
+        extern void convolveUInt16Slices(
+            nativeint slices,
+            nativeint outputs,
+            nativeint kernel,
+            int width,
+            int height,
+            int windowLength,
+            int kernelWidth,
+            int kernelHeight,
+            int kernelDepth,
+            int outputStart,
+            int outputCount)
+
+        [<DllImport(LibraryPath, EntryPoint = "sp_convolve_int16_slices")>]
+        extern void convolveInt16Slices(
+            nativeint slices,
+            nativeint outputs,
+            nativeint kernel,
+            int width,
+            int height,
+            int windowLength,
+            int kernelWidth,
+            int kernelHeight,
+            int kernelDepth,
+            int outputStart,
+            int outputCount)
+
+        [<DllImport(LibraryPath, EntryPoint = "sp_convolve_int32_slices")>]
+        extern void convolveInt32Slices(
+            nativeint slices,
+            nativeint outputs,
+            nativeint kernel,
+            int width,
+            int height,
+            int windowLength,
+            int kernelWidth,
+            int kernelHeight,
+            int kernelDepth,
+            int outputStart,
+            int outputCount)
+
         [<DllImport(LibraryPath, EntryPoint = "sp_convolve_uint8_x_slices")>]
         extern void convolveUInt8XSlices(
             nativeint slices,
@@ -294,6 +350,45 @@ module ChunkFunctions =
             int outputStart,
             int outputCount,
             int axis)
+
+        [<DllImport(LibraryPath, EntryPoint = "sp_convolve_float32_vector_components_x_slices")>]
+        extern int convolveFloat32VectorComponentsXSlices(
+            nativeint slices,
+            nativeint outputs,
+            nativeint kernel,
+            int width,
+            int height,
+            int components,
+            int windowLength,
+            int kernelLength,
+            int outputStart,
+            int outputCount)
+
+        [<DllImport(LibraryPath, EntryPoint = "sp_convolve_float32_vector_components_y_slices")>]
+        extern int convolveFloat32VectorComponentsYSlices(
+            nativeint slices,
+            nativeint outputs,
+            nativeint kernel,
+            int width,
+            int height,
+            int components,
+            int windowLength,
+            int kernelLength,
+            int outputStart,
+            int outputCount)
+
+        [<DllImport(LibraryPath, EntryPoint = "sp_convolve_float32_vector_components_z_slices")>]
+        extern int convolveFloat32VectorComponentsZSlices(
+            nativeint slices,
+            nativeint outputs,
+            nativeint kernel,
+            int width,
+            int height,
+            int components,
+            int windowLength,
+            int kernelLength,
+            int outputStart,
+            int outputCount)
 
         [<DllImport(LibraryPath, EntryPoint = "sp_signed_distance_band_uint8_slices")>]
         extern int signedDistanceBandUInt8Slices(
@@ -1900,19 +1995,48 @@ module ChunkFunctions =
                 kernelHandle <- GCHandle.Alloc(kernel, GCHandleType.Pinned)
                 kernelPinned <- true
 
-                NativeMedian.convolveFloat32VectorComponentsSlices(
-                    inputPointerHandle.AddrOfPinnedObject(),
-                    outputPointerHandle.AddrOfPinnedObject(),
-                    kernelHandle.AddrOfPinnedObject(),
-                    width,
-                    height,
-                    components,
-                    window.Length,
-                    kernel.Length,
-                    outputStart,
-                    outputCount,
-                    axis)
-                |> NativeSp.checkStatus "sp_convolve_float32_vector_components_slices"
+                let status =
+                    match axis with
+                    | 0 ->
+                        NativeMedian.convolveFloat32VectorComponentsXSlices(
+                            inputPointerHandle.AddrOfPinnedObject(),
+                            outputPointerHandle.AddrOfPinnedObject(),
+                            kernelHandle.AddrOfPinnedObject(),
+                            width,
+                            height,
+                            components,
+                            window.Length,
+                            kernel.Length,
+                            outputStart,
+                            outputCount)
+                    | 1 ->
+                        NativeMedian.convolveFloat32VectorComponentsYSlices(
+                            inputPointerHandle.AddrOfPinnedObject(),
+                            outputPointerHandle.AddrOfPinnedObject(),
+                            kernelHandle.AddrOfPinnedObject(),
+                            width,
+                            height,
+                            components,
+                            window.Length,
+                            kernel.Length,
+                            outputStart,
+                            outputCount)
+                    | 2 ->
+                        NativeMedian.convolveFloat32VectorComponentsZSlices(
+                            inputPointerHandle.AddrOfPinnedObject(),
+                            outputPointerHandle.AddrOfPinnedObject(),
+                            kernelHandle.AddrOfPinnedObject(),
+                            width,
+                            height,
+                            components,
+                            window.Length,
+                            kernel.Length,
+                            outputStart,
+                            outputCount)
+                    | _ ->
+                        invalidArg "axis" $"Native vector-component convolution axis must be 0, 1, or 2, got {axis}."
+
+                status |> NativeSp.checkStatus "sp_convolve_float32_vector_components_axis_slices"
 
                 outputs |> Array.toList
             with

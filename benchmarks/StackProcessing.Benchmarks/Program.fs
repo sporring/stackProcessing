@@ -74,6 +74,7 @@ Run:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-xy-float32-zarr --shape WxHxD --input DIR --output ZARR [--chunk-size N] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-z-complex64-zarr --shape WxHxD --input ZARR --output ZARR [--chunk-size N]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-native-float32-zarr --shape WxHxD --input DIR --output ZARR [--chunk-size N] [--workers N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-fft3d-kernel --shape WxHxD [--variant simpleitk|lowlevel|all] [--iterations N]
 
 ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-arraypool --operation copy|threshold|connectedComponents --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X]
@@ -131,6 +132,12 @@ let private writeInternalSeconds (elapsed: TimeSpan) =
 
 let private benchmarkSource availableMemory =
     sourceWithOptimizer false availableMemory
+
+let private benchmarkSourceWithDebug debugLevel availableMemory =
+    if debugLevel >= 2u then
+        debug debugLevel false availableMemory
+    else
+        benchmarkSource availableMemory
 
 let private runTask (task: Threading.Tasks.Task<'T>) : 'T =
     task.GetAwaiter().GetResult()
@@ -1283,57 +1290,32 @@ let private runChunkConvolveTyped<'T when 'T: equality and 'T: (new: unit -> 'T)
     workers
     native
     availableMemory
+    debugLevel
     =
     ensureCleanDirectory output
     if workers < 1 then
         invalidArg "workers" $"Chunk convolution expects at least one worker/window, got {workers}."
 
-    let src = benchmarkSource availableMemory
-    if typeof<'T> = typeof<float32> then
-        let kernel = uniformKernel3DFloat32 kernelSize
-        let convolution =
-            if native then
-                if workers = 1 then
-                    ChunkFunctions.convolveFixedKernelNativeFloat32 kernel
-                else
-                    ChunkFunctions.convolveFixedKernelNativeFloat32Parallel kernel workers
-            else
-                if workers = 1 then
-                    ChunkFunctions.convolveFixedKernel<float32> kernel
-                else
-                    ChunkFunctions.convolveFixedKernelParallel<float32> kernel workers
-
-        src
-        |> read<float32> input ".tiff"
-        >=> convolution
-        >=> write<float32> output ".tiff"
-        |> sink
-    elif typeof<'T> = typeof<uint8> && native then
-        let kernel = uniformKernel3DFloat32 kernelSize
+    let src = benchmarkSourceWithDebug debugLevel availableMemory
+    let kernel = uniformKernel3DFloat32 kernelSize
+    if native then
         let convolution =
             if workers = 1 then
-                ChunkFunctions.convolveFixedKernelNativeUInt8 kernel
+                ChunkFunctions.convolveFixedKernelNative<'T> kernel
             else
-                ChunkFunctions.convolveFixedKernelNativeUInt8Parallel kernel workers
+                ChunkFunctions.convolveFixedKernelNativeParallel<'T> kernel workers
 
         src
-        |> read<uint8> input ".tiff"
+        |> read<'T> input ".tiff"
         >=> convolution
-        >=> write<uint8> output ".tiff"
+        >=> write<'T> output ".tiff"
         |> sink
     else
-        let kernel = uniformKernel3DFloat32 kernelSize
         let convolution =
-            if native then
-                if workers = 1 then
-                    ChunkFunctions.convolveFixedKernelNativeFloat32 kernel
-                else
-                    ChunkFunctions.convolveFixedKernelNativeFloat32Parallel kernel workers
+            if workers = 1 then
+                ChunkFunctions.convolveFixedKernel<float32> kernel
             else
-                if workers = 1 then
-                    ChunkFunctions.convolveFixedKernel<float32> kernel
-                else
-                    ChunkFunctions.convolveFixedKernelParallel<float32> kernel workers
+                ChunkFunctions.convolveFixedKernelParallel<float32> kernel workers
 
         src
         |> read<'T> input ".tiff"
@@ -2618,19 +2600,159 @@ let private runChunkFftNativeFloat32Zarr opts =
     writeInternalSeconds stopwatch.Elapsed
     0
 
-let private runConnectedComponents input output windowSize availableMemory =
-    ensureCleanDirectory output
-    let window = max 1u windowSize
-    let src = benchmarkSource availableMemory
+type Fft3DKernelVariant =
+    | Fft3DSimpleItk
+    | Fft3DLowlevel
 
-    src
-    |> read<uint8> input ".tiff"
-    >=> thresholdRange<uint8> 128.0 infinity
-    >=> connectedComponentsUInt32Windowed (int window) Environment.ProcessorCount
-    >=> cast<uint32, uint8>
-    >=> write<uint8> output ".tiff"
-    |> sink
-    0
+let private parseFft3DKernelVariant value =
+    match value with
+    | "simpleitk" | "SimpleITK" | "sitk" -> [ Fft3DSimpleItk ]
+    | "lowlevel" | "native" | "fftw" | "xy-z" -> [ Fft3DLowlevel ]
+    | "all" | "All" | "ALL" -> [ Fft3DSimpleItk; Fft3DLowlevel ]
+    | _ -> failwith $"unsupported FFT3D kernel variant '{value}'"
+
+let private fft3DKernelVariantName variant =
+    match variant with
+    | Fft3DSimpleItk -> "simpleitk"
+    | Fft3DLowlevel -> "lowlevel-xy-z"
+
+let private fft3DInputValue x y z =
+    let value = (x * 17 + y * 31 + z * 43 + (x ^^^ y ^^^ z) * 7) &&& 1023
+    (float32 value - 512.0f) / 512.0f
+
+let private fft3DInputArray (shape: Shape) =
+    let width = int shape.Width
+    let height = int shape.Height
+    let depth = int shape.Depth
+    Array3D.init width height depth fft3DInputValue
+
+let private fillInterleavedComplex64FromReal (source: float32[,,]) (target: float32[]) =
+    let width = source.GetLength 0
+    let height = source.GetLength 1
+    let depth = source.GetLength 2
+    let mutable offset = 0
+    for z in 0 .. depth - 1 do
+        for y in 0 .. height - 1 do
+            for x in 0 .. width - 1 do
+                target[offset] <- source[x, y, z]
+                target[offset + 1] <- 0.0f
+                offset <- offset + 2
+
+let private checksumComplex64Interleaved (values: float32[]) =
+    let stride = max 2 ((values.Length / 4096) &&& ~~~1)
+    let mutable checksum = 2166136261u
+    let mutable i = 0
+    while i < values.Length do
+        checksum <- (checksum * 16777619u) ^^^ uint32 (BitConverter.SingleToInt32Bits values[i])
+        checksum <- (checksum * 16777619u) ^^^ uint32 (BitConverter.SingleToInt32Bits values[i + 1])
+        i <- i + stride
+    checksum <- (checksum * 16777619u) ^^^ uint32 values.Length
+    checksum
+
+let private checksumComplexFloat32Array3D (values: ComplexFloat32[,,]) =
+    let width = values.GetLength 0
+    let height = values.GetLength 1
+    let depth = values.GetLength 2
+    let total = width * height * depth
+    let stride = max 1 (total / 4096)
+    let mutable checksum = 2166136261u
+    let mutable linear = 0
+    while linear < total do
+        let x = linear % width
+        let y = (linear / width) % height
+        let z = linear / (width * height)
+        let value = values[x, y, z]
+        checksum <- (checksum * 16777619u) ^^^ uint32 (BitConverter.SingleToInt32Bits value.Real)
+        checksum <- (checksum * 16777619u) ^^^ uint32 (BitConverter.SingleToInt32Bits value.Imaginary)
+        linear <- linear + stride
+    checksum <- (checksum * 16777619u) ^^^ uint32 total
+    checksum
+
+let private runSimpleItkFft3DKernel iterations (input: Image<float32>) =
+    let mutable last = Unchecked.defaultof<Image<ComplexFloat32>>
+    let stopwatch = Stopwatch.StartNew()
+    try
+        for _ in 1 .. iterations do
+            if not (isNull (box last)) then
+                last.decRefCount()
+            use fft = new itk.simple.ForwardFFTImageFilter()
+            use inputItk = input.toSimpleITK()
+            let transformed = fft.Execute(inputItk)
+            last <- Image<ComplexFloat32>.ofSimpleITKNDispose(transformed, "fft3d.simpleitk", 0)
+        stopwatch.Stop()
+        let checksum = last.toComplexFloat32Array3D() |> checksumComplexFloat32Array3D
+        stopwatch.Elapsed, checksum
+    finally
+        if not (isNull (box last)) then
+            last.decRefCount()
+
+let private runLowlevelFft3DKernel iterations (source: float32[,,]) =
+    let width = source.GetLength 0
+    let height = source.GetLength 1
+    let depth = source.GetLength 2
+    let planeComplex = width * height
+    let planeValues = planeComplex * 2
+    let values = Array.zeroCreate<float32> (planeValues * depth)
+    let handle = GCHandle.Alloc(values, GCHandleType.Pinned)
+    try
+        let basePointer = handle.AddrOfPinnedObject()
+        let stopwatch = Stopwatch.StartNew()
+        for _ in 1 .. iterations do
+            fillInterleavedComplex64FromReal source values
+            for z in 0 .. depth - 1 do
+                let planePointer = IntPtr.Add(basePointer, z * planeValues * sizeof<float32>)
+                Chunk.NativeSp.fftwfComplexXYInplace(planePointer, width, height, 0)
+                |> Chunk.NativeSp.checkStatus "fft3d.lowlevel.xy"
+            Chunk.NativeSp.fftwfComplexZInplace(basePointer, width, height, depth, 0)
+            |> Chunk.NativeSp.checkStatus "fft3d.lowlevel.z"
+        stopwatch.Stop()
+        stopwatch.Elapsed, checksumComplex64Interleaved values
+    finally
+        handle.Free()
+
+let private runFft3DKernel opts =
+    let shape = require "shape" opts |> parseShape
+    let iterations = optional "iterations" "1" opts |> Int32.Parse
+    if iterations < 1 then
+        invalidArg "iterations" $"FFT3D kernel benchmark expects positive iterations, got {iterations}."
+    if shape.Width > uint Int32.MaxValue || shape.Height > uint Int32.MaxValue || shape.Depth > uint Int32.MaxValue then
+        invalidArg "shape" $"FFT3D kernel benchmark dimensions must fit Int32, got {shape.Width}x{shape.Height}x{shape.Depth}."
+
+    let variants = optional "variant" "all" opts |> parseFft3DKernelVariant
+    let source = fft3DInputArray shape
+    let inputImage =
+        if variants |> List.contains Fft3DSimpleItk then
+            Some (Image<float32>.ofArray3D(source, "fft3d.input", 0))
+        else
+            None
+
+    try
+        let mutable total = TimeSpan.Zero
+        for variant in variants do
+            let elapsed, checksum =
+                match variant with
+                | Fft3DSimpleItk -> runSimpleItkFft3DKernel iterations inputImage.Value
+                | Fft3DLowlevel -> runLowlevelFft3DKernel iterations source
+            total <- total + elapsed
+            printfn
+                "variant=%s shape=%ux%ux%u iterations=%d totalSeconds=%s perIterationSeconds=%s checksum=%u"
+                (fft3DKernelVariantName variant)
+                shape.Width
+                shape.Height
+                shape.Depth
+                iterations
+                (elapsed.TotalSeconds.ToString("F9", invariant))
+                ((elapsed.TotalSeconds / float iterations).ToString("F9", invariant))
+                checksum
+
+        writeInternalSeconds total
+        0
+    finally
+        inputImage |> Option.iter (fun image -> image.decRefCount())
+
+let private runConnectedComponents input output windowSize availableMemory =
+    let window = max 1u windowSize
+    runChunkConnectedComponents input (Some output) 128.0 (Some (int window)) 3 availableMemory
 
 let private run opts =
     let operation = require "operation" opts
@@ -2639,6 +2761,7 @@ let private run opts =
     let output = require "output" opts
     let radius = optional "radius" "1" opts |> UInt32.Parse
     let windowSize = optional "window" "16" opts |> UInt32.Parse
+    let workerCount = optional "workers" "3" opts |> Int32.Parse
     let kernelSize = optional "kernel-size" "3" opts |> UInt32.Parse
     let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
     let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
@@ -2652,6 +2775,8 @@ let private run opts =
         | "threshold", UInt16 -> runChunkThresholdTyped<uint16> input output thresholdValue availableMemory
         | "threshold", Float32 -> runChunkThresholdTyped<float32> input output thresholdValue availableMemory
         | "median", UInt8 -> runChunkMedianStandardUInt8 input output radius availableMemory
+        | "median", UInt16 -> runChunkMedianNativeNthUInt16 input output radius workerCount availableMemory
+        | "median", Float32 -> runChunkMedianNativeNthFloat32 input output radius workerCount availableMemory
         | "median-ph", UInt8 -> runChunkMedianPhUInt8 input output radius availableMemory
         | "median-ph", _ -> failwith "median-ph benchmark is currently defined for UInt8 chunks only"
         | "median-ph-ybands", UInt8 -> runChunkMedianPhYBandsUInt8 input output radius (int windowSize) availableMemory
@@ -2675,7 +2800,9 @@ let private run opts =
         | "median-native-nth", UInt16 -> runChunkMedianNativeNthUInt16 input output radius (int windowSize) availableMemory
         | "median-native-nth", Int32 -> runChunkMedianNativeNthInt32 input output radius (int windowSize) availableMemory
         | "median-native-nth", Float32 -> runChunkMedianNativeNthFloat32 input output radius (int windowSize) availableMemory
-        | "convolve", _ -> failwith "The old generic convolve benchmark used an Image-stage bridge; use run-chunk-convolve instead."
+        | "convolve", UInt8 -> runChunkConvolveTyped<uint8> input output kernelSize workerCount true availableMemory 0u
+        | "convolve", UInt16 -> runChunkConvolveTyped<uint16> input output kernelSize workerCount true availableMemory 0u
+        | "convolve", Float32 -> runChunkConvolveTyped<float32> input output kernelSize workerCount true availableMemory 0u
         | "dilate", UInt8 -> runBinaryDilateTyped<uint8> input output radius availableMemory
         | "dilate", UInt16 -> runBinaryDilateTyped<uint16> input output radius availableMemory
         | "dilate", Int32 -> runBinaryDilateTyped<int32> input output radius availableMemory
@@ -2811,15 +2938,16 @@ let private runChunkConvolve opts =
     let workers = optional "workers" "1" opts |> Int32.Parse
     let native = optional "native" "false" opts |> Boolean.Parse
     let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+    let debugLevel = optional "debug-level" "0" opts |> UInt32.Parse
 
     let stopwatch = Stopwatch.StartNew()
     let exitCode =
         match pixelType with
-        | ChunkUInt8 -> runChunkConvolveTyped<uint8> input output kernelSize workers native availableMemory
-        | ChunkInt8 -> runChunkConvolveTyped<int8> input output kernelSize workers native availableMemory
-        | ChunkUInt16 -> runChunkConvolveTyped<uint16> input output kernelSize workers native availableMemory
-        | ChunkInt16 -> runChunkConvolveTyped<int16> input output kernelSize workers native availableMemory
-        | ChunkFloat32 -> runChunkConvolveTyped<float32> input output kernelSize workers native availableMemory
+        | ChunkUInt8 -> runChunkConvolveTyped<uint8> input output kernelSize workers native availableMemory debugLevel
+        | ChunkInt8 -> runChunkConvolveTyped<int8> input output kernelSize workers native availableMemory debugLevel
+        | ChunkUInt16 -> runChunkConvolveTyped<uint16> input output kernelSize workers native availableMemory debugLevel
+        | ChunkInt16 -> runChunkConvolveTyped<int16> input output kernelSize workers native availableMemory debugLevel
+        | ChunkFloat32 -> runChunkConvolveTyped<float32> input output kernelSize workers native availableMemory debugLevel
 
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
@@ -4056,6 +4184,7 @@ let main args =
         | _ when args[0] = "run-chunk-fft-xy-float32-zarr" -> args[1..] |> parseArgs |> runChunkFftXYFloat32Zarr
         | _ when args[0] = "run-chunk-fft-z-complex64-zarr" -> args[1..] |> parseArgs |> runChunkFftZComplex64Zarr
         | _ when args[0] = "run-chunk-fft-native-float32-zarr" -> args[1..] |> parseArgs |> runChunkFftNativeFloat32Zarr
+        | _ when args[0] = "run-fft3d-kernel" -> args[1..] |> parseArgs |> runFft3DKernel
         | _ when args[0] = "run-arraypool" -> args[1..] |> parseArgs |> runArrayPool
         | _ when args[0] = "run-arraypool-slice" -> args[1..] |> parseArgs |> runArrayPoolSlice
         | _ when args[0] = "run-arraypool-slice-reuse" -> args[1..] |> parseArgs |> runArrayPoolSliceReuse

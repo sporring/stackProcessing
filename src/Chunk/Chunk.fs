@@ -5,6 +5,103 @@ open System.Buffers
 open System.Runtime.CompilerServices
 open System.Runtime.InteropServices
 
+type ChunkStats =
+    { Created: int64
+      Released: int64
+      IncRef: int64
+      DecRef: int64
+      Live: int64
+      PeakLive: int64
+      LiveBytes: int64
+      PeakLiveBytes: int64 }
+
+module ChunkStats =
+    let private gate = obj()
+    let mutable private created = 0L
+    let mutable private released = 0L
+    let mutable private incRef = 0L
+    let mutable private decRef = 0L
+    let mutable private live = 0L
+    let mutable private peakLive = 0L
+    let mutable private liveBytes = 0L
+    let mutable private peakLiveBytes = 0L
+    let mutable private debugLevel = 0u
+
+    let private mib bytes =
+        float bytes / (1024.0 * 1024.0)
+
+    let private chunkId (refCount: int ref) =
+        RuntimeHelpers.GetHashCode(refCount)
+
+    let private printDebugMessage event typeName byteLength (refCount: int ref) currentRefCount =
+        if debugLevel >= 2u then
+            printfn
+                "%8d KB / %8d KB %3d / %3d Chunks %s chunk=%08x type=%s bytes=%d refCount=%d"
+                (liveBytes / 1024L)
+                (peakLiveBytes / 1024L)
+                live
+                peakLive
+                event
+                (chunkId refCount)
+                typeName
+                byteLength
+                currentRefCount
+
+    let setDebugLevel level =
+        lock gate (fun () ->
+            debugLevel <- level)
+
+    let reset () =
+        lock gate (fun () ->
+            created <- 0L
+            released <- 0L
+            incRef <- 0L
+            decRef <- 0L
+            live <- 0L
+            peakLive <- 0L
+            liveBytes <- 0L
+            peakLiveBytes <- 0L)
+
+    let recordCreate typeName byteLength refCount =
+        lock gate (fun () ->
+            created <- created + 1L
+            live <- live + 1L
+            liveBytes <- liveBytes + int64 byteLength
+            peakLive <- max peakLive live
+            peakLiveBytes <- max peakLiveBytes liveBytes
+            printDebugMessage "Created ArrayPool buffer for" typeName byteLength refCount refCount.Value)
+
+    let recordIncRef typeName byteLength refCount currentRefCount =
+        lock gate (fun () ->
+            incRef <- incRef + 1L
+            printDebugMessage "Increased reference to" typeName byteLength refCount currentRefCount)
+
+    let recordDecRef typeName byteLength refCount currentRefCount =
+        lock gate (fun () ->
+            decRef <- decRef + 1L
+            printDebugMessage "Decreased reference to" typeName byteLength refCount currentRefCount)
+
+    let recordRelease typeName byteLength refCount =
+        lock gate (fun () ->
+            released <- released + 1L
+            live <- live - 1L
+            liveBytes <- liveBytes - int64 byteLength
+            printDebugMessage "Returned ArrayPool buffer for" typeName byteLength refCount 0)
+
+    let snapshot () =
+        lock gate (fun () ->
+            { Created = created
+              Released = released
+              IncRef = incRef
+              DecRef = decRef
+              Live = live
+              PeakLive = peakLive
+              LiveBytes = liveBytes
+              PeakLiveBytes = peakLiveBytes })
+
+    let format (stats: ChunkStats) =
+        $"created={stats.Created}, released={stats.Released}, live={stats.Live}, peakLive={stats.PeakLive}, incRef={stats.IncRef}, decRef={stats.DecRef}, liveBytes={stats.LiveBytes} ({mib stats.LiveBytes:F1} MiB), peakLiveBytes={stats.PeakLiveBytes} ({mib stats.PeakLiveBytes:F1} MiB)"
+
 type ChunkLayout =
     { VolumeSize: uint64 * uint64 * uint64
       ChunkSize: uint64 * uint64 * uint64
@@ -194,32 +291,42 @@ let create<'T when 'T: equality> size : Chunk<'T> =
     if expected > uint64 Int32.MaxValue then
         invalidArg "size" $"Chunk byte buffer length must fit in Int32 for ArrayPool<byte>; got {expected}."
     let bytes = ArrayPool<byte>.Shared.Rent(int expected)
+    let refCount = ref 1
+    ChunkStats.recordCreate typeof<'T>.Name (int expected) refCount
     { Size = size
       Bytes = bytes
       ByteLength = int expected
-      Release = fun () -> ArrayPool<byte>.Shared.Return(bytes)
-      RefCount = ref 1 }
+      Release = fun () ->
+          ChunkStats.recordRelease typeof<'T>.Name (int expected) refCount
+          ArrayPool<byte>.Shared.Return(bytes)
+      RefCount = refCount }
 
 let span<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
     MemoryMarshal.Cast<byte, 'T>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
 
-let incRef chunk =
+let incRef<'T when 'T: equality> (chunk: Chunk<'T>) =
+    let mutable currentRefCount = 0
     lock chunk.RefCount (fun () ->
         if chunk.RefCount.Value <= 0 then
             invalidOp "Cannot increment a released chunk."
-        chunk.RefCount.Value <- chunk.RefCount.Value + 1)
+        chunk.RefCount.Value <- chunk.RefCount.Value + 1
+        currentRefCount <- chunk.RefCount.Value)
+    ChunkStats.recordIncRef typeof<'T>.Name chunk.ByteLength chunk.RefCount currentRefCount
     chunk
 
-let decRef chunk =
+let decRef<'T when 'T: equality> (chunk: Chunk<'T>) =
+    let mutable currentRefCount = 0
     let shouldRelease =
         lock chunk.RefCount (fun () ->
             chunk.RefCount.Value <- chunk.RefCount.Value - 1
+            currentRefCount <- chunk.RefCount.Value
             if chunk.RefCount.Value = 0 then
                 true
             elif chunk.RefCount.Value < 0 then
                 invalidOp "Chunk.decRef called after the chunk was already released."
             else
                 false)
+    ChunkStats.recordDecRef typeof<'T>.Name chunk.ByteLength chunk.RefCount currentRefCount
     if shouldRelease then
         chunk.Release()
 

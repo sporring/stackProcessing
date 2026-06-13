@@ -8,9 +8,9 @@
 #include <fftw3.h>
 
 #if defined(_WIN32)
-#define SP_MEDIAN_API __declspec(dllexport)
+#define SP_LOWLEVEL_API __declspec(dllexport)
 #else
-#define SP_MEDIAN_API
+#define SP_LOWLEVEL_API
 #endif
 
 static std::mutex fftwf_planner_mutex;
@@ -47,16 +47,19 @@ static void median_nth_slab(
 
                     for (int dy = -radius; dy <= radius; ++dy) {
                         const int yy = y + dy;
-                        for (int dx = -radius; dx <= radius; ++dx) {
-                            const int xx = x + dx;
-                            if (input_slice != nullptr &&
-                                0 <= xx && xx < width &&
-                                0 <= yy && yy < height) {
-                                scratch[static_cast<size_t>(k)] = input_slice[yy * width + xx];
-                            } else {
+                        if (input_slice == nullptr || yy < 0 || yy >= height) {
+                            for (int dx = -radius; dx <= radius; ++dx) {
                                 scratch[static_cast<size_t>(k)] = static_cast<T>(0);
+                                ++k;
                             }
-                            ++k;
+                        } else {
+                            const int row = yy * width;
+                            for (int dx = -radius; dx <= radius; ++dx) {
+                                const int xx = x + dx;
+                                scratch[static_cast<size_t>(k)] =
+                                    (0 <= xx && xx < width) ? input_slice[row + xx] : static_cast<T>(0);
+                                ++k;
+                            }
                         }
                     }
                 }
@@ -66,117 +69,6 @@ static void median_nth_slab(
                 auto last = first + count;
                 std::nth_element(first, nth, last);
                 output_slice[y * width + x] = *nth;
-            }
-        }
-    }
-}
-
-static void convolve_float32_slab(
-    const float* const* slices,
-    float* output,
-    const float* kernel,
-    int width,
-    int height,
-    int window_length,
-    int kernel_width,
-    int kernel_height,
-    int kernel_depth,
-    int output_start,
-    int output_count)
-{
-    const int plane = width * height;
-    const int pad_x = kernel_width / 2;
-    const int pad_y = kernel_height / 2;
-    const int pad_z = kernel_depth / 2;
-
-    for (int out_z = 0; out_z < output_count; ++out_z) {
-        const int center_z = output_start + out_z;
-        float* output_slice = output + out_z * plane;
-
-        for (int y = 0; y < height; ++y) {
-            for (int x = 0; x < width; ++x) {
-                float acc = 0.0f;
-
-                for (int kz = 0; kz < kernel_depth; ++kz) {
-                    const int zz = center_z + kz - pad_z;
-                    if (zz < 0 || zz >= window_length) {
-                        continue;
-                    }
-
-                    const float* input_slice = slices[zz];
-                    for (int ky = 0; ky < kernel_height; ++ky) {
-                        const int yy = y + ky - pad_y;
-                        if (yy < 0 || yy >= height) {
-                            continue;
-                        }
-
-                        const int source_row = yy * width;
-                        const int kernel_row = (kz * kernel_height + ky) * kernel_width;
-                        for (int kx = 0; kx < kernel_width; ++kx) {
-                            const int xx = x + kx - pad_x;
-                            if (0 <= xx && xx < width) {
-                                acc += input_slice[source_row + xx] * kernel[kernel_row + kx];
-                            }
-                        }
-                    }
-                }
-
-                output_slice[y * width + x] = acc;
-            }
-        }
-    }
-}
-
-static void convolve_float32_slice_outputs(
-    const float* const* slices,
-    float* const* outputs,
-    const float* kernel,
-    int width,
-    int height,
-    int window_length,
-    int kernel_width,
-    int kernel_height,
-    int kernel_depth,
-    int output_start,
-    int output_count)
-{
-    const int pad_x = kernel_width / 2;
-    const int pad_y = kernel_height / 2;
-    const int pad_z = kernel_depth / 2;
-
-    for (int out_z = 0; out_z < output_count; ++out_z) {
-        const int center_z = output_start + out_z;
-        float* output_slice = outputs[out_z];
-
-        for (int y = 0; y < height; ++y) {
-            for (int x = 0; x < width; ++x) {
-                float acc = 0.0f;
-
-                for (int kz = 0; kz < kernel_depth; ++kz) {
-                    const int zz = center_z + kz - pad_z;
-                    if (zz < 0 || zz >= window_length) {
-                        continue;
-                    }
-
-                    const float* input_slice = slices[zz];
-                    for (int ky = 0; ky < kernel_height; ++ky) {
-                        const int yy = y + ky - pad_y;
-                        if (yy < 0 || yy >= height) {
-                            continue;
-                        }
-
-                        const int source_row = yy * width;
-                        const int kernel_row = (kz * kernel_height + ky) * kernel_width;
-                        for (int kx = 0; kx < kernel_width; ++kx) {
-                            const int xx = x + kx - pad_x;
-                            if (0 <= xx && xx < width) {
-                                acc += input_slice[source_row + xx] * kernel[kernel_row + kx];
-                            }
-                        }
-                    }
-                }
-
-                output_slice[y * width + x] = acc;
             }
         }
     }
@@ -197,40 +89,33 @@ static inline uint8_t convolve_uint8_guarded_pixel(
     const uint8_t* const* slices,
     const float* kernel,
     int width,
-    int height,
-    int window_length,
     int kernel_width,
     int kernel_height,
-    int kernel_depth,
     int pad_x,
     int pad_y,
     int pad_z,
     int center_z,
     int x,
-    int y)
+    int y,
+    int kz_begin,
+    int kz_end,
+    int ky_begin,
+    int ky_end,
+    int kx_begin,
+    int kx_end)
 {
     float acc = 0.0f;
 
-    for (int kz = 0; kz < kernel_depth; ++kz) {
+    for (int kz = kz_begin; kz < kz_end; ++kz) {
         const int zz = center_z + kz - pad_z;
-        if (zz < 0 || zz >= window_length) {
-            continue;
-        }
-
         const uint8_t* input_slice = slices[zz];
-        for (int ky = 0; ky < kernel_height; ++ky) {
+        for (int ky = ky_begin; ky < ky_end; ++ky) {
             const int yy = y + ky - pad_y;
-            if (yy < 0 || yy >= height) {
-                continue;
-            }
-
             const int source_row = yy * width;
             const int kernel_row = (kz * kernel_height + ky) * kernel_width;
-            for (int kx = 0; kx < kernel_width; ++kx) {
+            for (int kx = kx_begin; kx < kx_end; ++kx) {
                 const int xx = x + kx - pad_x;
-                if (0 <= xx && xx < width) {
-                    acc += static_cast<float>(input_slice[source_row + xx]) * kernel[kernel_row + kx];
-                }
+                acc += static_cast<float>(input_slice[source_row + xx]) * kernel[kernel_row + kx];
             }
         }
     }
@@ -254,80 +139,101 @@ static void convolve_uint8_slice_outputs(
     const int pad_x = kernel_width / 2;
     const int pad_y = kernel_height / 2;
     const int pad_z = kernel_depth / 2;
+    const int x_begin = pad_x;
+    const int x_end = width - pad_x;
+    const int y_begin = pad_y;
+    const int y_end = height - pad_y;
 
     for (int out_z = 0; out_z < output_count; ++out_z) {
         const int center_z = output_start + out_z;
         uint8_t* output_slice = outputs[out_z];
         const bool full_z = 0 <= center_z - pad_z && center_z + pad_z < window_length;
-        const int x_begin = pad_x;
-        const int x_end = width - pad_x;
-        const int y_begin = pad_y;
-        const int y_end = height - pad_y;
         const bool has_interior = full_z && x_begin < x_end && y_begin < y_end;
+        const int kz_begin = full_z ? 0 : std::max(0, pad_z - center_z);
+        const int kz_end = full_z ? kernel_depth : std::min(kernel_depth, window_length - center_z + pad_z);
 
         if (!has_interior) {
             for (int y = 0; y < height; ++y) {
+                const int ky_begin = std::max(0, pad_y - y);
+                const int ky_end = std::min(kernel_height, height - y + pad_y);
                 for (int x = 0; x < width; ++x) {
+                    const int kx_begin = std::max(0, pad_x - x);
+                    const int kx_end = std::min(kernel_width, width - x + pad_x);
                     output_slice[y * width + x] =
                         convolve_uint8_guarded_pixel(
                             slices,
                             kernel,
                             width,
-                            height,
-                            window_length,
                             kernel_width,
                             kernel_height,
-                            kernel_depth,
                             pad_x,
                             pad_y,
                             pad_z,
                             center_z,
                             x,
-                            y);
+                            y,
+                            kz_begin,
+                            kz_end,
+                            ky_begin,
+                            ky_end,
+                            kx_begin,
+                            kx_end);
                 }
             }
             continue;
         }
 
         for (int y = 0; y < y_begin; ++y) {
+            const int ky_begin = std::max(0, pad_y - y);
+            const int ky_end = std::min(kernel_height, height - y + pad_y);
             for (int x = 0; x < width; ++x) {
+                const int kx_begin = std::max(0, pad_x - x);
+                const int kx_end = std::min(kernel_width, width - x + pad_x);
                 output_slice[y * width + x] =
                     convolve_uint8_guarded_pixel(
                         slices,
                         kernel,
                         width,
-                        height,
-                        window_length,
                         kernel_width,
                         kernel_height,
-                        kernel_depth,
                         pad_x,
                         pad_y,
                         pad_z,
                         center_z,
                         x,
-                        y);
+                        y,
+                        kz_begin,
+                        kz_end,
+                        ky_begin,
+                        ky_end,
+                        kx_begin,
+                        kx_end);
             }
         }
 
         for (int y = y_begin; y < y_end; ++y) {
             for (int x = 0; x < x_begin; ++x) {
+                const int kx_begin = std::max(0, pad_x - x);
+                const int kx_end = std::min(kernel_width, width - x + pad_x);
                 output_slice[y * width + x] =
                     convolve_uint8_guarded_pixel(
                         slices,
                         kernel,
                         width,
-                        height,
-                        window_length,
                         kernel_width,
                         kernel_height,
-                        kernel_depth,
                         pad_x,
                         pad_y,
                         pad_z,
                         center_z,
                         x,
-                        y);
+                        y,
+                        kz_begin,
+                        kz_end,
+                        0,
+                        kernel_height,
+                        kx_begin,
+                        kx_end);
             }
 
             for (int x = x_begin; x < x_end; ++x) {
@@ -349,43 +255,55 @@ static void convolve_uint8_slice_outputs(
             }
 
             for (int x = x_end; x < width; ++x) {
+                const int kx_begin = std::max(0, pad_x - x);
+                const int kx_end = std::min(kernel_width, width - x + pad_x);
                 output_slice[y * width + x] =
                     convolve_uint8_guarded_pixel(
                         slices,
                         kernel,
                         width,
-                        height,
-                        window_length,
                         kernel_width,
                         kernel_height,
-                        kernel_depth,
                         pad_x,
                         pad_y,
                         pad_z,
                         center_z,
                         x,
-                        y);
+                        y,
+                        kz_begin,
+                        kz_end,
+                        0,
+                        kernel_height,
+                        kx_begin,
+                        kx_end);
             }
         }
 
         for (int y = y_end; y < height; ++y) {
+            const int ky_begin = std::max(0, pad_y - y);
+            const int ky_end = std::min(kernel_height, height - y + pad_y);
             for (int x = 0; x < width; ++x) {
+                const int kx_begin = std::max(0, pad_x - x);
+                const int kx_end = std::min(kernel_width, width - x + pad_x);
                 output_slice[y * width + x] =
                     convolve_uint8_guarded_pixel(
                         slices,
                         kernel,
                         width,
-                        height,
-                        window_length,
                         kernel_width,
                         kernel_height,
-                        kernel_depth,
                         pad_x,
                         pad_y,
                         pad_z,
                         center_z,
                         x,
-                        y);
+                        y,
+                        kz_begin,
+                        kz_end,
+                        ky_begin,
+                        ky_end,
+                        kx_begin,
+                        kx_end);
             }
         }
     }
@@ -422,11 +340,11 @@ static void convolve_uint8_x_slice_outputs(
 
             for (int x = 0; x < x_begin && x < width; ++x) {
                 float acc = 0.0f;
-                for (int k = 0; k < kernel_length; ++k) {
+                const int k_begin = std::max(0, pad - x);
+                const int k_end = std::min(kernel_length, width - x + pad);
+                for (int k = k_begin; k < k_end; ++k) {
                     const int xx = x + k - pad;
-                    if (0 <= xx && xx < width) {
-                        acc += static_cast<float>(input_slice[row + xx]) * kernel[k];
-                    }
+                    acc += static_cast<float>(input_slice[row + xx]) * kernel[k];
                 }
                 output_slice[row + x] = clamp_round_uint8(acc);
             }
@@ -442,11 +360,11 @@ static void convolve_uint8_x_slice_outputs(
 
             for (int x = std::max(x_begin, x_end); x < width; ++x) {
                 float acc = 0.0f;
-                for (int k = 0; k < kernel_length; ++k) {
+                const int k_begin = std::max(0, pad - x);
+                const int k_end = std::min(kernel_length, width - x + pad);
+                for (int k = k_begin; k < k_end; ++k) {
                     const int xx = x + k - pad;
-                    if (0 <= xx && xx < width) {
-                        acc += static_cast<float>(input_slice[row + xx]) * kernel[k];
-                    }
+                    acc += static_cast<float>(input_slice[row + xx]) * kernel[k];
                 }
                 output_slice[row + x] = clamp_round_uint8(acc);
             }
@@ -482,13 +400,13 @@ static void convolve_uint8_y_slice_outputs(
 
         for (int y = 0; y < y_begin && y < height; ++y) {
             const int row = y * width;
+            const int k_begin = std::max(0, pad - y);
+            const int k_end = std::min(kernel_length, height - y + pad);
             for (int x = 0; x < width; ++x) {
                 float acc = 0.0f;
-                for (int k = 0; k < kernel_length; ++k) {
+                for (int k = k_begin; k < k_end; ++k) {
                     const int yy = y + k - pad;
-                    if (0 <= yy && yy < height) {
-                        acc += static_cast<float>(input_slice[yy * width + x]) * kernel[k];
-                    }
+                    acc += static_cast<float>(input_slice[yy * width + x]) * kernel[k];
                 }
                 output_slice[row + x] = clamp_round_uint8(acc);
             }
@@ -508,13 +426,13 @@ static void convolve_uint8_y_slice_outputs(
 
         for (int y = std::max(y_begin, y_end); y < height; ++y) {
             const int row = y * width;
+            const int k_begin = std::max(0, pad - y);
+            const int k_end = std::min(kernel_length, height - y + pad);
             for (int x = 0; x < width; ++x) {
                 float acc = 0.0f;
-                for (int k = 0; k < kernel_length; ++k) {
+                for (int k = k_begin; k < k_end; ++k) {
                     const int yy = y + k - pad;
-                    if (0 <= yy && yy < height) {
-                        acc += static_cast<float>(input_slice[yy * width + x]) * kernel[k];
-                    }
+                    acc += static_cast<float>(input_slice[yy * width + x]) * kernel[k];
                 }
                 output_slice[row + x] = clamp_round_uint8(acc);
             }
@@ -539,14 +457,14 @@ static void convolve_uint8_z_slice_outputs(
     for (int out_z = 0; out_z < output_count; ++out_z) {
         const int center_z = output_start + out_z;
         uint8_t* output_slice = outputs[out_z];
+        const int k_begin = std::max(0, pad - center_z);
+        const int k_end = std::min(kernel_length, window_length - center_z + pad);
 
         for (int i = 0; i < plane; ++i) {
             float acc = 0.0f;
-            for (int k = 0; k < kernel_length; ++k) {
+            for (int k = k_begin; k < k_end; ++k) {
                 const int zz = center_z + k - pad;
-                if (0 <= zz && zz < window_length) {
-                    acc += static_cast<float>(slices[zz][i]) * kernel[k];
-                }
+                acc += static_cast<float>(slices[zz][i]) * kernel[k];
             }
             output_slice[i] = clamp_round_uint8(acc);
         }
@@ -593,6 +511,21 @@ inline uint16_t clamp_round_scalar<uint16_t>(float value)
 }
 
 template <>
+inline int16_t clamp_round_scalar<int16_t>(float value)
+{
+    if (std::isnan(value)) {
+        return 0;
+    }
+    if (value <= static_cast<float>(INT16_MIN)) {
+        return INT16_MIN;
+    }
+    if (value >= static_cast<float>(INT16_MAX)) {
+        return INT16_MAX;
+    }
+    return static_cast<int16_t>(std::nearbyint(value));
+}
+
+template <>
 inline int32_t clamp_round_scalar<int32_t>(float value)
 {
     if (std::isnan(value)) {
@@ -611,6 +544,232 @@ template <>
 inline float clamp_round_scalar<float>(float value)
 {
     return value;
+}
+
+template <typename T>
+static inline T convolve_scalar_guarded_pixel(
+    const T* const* slices,
+    const float* kernel,
+    int width,
+    int kernel_width,
+    int kernel_height,
+    int pad_x,
+    int pad_y,
+    int pad_z,
+    int center_z,
+    int x,
+    int y,
+    int kz_begin,
+    int kz_end,
+    int ky_begin,
+    int ky_end,
+    int kx_begin,
+    int kx_end)
+{
+    float acc = 0.0f;
+
+    for (int kz = kz_begin; kz < kz_end; ++kz) {
+        const int zz = center_z + kz - pad_z;
+        const T* input_slice = slices[zz];
+        for (int ky = ky_begin; ky < ky_end; ++ky) {
+            const int yy = y + ky - pad_y;
+            const int source_row = yy * width;
+            const int kernel_row = (kz * kernel_height + ky) * kernel_width;
+            for (int kx = kx_begin; kx < kx_end; ++kx) {
+                const int xx = x + kx - pad_x;
+                acc += static_cast<float>(input_slice[source_row + xx]) * kernel[kernel_row + kx];
+            }
+        }
+    }
+
+    return clamp_round_scalar<T>(acc);
+}
+
+template <typename T>
+static void convolve_scalar_slice_outputs(
+    const T* const* slices,
+    T* const* outputs,
+    const float* kernel,
+    int width,
+    int height,
+    int window_length,
+    int kernel_width,
+    int kernel_height,
+    int kernel_depth,
+    int output_start,
+    int output_count)
+{
+    const int pad_x = kernel_width / 2;
+    const int pad_y = kernel_height / 2;
+    const int pad_z = kernel_depth / 2;
+    const int x_begin = pad_x;
+    const int x_end = width - pad_x;
+    const int y_begin = pad_y;
+    const int y_end = height - pad_y;
+
+    for (int out_z = 0; out_z < output_count; ++out_z) {
+        const int center_z = output_start + out_z;
+        T* output_slice = outputs[out_z];
+        const bool full_z = 0 <= center_z - pad_z && center_z + pad_z < window_length;
+        const bool has_interior = full_z && x_begin < x_end && y_begin < y_end;
+        const int kz_begin = full_z ? 0 : std::max(0, pad_z - center_z);
+        const int kz_end = full_z ? kernel_depth : std::min(kernel_depth, window_length - center_z + pad_z);
+
+        if (!has_interior) {
+            for (int y = 0; y < height; ++y) {
+                const int ky_begin = std::max(0, pad_y - y);
+                const int ky_end = std::min(kernel_height, height - y + pad_y);
+                for (int x = 0; x < width; ++x) {
+                    const int kx_begin = std::max(0, pad_x - x);
+                    const int kx_end = std::min(kernel_width, width - x + pad_x);
+                    output_slice[y * width + x] =
+                        convolve_scalar_guarded_pixel<T>(
+                            slices,
+                            kernel,
+                            width,
+                            kernel_width,
+                            kernel_height,
+                            pad_x,
+                            pad_y,
+                            pad_z,
+                            center_z,
+                            x,
+                            y,
+                            kz_begin,
+                            kz_end,
+                            ky_begin,
+                            ky_end,
+                            kx_begin,
+                            kx_end);
+                }
+            }
+            continue;
+        }
+
+        for (int y = 0; y < y_begin; ++y) {
+            const int ky_begin = std::max(0, pad_y - y);
+            const int ky_end = std::min(kernel_height, height - y + pad_y);
+            for (int x = 0; x < width; ++x) {
+                const int kx_begin = std::max(0, pad_x - x);
+                const int kx_end = std::min(kernel_width, width - x + pad_x);
+                output_slice[y * width + x] =
+                    convolve_scalar_guarded_pixel<T>(
+                        slices,
+                        kernel,
+                        width,
+                        kernel_width,
+                        kernel_height,
+                        pad_x,
+                        pad_y,
+                        pad_z,
+                        center_z,
+                        x,
+                        y,
+                        kz_begin,
+                        kz_end,
+                        ky_begin,
+                        ky_end,
+                        kx_begin,
+                        kx_end);
+            }
+        }
+
+        for (int y = y_begin; y < y_end; ++y) {
+            for (int x = 0; x < x_begin; ++x) {
+                const int kx_begin = std::max(0, pad_x - x);
+                const int kx_end = std::min(kernel_width, width - x + pad_x);
+                output_slice[y * width + x] =
+                    convolve_scalar_guarded_pixel<T>(
+                        slices,
+                        kernel,
+                        width,
+                        kernel_width,
+                        kernel_height,
+                        pad_x,
+                        pad_y,
+                        pad_z,
+                        center_z,
+                        x,
+                        y,
+                        kz_begin,
+                        kz_end,
+                        0,
+                        kernel_height,
+                        kx_begin,
+                        kx_end);
+            }
+
+            for (int x = x_begin; x < x_end; ++x) {
+                float acc = 0.0f;
+
+                for (int kz = 0; kz < kernel_depth; ++kz) {
+                    const T* input_slice = slices[center_z + kz - pad_z];
+                    for (int ky = 0; ky < kernel_height; ++ky) {
+                        const int source_row = (y + ky - pad_y) * width;
+                        const int kernel_row = (kz * kernel_height + ky) * kernel_width;
+                        for (int kx = 0; kx < kernel_width; ++kx) {
+                            acc += static_cast<float>(input_slice[source_row + x + kx - pad_x]) *
+                                   kernel[kernel_row + kx];
+                        }
+                    }
+                }
+
+                output_slice[y * width + x] = clamp_round_scalar<T>(acc);
+            }
+
+            for (int x = x_end; x < width; ++x) {
+                const int kx_begin = std::max(0, pad_x - x);
+                const int kx_end = std::min(kernel_width, width - x + pad_x);
+                output_slice[y * width + x] =
+                    convolve_scalar_guarded_pixel<T>(
+                        slices,
+                        kernel,
+                        width,
+                        kernel_width,
+                        kernel_height,
+                        pad_x,
+                        pad_y,
+                        pad_z,
+                        center_z,
+                        x,
+                        y,
+                        kz_begin,
+                        kz_end,
+                        0,
+                        kernel_height,
+                        kx_begin,
+                        kx_end);
+            }
+        }
+
+        for (int y = y_end; y < height; ++y) {
+            const int ky_begin = std::max(0, pad_y - y);
+            const int ky_end = std::min(kernel_height, height - y + pad_y);
+            for (int x = 0; x < width; ++x) {
+                const int kx_begin = std::max(0, pad_x - x);
+                const int kx_end = std::min(kernel_width, width - x + pad_x);
+                output_slice[y * width + x] =
+                    convolve_scalar_guarded_pixel<T>(
+                        slices,
+                        kernel,
+                        width,
+                        kernel_width,
+                        kernel_height,
+                        pad_x,
+                        pad_y,
+                        pad_z,
+                        center_z,
+                        x,
+                        y,
+                        kz_begin,
+                        kz_end,
+                        ky_begin,
+                        ky_end,
+                        kx_begin,
+                        kx_end);
+            }
+        }
+    }
 }
 
 template <typename T>
@@ -645,11 +804,11 @@ static void convolve_axis_x_slice_outputs(
 
             for (int x = 0; x < x_begin && x < width; ++x) {
                 float acc = 0.0f;
-                for (int k = 0; k < kernel_length; ++k) {
+                const int k_begin = std::max(0, pad - x);
+                const int k_end = std::min(kernel_length, width - x + pad);
+                for (int k = k_begin; k < k_end; ++k) {
                     const int xx = x + k - pad;
-                    if (0 <= xx && xx < width) {
-                        acc += static_cast<float>(input_slice[row + xx]) * kernel[k];
-                    }
+                    acc += static_cast<float>(input_slice[row + xx]) * kernel[k];
                 }
                 output_slice[row + x] = clamp_round_scalar<T>(acc);
             }
@@ -665,11 +824,11 @@ static void convolve_axis_x_slice_outputs(
 
             for (int x = std::max(x_begin, x_end); x < width; ++x) {
                 float acc = 0.0f;
-                for (int k = 0; k < kernel_length; ++k) {
+                const int k_begin = std::max(0, pad - x);
+                const int k_end = std::min(kernel_length, width - x + pad);
+                for (int k = k_begin; k < k_end; ++k) {
                     const int xx = x + k - pad;
-                    if (0 <= xx && xx < width) {
-                        acc += static_cast<float>(input_slice[row + xx]) * kernel[k];
-                    }
+                    acc += static_cast<float>(input_slice[row + xx]) * kernel[k];
                 }
                 output_slice[row + x] = clamp_round_scalar<T>(acc);
             }
@@ -706,13 +865,13 @@ static void convolve_axis_y_slice_outputs(
 
         for (int y = 0; y < y_begin && y < height; ++y) {
             const int row = y * width;
+            const int k_begin = std::max(0, pad - y);
+            const int k_end = std::min(kernel_length, height - y + pad);
             for (int x = 0; x < width; ++x) {
                 float acc = 0.0f;
-                for (int k = 0; k < kernel_length; ++k) {
+                for (int k = k_begin; k < k_end; ++k) {
                     const int yy = y + k - pad;
-                    if (0 <= yy && yy < height) {
-                        acc += static_cast<float>(input_slice[yy * width + x]) * kernel[k];
-                    }
+                    acc += static_cast<float>(input_slice[yy * width + x]) * kernel[k];
                 }
                 output_slice[row + x] = clamp_round_scalar<T>(acc);
             }
@@ -732,13 +891,13 @@ static void convolve_axis_y_slice_outputs(
 
         for (int y = std::max(y_begin, y_end); y < height; ++y) {
             const int row = y * width;
+            const int k_begin = std::max(0, pad - y);
+            const int k_end = std::min(kernel_length, height - y + pad);
             for (int x = 0; x < width; ++x) {
                 float acc = 0.0f;
-                for (int k = 0; k < kernel_length; ++k) {
+                for (int k = k_begin; k < k_end; ++k) {
                     const int yy = y + k - pad;
-                    if (0 <= yy && yy < height) {
-                        acc += static_cast<float>(input_slice[yy * width + x]) * kernel[k];
-                    }
+                    acc += static_cast<float>(input_slice[yy * width + x]) * kernel[k];
                 }
                 output_slice[row + x] = clamp_round_scalar<T>(acc);
             }
@@ -764,14 +923,14 @@ static void convolve_axis_z_slice_outputs(
     for (int out_z = 0; out_z < output_count; ++out_z) {
         const int center_z = output_start + out_z;
         T* output_slice = outputs[out_z];
+        const int k_begin = std::max(0, pad - center_z);
+        const int k_end = std::min(kernel_length, window_length - center_z + pad);
 
         for (int i = 0; i < plane; ++i) {
             float acc = 0.0f;
-            for (int k = 0; k < kernel_length; ++k) {
+            for (int k = k_begin; k < k_end; ++k) {
                 const int zz = center_z + k - pad;
-                if (0 <= zz && zz < window_length) {
-                    acc += static_cast<float>(slices[zz][i]) * kernel[k];
-                }
+                acc += static_cast<float>(slices[zz][i]) * kernel[k];
             }
             output_slice[i] = clamp_round_scalar<T>(acc);
         }
@@ -829,13 +988,13 @@ static int convolve_float32_vector_components_slice_outputs(
 
                     for (int x = 0; x < x_begin && x < width; ++x) {
                         const int target = (row + x) * components;
+                        const int k_begin = std::max(0, pad - x);
+                        const int k_end = std::min(kernel_length, width - x + pad);
                         for (int c = 0; c < components; ++c) {
                             float acc = 0.0f;
-                            for (int k = 0; k < kernel_length; ++k) {
+                            for (int k = k_begin; k < k_end; ++k) {
                                 const int xx = x + k - pad;
-                                if (0 <= xx && xx < width) {
-                                    acc += input_slice[(row + xx) * components + c] * kernel[k];
-                                }
+                                acc += input_slice[(row + xx) * components + c] * kernel[k];
                             }
                             output_slice[target + c] = acc;
                         }
@@ -855,13 +1014,13 @@ static int convolve_float32_vector_components_slice_outputs(
 
                     for (int x = std::max(x_begin, x_end); x < width; ++x) {
                         const int target = (row + x) * components;
+                        const int k_begin = std::max(0, pad - x);
+                        const int k_end = std::min(kernel_length, width - x + pad);
                         for (int c = 0; c < components; ++c) {
                             float acc = 0.0f;
-                            for (int k = 0; k < kernel_length; ++k) {
+                            for (int k = k_begin; k < k_end; ++k) {
                                 const int xx = x + k - pad;
-                                if (0 <= xx && xx < width) {
-                                    acc += input_slice[(row + xx) * components + c] * kernel[k];
-                                }
+                                acc += input_slice[(row + xx) * components + c] * kernel[k];
                             }
                             output_slice[target + c] = acc;
                         }
@@ -873,15 +1032,15 @@ static int convolve_float32_vector_components_slice_outputs(
 
                 for (int y = 0; y < y_begin && y < height; ++y) {
                     const int row = y * width;
+                    const int k_begin = std::max(0, pad - y);
+                    const int k_end = std::min(kernel_length, height - y + pad);
                     for (int x = 0; x < width; ++x) {
                         const int target = (row + x) * components;
                         for (int c = 0; c < components; ++c) {
                             float acc = 0.0f;
-                            for (int k = 0; k < kernel_length; ++k) {
+                            for (int k = k_begin; k < k_end; ++k) {
                                 const int yy = y + k - pad;
-                                if (0 <= yy && yy < height) {
-                                    acc += input_slice[(yy * width + x) * components + c] * kernel[k];
-                                }
+                                acc += input_slice[(yy * width + x) * components + c] * kernel[k];
                             }
                             output_slice[target + c] = acc;
                         }
@@ -906,15 +1065,15 @@ static int convolve_float32_vector_components_slice_outputs(
 
                 for (int y = std::max(y_begin, y_end); y < height; ++y) {
                     const int row = y * width;
+                    const int k_begin = std::max(0, pad - y);
+                    const int k_end = std::min(kernel_length, height - y + pad);
                     for (int x = 0; x < width; ++x) {
                         const int target = (row + x) * components;
                         for (int c = 0; c < components; ++c) {
                             float acc = 0.0f;
-                            for (int k = 0; k < kernel_length; ++k) {
+                            for (int k = k_begin; k < k_end; ++k) {
                                 const int yy = y + k - pad;
-                                if (0 <= yy && yy < height) {
-                                    acc += input_slice[(yy * width + x) * components + c] * kernel[k];
-                                }
+                                acc += input_slice[(yy * width + x) * components + c] * kernel[k];
                             }
                             output_slice[target + c] = acc;
                         }
@@ -922,15 +1081,15 @@ static int convolve_float32_vector_components_slice_outputs(
                 }
             }
         } else {
+            const int k_begin = std::max(0, pad - center_z);
+            const int k_end = std::min(kernel_length, window_length - center_z + pad);
             for (int i = 0; i < vector_plane; ++i) {
                 float acc = 0.0f;
-                for (int k = 0; k < kernel_length; ++k) {
+                for (int k = k_begin; k < k_end; ++k) {
                     const int zz = center_z + k - pad;
-                    if (0 <= zz && zz < window_length) {
-                        const float* input_slice = slices[zz];
-                        if (input_slice != nullptr) {
-                            acc += input_slice[i] * kernel[k];
-                        }
+                    const float* input_slice = slices[zz];
+                    if (input_slice != nullptr) {
+                        acc += input_slice[i] * kernel[k];
                     }
                 }
                 output_slice[i] = acc;
@@ -1219,7 +1378,7 @@ static int signed_distance_band_uint8_slices(
 
 extern "C" {
 
-SP_MEDIAN_API void sp_median_uint8_nth_slab(
+SP_LOWLEVEL_API void sp_median_uint8_nth_slab(
     const uint8_t* const* slices,
     uint8_t* output,
     int width,
@@ -1240,7 +1399,7 @@ SP_MEDIAN_API void sp_median_uint8_nth_slab(
         output_count);
 }
 
-SP_MEDIAN_API void sp_median_uint16_nth_slab(
+SP_LOWLEVEL_API void sp_median_uint16_nth_slab(
     const uint16_t* const* slices,
     uint16_t* output,
     int width,
@@ -1261,7 +1420,7 @@ SP_MEDIAN_API void sp_median_uint16_nth_slab(
         output_count);
 }
 
-SP_MEDIAN_API void sp_median_int32_nth_slab(
+SP_LOWLEVEL_API void sp_median_int32_nth_slab(
     const int32_t* const* slices,
     int32_t* output,
     int width,
@@ -1282,7 +1441,7 @@ SP_MEDIAN_API void sp_median_int32_nth_slab(
         output_count);
 }
 
-SP_MEDIAN_API void sp_median_float32_nth_slab(
+SP_LOWLEVEL_API void sp_median_float32_nth_slab(
     const float* const* slices,
     float* output,
     int width,
@@ -1303,34 +1462,7 @@ SP_MEDIAN_API void sp_median_float32_nth_slab(
         output_count);
 }
 
-SP_MEDIAN_API void sp_convolve_float32_slab(
-    const float* const* slices,
-    float* output,
-    const float* kernel,
-    int width,
-    int height,
-    int window_length,
-    int kernel_width,
-    int kernel_height,
-    int kernel_depth,
-    int output_start,
-    int output_count)
-{
-    convolve_float32_slab(
-        slices,
-        output,
-        kernel,
-        width,
-        height,
-        window_length,
-        kernel_width,
-        kernel_height,
-        kernel_depth,
-        output_start,
-        output_count);
-}
-
-SP_MEDIAN_API void sp_convolve_float32_slices(
+SP_LOWLEVEL_API void sp_convolve_float32_slices(
     const float* const* slices,
     float* const* outputs,
     const float* kernel,
@@ -1343,21 +1475,10 @@ SP_MEDIAN_API void sp_convolve_float32_slices(
     int output_start,
     int output_count)
 {
-    convolve_float32_slice_outputs(
-        slices,
-        outputs,
-        kernel,
-        width,
-        height,
-        window_length,
-        kernel_width,
-        kernel_height,
-        kernel_depth,
-        output_start,
-        output_count);
+    convolve_scalar_slice_outputs<float>(slices, outputs, kernel, width, height, window_length, kernel_width, kernel_height, kernel_depth, output_start, output_count);
 }
 
-SP_MEDIAN_API int sp_signed_distance_band_uint8_slices(
+SP_LOWLEVEL_API int sp_signed_distance_band_uint8_slices(
     const uint8_t* const* slices,
     float* const* outputs,
     int width,
@@ -1378,7 +1499,7 @@ SP_MEDIAN_API int sp_signed_distance_band_uint8_slices(
         band_radius);
 }
 
-SP_MEDIAN_API void sp_convolve_uint8_slices(
+SP_LOWLEVEL_API void sp_convolve_uint8_slices(
     const uint8_t* const* slices,
     uint8_t* const* outputs,
     const float* kernel,
@@ -1405,7 +1526,31 @@ SP_MEDIAN_API void sp_convolve_uint8_slices(
         output_count);
 }
 
-SP_MEDIAN_API void sp_convolve_uint8_x_slices(
+#define SP_CONVOLVE_FIXED_EXPORT(TYPE, NAME) \
+SP_LOWLEVEL_API void sp_convolve_##NAME##_slices( \
+    const TYPE* const* slices, \
+    TYPE* const* outputs, \
+    const float* kernel, \
+    int width, \
+    int height, \
+    int window_length, \
+    int kernel_width, \
+    int kernel_height, \
+    int kernel_depth, \
+    int output_start, \
+    int output_count) \
+{ \
+    convolve_scalar_slice_outputs<TYPE>(slices, outputs, kernel, width, height, window_length, kernel_width, kernel_height, kernel_depth, output_start, output_count); \
+}
+
+SP_CONVOLVE_FIXED_EXPORT(int8_t, int8)
+SP_CONVOLVE_FIXED_EXPORT(uint16_t, uint16)
+SP_CONVOLVE_FIXED_EXPORT(int16_t, int16)
+SP_CONVOLVE_FIXED_EXPORT(int32_t, int32)
+
+#undef SP_CONVOLVE_FIXED_EXPORT
+
+SP_LOWLEVEL_API void sp_convolve_uint8_x_slices(
     const uint8_t* const* slices,
     uint8_t* const* outputs,
     const float* kernel,
@@ -1428,7 +1573,7 @@ SP_MEDIAN_API void sp_convolve_uint8_x_slices(
         output_count);
 }
 
-SP_MEDIAN_API void sp_convolve_uint8_y_slices(
+SP_LOWLEVEL_API void sp_convolve_uint8_y_slices(
     const uint8_t* const* slices,
     uint8_t* const* outputs,
     const float* kernel,
@@ -1451,7 +1596,7 @@ SP_MEDIAN_API void sp_convolve_uint8_y_slices(
         output_count);
 }
 
-SP_MEDIAN_API void sp_convolve_uint8_z_slices(
+SP_LOWLEVEL_API void sp_convolve_uint8_z_slices(
     const uint8_t* const* slices,
     uint8_t* const* outputs,
     const float* kernel,
@@ -1475,7 +1620,7 @@ SP_MEDIAN_API void sp_convolve_uint8_z_slices(
 }
 
 #define SP_CONVOLVE_AXIS_EXPORTS(TYPE, NAME) \
-SP_MEDIAN_API void sp_convolve_##NAME##_x_slices( \
+SP_LOWLEVEL_API void sp_convolve_##NAME##_x_slices( \
     const TYPE* const* slices, \
     TYPE* const* outputs, \
     const float* kernel, \
@@ -1488,7 +1633,7 @@ SP_MEDIAN_API void sp_convolve_##NAME##_x_slices( \
 { \
     convolve_axis_x_slice_outputs<TYPE>(slices, outputs, kernel, width, height, window_length, kernel_length, output_start, output_count); \
 } \
-SP_MEDIAN_API void sp_convolve_##NAME##_y_slices( \
+SP_LOWLEVEL_API void sp_convolve_##NAME##_y_slices( \
     const TYPE* const* slices, \
     TYPE* const* outputs, \
     const float* kernel, \
@@ -1501,7 +1646,7 @@ SP_MEDIAN_API void sp_convolve_##NAME##_y_slices( \
 { \
     convolve_axis_y_slice_outputs<TYPE>(slices, outputs, kernel, width, height, window_length, kernel_length, output_start, output_count); \
 } \
-SP_MEDIAN_API void sp_convolve_##NAME##_z_slices( \
+SP_LOWLEVEL_API void sp_convolve_##NAME##_z_slices( \
     const TYPE* const* slices, \
     TYPE* const* outputs, \
     const float* kernel, \
@@ -1522,7 +1667,7 @@ SP_CONVOLVE_AXIS_EXPORTS(float, float32)
 
 #undef SP_CONVOLVE_AXIS_EXPORTS
 
-SP_MEDIAN_API int sp_convolve_float32_vector_components_slices(
+SP_LOWLEVEL_API int sp_convolve_float32_vector_components_slices(
     const float* const* slices,
     float* const* outputs,
     const float* kernel,
@@ -1547,6 +1692,84 @@ SP_MEDIAN_API int sp_convolve_float32_vector_components_slices(
         output_start,
         output_count,
         axis);
+}
+
+SP_LOWLEVEL_API int sp_convolve_float32_vector_components_x_slices(
+    const float* const* slices,
+    float* const* outputs,
+    const float* kernel,
+    int width,
+    int height,
+    int components,
+    int window_length,
+    int kernel_length,
+    int output_start,
+    int output_count)
+{
+    return convolve_float32_vector_components_slice_outputs(
+        slices,
+        outputs,
+        kernel,
+        width,
+        height,
+        components,
+        window_length,
+        kernel_length,
+        output_start,
+        output_count,
+        0);
+}
+
+SP_LOWLEVEL_API int sp_convolve_float32_vector_components_y_slices(
+    const float* const* slices,
+    float* const* outputs,
+    const float* kernel,
+    int width,
+    int height,
+    int components,
+    int window_length,
+    int kernel_length,
+    int output_start,
+    int output_count)
+{
+    return convolve_float32_vector_components_slice_outputs(
+        slices,
+        outputs,
+        kernel,
+        width,
+        height,
+        components,
+        window_length,
+        kernel_length,
+        output_start,
+        output_count,
+        1);
+}
+
+SP_LOWLEVEL_API int sp_convolve_float32_vector_components_z_slices(
+    const float* const* slices,
+    float* const* outputs,
+    const float* kernel,
+    int width,
+    int height,
+    int components,
+    int window_length,
+    int kernel_length,
+    int output_start,
+    int output_count)
+{
+    return convolve_float32_vector_components_slice_outputs(
+        slices,
+        outputs,
+        kernel,
+        width,
+        height,
+        components,
+        window_length,
+        kernel_length,
+        output_start,
+        output_count,
+        2);
 }
 
 }
@@ -1805,7 +2028,7 @@ static int euler_2d_typed(
 
 extern "C" {
 
-SP_MEDIAN_API int sp_resample_2d(
+SP_LOWLEVEL_API int sp_resample_2d(
     const void* input,
     void* output,
     int pixel_type,
@@ -1835,7 +2058,7 @@ SP_MEDIAN_API int sp_resample_2d(
     }
 }
 
-SP_MEDIAN_API int sp_resize_3d_pair_slice(
+SP_LOWLEVEL_API int sp_resize_3d_pair_slice(
     const void* lower,
     const void* upper,
     void* output,
@@ -1867,7 +2090,7 @@ SP_MEDIAN_API int sp_resize_3d_pair_slice(
     }
 }
 
-SP_MEDIAN_API int sp_euler_2d(
+SP_LOWLEVEL_API int sp_euler_2d(
     const void* input,
     void* output,
     int pixel_type,
@@ -1899,7 +2122,7 @@ SP_MEDIAN_API int sp_euler_2d(
     }
 }
 
-SP_MEDIAN_API int sp_fftwf_complex_xy_inplace(
+SP_LOWLEVEL_API int sp_fftwf_complex_xy_inplace(
     float* interleaved,
     int width,
     int height,
@@ -1908,7 +2131,7 @@ SP_MEDIAN_API int sp_fftwf_complex_xy_inplace(
     return fftwf_complex_xy_inplace(interleaved, width, height, inverse);
 }
 
-SP_MEDIAN_API int sp_inv_fftwf_complex_xy_inplace(
+SP_LOWLEVEL_API int sp_inv_fftwf_complex_xy_inplace(
     float* interleaved,
     int width,
     int height)
@@ -1916,7 +2139,7 @@ SP_MEDIAN_API int sp_inv_fftwf_complex_xy_inplace(
     return fftwf_complex_xy_inplace(interleaved, width, height, 1);
 }
 
-SP_MEDIAN_API int sp_fftwf_complex_z_inplace(
+SP_LOWLEVEL_API int sp_fftwf_complex_z_inplace(
     float* interleaved,
     int width,
     int height,
@@ -1926,7 +2149,7 @@ SP_MEDIAN_API int sp_fftwf_complex_z_inplace(
     return fftwf_complex_z_inplace(interleaved, width, height, depth, inverse);
 }
 
-SP_MEDIAN_API int sp_inv_fftwf_complex_z_inplace(
+SP_LOWLEVEL_API int sp_inv_fftwf_complex_z_inplace(
     float* interleaved,
     int width,
     int height,

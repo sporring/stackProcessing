@@ -1930,6 +1930,10 @@ let convolveFixedKernelNativeFloat32 kernel = StackConvolve.convolveFixedKernelN
 let convolveFixedKernelNativeFloat32Parallel kernel windowSize = StackConvolve.convolveFixedKernelNativeFloat32Parallel kernel windowSize
 let convolveFixedKernelNativeUInt8 kernel = StackConvolve.convolveFixedKernelNativeUInt8 kernel
 let convolveFixedKernelNativeUInt8Parallel kernel windowSize = StackConvolve.convolveFixedKernelNativeUInt8Parallel kernel windowSize
+let convolveFixedKernelNative<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> kernel =
+    StackConvolve.convolveFixedKernelNative<'T> kernel
+let convolveFixedKernelNativeParallel<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> kernel windowSize =
+    StackConvolve.convolveFixedKernelNativeParallel<'T> kernel windowSize
 let convolveNativeXParallelCollect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> kernel workers =
     StackConvolve.convolveNativeXParallelCollect<'T> kernel workers
 let convolveNativeYParallelCollect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> kernel workers =

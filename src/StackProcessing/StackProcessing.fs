@@ -384,6 +384,8 @@ let maskAnd = ChunkFunctions.maskAnd
 let maskOr = ChunkFunctions.maskOr
 let maskXor = ChunkFunctions.maskXor
 let maskNot = ChunkFunctions.maskNot
+let convolveFixedKernel<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> kernel workers =
+    ChunkFunctions.convolveFixedKernelNativeParallel<'T> kernel workers
 let convolveX<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.convolveNativeXParallelCollect<'T>
 let convolveY<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.convolveNativeYParallelCollect<'T>
 let convolveZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.convolveNativeZParallelCollect<'T>

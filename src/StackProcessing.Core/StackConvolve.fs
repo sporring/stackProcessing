@@ -474,6 +474,111 @@ let private convolveNativeUInt8Slices width height (plan: KernelPlan) (nativeKer
         for i in 0 .. retainedInputHandles - 1 do
             inputHandles[i].Free()
 
+let private invokeNativeFixedKernelSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    slices
+    outputs
+    kernel
+    width
+    height
+    windowLength
+    kernelWidth
+    kernelHeight
+    kernelDepth
+    outputStart
+    outputCount
+    =
+    let t = typeof<'T>
+    if t = typeof<uint8> then
+        ChunkKernel.NativeMedian.convolveUInt8Slices(slices, outputs, kernel, width, height, windowLength, kernelWidth, kernelHeight, kernelDepth, outputStart, outputCount)
+    elif t = typeof<int8> then
+        ChunkKernel.NativeMedian.convolveInt8Slices(slices, outputs, kernel, width, height, windowLength, kernelWidth, kernelHeight, kernelDepth, outputStart, outputCount)
+    elif t = typeof<uint16> then
+        ChunkKernel.NativeMedian.convolveUInt16Slices(slices, outputs, kernel, width, height, windowLength, kernelWidth, kernelHeight, kernelDepth, outputStart, outputCount)
+    elif t = typeof<int16> then
+        ChunkKernel.NativeMedian.convolveInt16Slices(slices, outputs, kernel, width, height, windowLength, kernelWidth, kernelHeight, kernelDepth, outputStart, outputCount)
+    elif t = typeof<int32> then
+        ChunkKernel.NativeMedian.convolveInt32Slices(slices, outputs, kernel, width, height, windowLength, kernelWidth, kernelHeight, kernelDepth, outputStart, outputCount)
+    elif t = typeof<float32> then
+        ChunkKernel.NativeMedian.convolveFloat32Slices(slices, outputs, kernel, width, height, windowLength, kernelWidth, kernelHeight, kernelDepth, outputStart, outputCount)
+    else
+        invalidArg "T" $"Native fixed-kernel chunk convolution supports UInt8, Int8, UInt16, Int16, Int32, and Float32 chunks, got {t.Name}."
+
+let private convolveNativeFixedKernelSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    width
+    height
+    (plan: KernelPlan)
+    (nativeKernel: float32[])
+    outputStart
+    outputCount
+    (window: Chunk<'T>[])
+    =
+    ChunkKernel.NativeMedian.ensureAvailable ()
+
+    let outputs =
+        Array.init outputCount (fun _ -> Chunk.create<'T> (uint64 width, uint64 height, 1UL))
+
+    let inputHandles = Array.zeroCreate<GCHandle> window.Length
+    let outputHandles = Array.zeroCreate<GCHandle> outputs.Length
+    let mutable retainedInputHandles = 0
+    let mutable retainedOutputHandles = 0
+    let mutable inputPointerHandle = Unchecked.defaultof<GCHandle>
+    let mutable inputPointersPinned = false
+    let mutable outputPointerHandle = Unchecked.defaultof<GCHandle>
+    let mutable outputPointersPinned = false
+    let mutable kernelHandle = Unchecked.defaultof<GCHandle>
+    let mutable kernelPinned = false
+
+    try
+        try
+            let inputPointers = Array.zeroCreate<nativeint> window.Length
+            for i in 0 .. window.Length - 1 do
+                inputHandles[i] <- GCHandle.Alloc(window[i].Bytes, GCHandleType.Pinned)
+                retainedInputHandles <- retainedInputHandles + 1
+                inputPointers[i] <- inputHandles[i].AddrOfPinnedObject()
+
+            let outputPointers = Array.zeroCreate<nativeint> outputs.Length
+            for i in 0 .. outputs.Length - 1 do
+                outputHandles[i] <- GCHandle.Alloc(outputs[i].Bytes, GCHandleType.Pinned)
+                retainedOutputHandles <- retainedOutputHandles + 1
+                outputPointers[i] <- outputHandles[i].AddrOfPinnedObject()
+
+            inputPointerHandle <- GCHandle.Alloc(inputPointers, GCHandleType.Pinned)
+            inputPointersPinned <- true
+            outputPointerHandle <- GCHandle.Alloc(outputPointers, GCHandleType.Pinned)
+            outputPointersPinned <- true
+            kernelHandle <- GCHandle.Alloc(nativeKernel, GCHandleType.Pinned)
+            kernelPinned <- true
+
+            invokeNativeFixedKernelSlices<'T>
+                (inputPointerHandle.AddrOfPinnedObject())
+                (outputPointerHandle.AddrOfPinnedObject())
+                (kernelHandle.AddrOfPinnedObject())
+                width
+                height
+                window.Length
+                plan.Width
+                plan.Height
+                plan.Depth
+                outputStart
+                outputCount
+
+            outputs |> Array.toList
+        with
+        | _ ->
+            outputs |> Array.iter Chunk.decRef
+            reraise()
+    finally
+        if kernelPinned then
+            kernelHandle.Free()
+        if outputPointersPinned then
+            outputPointerHandle.Free()
+        if inputPointersPinned then
+            inputPointerHandle.Free()
+        for i in 0 .. retainedOutputHandles - 1 do
+            outputHandles[i].Free()
+        for i in 0 .. retainedInputHandles - 1 do
+            inputHandles[i].Free()
+
 let private chunkConvolveFixedKernelStage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (kernel: float32[,,])
     batchSize
@@ -503,14 +608,6 @@ let private chunkConvolveFixedKernelStage<'T when 'T: equality and 'T: (new: uni
             |> List.truncate (int window.ReleaseCount)
             |> List.iter Chunk.decRef
 
-    let retainWindowRefs _debug (window: Window<Chunk<'T>>) =
-        window.Items |> List.iter (Chunk.incRef >> ignore)
-        releaseConsumed window
-        window
-
-    let releaseWindowRefs (window: Window<Chunk<'T>>) =
-        window.Items |> List.iter Chunk.decRef
-
     let convolveWindow (retained: Window<Chunk<'T>>) =
         let _emitStart, emitCount = retained.EmitRange
         if emitCount = 0u then
@@ -537,44 +634,24 @@ let private chunkConvolveFixedKernelStage<'T when 'T: equality and 'T: (new: uni
 
             [ convolveFixedKernelSlice width height plan items ]
 
-    let convolveRetained _debug (window: Window<Window<Chunk<'T>>>) =
-        match window.Items with
-        | [ retainedWindow ] ->
-            try
-                convolveWindow retainedWindow
-            finally
-                releaseWindowRefs retainedWindow
-        | items ->
-            for retainedWindow in items do
-                releaseWindowRefs retainedWindow
-            invalidArg "window" $"Chunk convolution expected singleton retained windows, got {items.Length}."
+    let convolveAndRelease debug window =
+        try
+            convolveWindow window
+        finally
+            releaseConsumed window
 
-    let windowStage =
-        Stage.window $"{stageName}.window" (uint windowLength) (uint plan.PadZ) zeroMaker 1u
+    Stage.parallelCollect
+        $"{stageName}.parallelCollect"
+        windowLength
+        batchSize
+        1
+        (int plan.PadZ)
+        zeroMaker
+        convolveAndRelease
+        memoryNeed
+        id
 
-    let retainStage =
-        Stage.map
-            $"{stageName}.retain"
-            retainWindowRefs
-            memoryNeed
-            id
-
-    let computeStage =
-        Stage.parallelCollect
-            $"{stageName}.parallelCollect"
-            1
-            batchSize
-            1
-            0
-            (fun _ retained -> retained)
-            convolveRetained
-            memoryNeed
-            id
-
-    Stage.compose windowStage retainStage
-    |> fun stage -> Stage.compose stage computeStage
-
-let private chunkConvolveFixedKernelNativeFloat32Stage
+let private chunkConvolveFixedKernelNativeStage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (kernel: float32[,,])
     batchSize
     =
@@ -584,19 +661,20 @@ let private chunkConvolveFixedKernelNativeFloat32Stage
     let plan = createKernelPlan kernel
     let nativeKernel = flattenKernelForNative kernel
     let outputBatchSize = batchSize
-    let windowLength = plan.Depth + outputBatchSize - 1
+    let windowLength = plan.Depth
+    let elementSize = uint64 (Marshal.SizeOf<'T>())
     let memoryNeed nPixels =
-        uint64 (windowLength + batchSize) * nPixels * uint64 sizeof<float32>
+        uint64 (plan.Depth + outputBatchSize - 1 + outputBatchSize) * nPixels * elementSize
     let suffix = if batchSize = 1 then "" else $".parallel{batchSize}"
-    let stageName = $"chunkConvolveFixedKernelNativeFloat32{suffix}.{plan.Width}x{plan.Height}x{plan.Depth}"
+    let stageName = $"chunkConvolveFixedKernelNative{suffix}.{typeof<'T>.Name}.{plan.Width}x{plan.Height}x{plan.Depth}"
 
-    let zeroMaker _index (source: Chunk<float32>) =
+    let zeroMaker _index (source: Chunk<'T>) =
         let width, height, depth = source.Size
         if depth <> 1UL then
             invalidArg "source" $"Native chunk convolution expects 2D slice chunks with depth 1, got {source.Size}."
-        zeroChunkTyped<float32> (int width) (int height)
+        zeroChunkTyped<'T> (int width) (int height)
 
-    let releaseConsumed (window: Window<Chunk<float32>>) =
+    let releaseConsumed (window: Window<Chunk<'T>>) =
         let _emitStart, emitCount = window.EmitRange
         if emitCount = 0u then
             window.Items |> List.iter Chunk.decRef
@@ -605,15 +683,7 @@ let private chunkConvolveFixedKernelNativeFloat32Stage
             |> List.truncate (int window.ReleaseCount)
             |> List.iter Chunk.decRef
 
-    let retainWindowRefs _debug (window: Window<Chunk<float32>>) =
-        window.Items |> List.iter (Chunk.incRef >> ignore)
-        releaseConsumed window
-        window
-
-    let releaseWindowRefs (window: Window<Chunk<float32>>) =
-        window.Items |> List.iter Chunk.decRef
-
-    let convolveWindow (retained: Window<Chunk<float32>>) =
+    let convolveWindow (retained: Window<Chunk<'T>>) =
         let emitStart, emitCount = retained.EmitRange
         if emitCount = 0u then
             []
@@ -635,144 +705,24 @@ let private chunkConvolveFixedKernelNativeFloat32Stage
             for chunk in chunks do
                 validateTypedSliceChunk "native convolution" width height chunk
 
-            convolveNativeFloat32Slices width height plan nativeKernel (int emitStart) (int emitCount) chunks
+            convolveNativeFixedKernelSlices<'T> width height plan nativeKernel (int emitStart) (int emitCount) chunks
 
-    let convolveRetained _debug (window: Window<Window<Chunk<float32>>>) =
-        match window.Items with
-        | [ retainedWindow ] ->
-            try
-                convolveWindow retainedWindow
-            finally
-                releaseWindowRefs retainedWindow
-        | items ->
-            for retainedWindow in items do
-                releaseWindowRefs retainedWindow
-            invalidArg "window" $"Native chunk convolution expected singleton retained windows, got {items.Length}."
+    let convolveAndRelease _debug (window: Window<Chunk<'T>>) =
+        try
+            convolveWindow window
+        finally
+            releaseConsumed window
 
-    let windowStage =
-        Stage.window $"{stageName}.window" (uint windowLength) (uint plan.PadZ) zeroMaker (uint outputBatchSize)
-
-    let retainStage =
-        Stage.map
-            $"{stageName}.retain"
-            retainWindowRefs
-            memoryNeed
-            id
-
-    let computeStage =
-        Stage.parallelCollect
-            $"{stageName}.parallelCollect"
-            1
-            batchSize
-            1
-            0
-            (fun _ retained -> retained)
-            convolveRetained
-            memoryNeed
-            id
-
-    Stage.compose windowStage retainStage
-    |> fun stage -> Stage.compose stage computeStage
-
-let private chunkConvolveFixedKernelNativeUInt8Stage
-    (kernel: float32[,,])
-    batchSize
-    =
-    if batchSize < 1 then
-        invalidArg "batchSize" $"Native UInt8 chunk convolution expects a positive batch size, got {batchSize}."
-
-    let plan = createKernelPlan kernel
-    let nativeKernel = flattenKernelForNative kernel
-    let outputBatchSize = batchSize
-    let windowLength = plan.Depth + outputBatchSize - 1
-    let memoryNeed nPixels =
-        uint64 (windowLength + batchSize) * nPixels
-    let suffix = if batchSize = 1 then "" else $".parallel{batchSize}"
-    let stageName = $"chunkConvolveFixedKernelNativeUInt8{suffix}.{plan.Width}x{plan.Height}x{plan.Depth}"
-
-    let zeroMaker _index (source: Chunk<uint8>) =
-        let width, height, depth = source.Size
-        if depth <> 1UL then
-            invalidArg "source" $"Native UInt8 chunk convolution expects 2D slice chunks with depth 1, got {source.Size}."
-        zeroChunkTyped<uint8> (int width) (int height)
-
-    let releaseConsumed (window: Window<Chunk<uint8>>) =
-        let _emitStart, emitCount = window.EmitRange
-        if emitCount = 0u then
-            window.Items |> List.iter Chunk.decRef
-        else
-            window.Items
-            |> List.truncate (int window.ReleaseCount)
-            |> List.iter Chunk.decRef
-
-    let retainWindowRefs _debug (window: Window<Chunk<uint8>>) =
-        window.Items |> List.iter (Chunk.incRef >> ignore)
-        releaseConsumed window
-        window
-
-    let releaseWindowRefs (window: Window<Chunk<uint8>>) =
-        window.Items |> List.iter Chunk.decRef
-
-    let convolveWindow (retained: Window<Chunk<uint8>>) =
-        let emitStart, emitCount = retained.EmitRange
-        if emitCount = 0u then
-            []
-        else
-            let chunks = retained.Items |> List.toArray
-            if chunks.Length < int emitStart + int emitCount then
-                invalidArg "window" $"Native UInt8 chunk convolution expected enough slices for emit range {retained.EmitRange}, got {chunks.Length}."
-
-            let first = chunks[0]
-            let chunkWidth, chunkHeight, chunkDepth = first.Size
-            if chunkDepth <> 1UL then
-                invalidArg "window" $"Native UInt8 chunk convolution expects 2D slice chunks with depth 1, got {first.Size}."
-
-            let width = int chunkWidth
-            let height = int chunkHeight
-            if width <= 0 || height <= 0 then
-                invalidArg "window" $"Native UInt8 chunk convolution expects positive slice dimensions, got {first.Size}."
-
-            for chunk in chunks do
-                validateTypedSliceChunk "native UInt8 convolution" width height chunk
-
-            convolveNativeUInt8Slices width height plan nativeKernel (int emitStart) (int emitCount) chunks
-
-    let convolveRetained _debug (window: Window<Window<Chunk<uint8>>>) =
-        match window.Items with
-        | [ retainedWindow ] ->
-            try
-                convolveWindow retainedWindow
-            finally
-                releaseWindowRefs retainedWindow
-        | items ->
-            for retainedWindow in items do
-                releaseWindowRefs retainedWindow
-            invalidArg "window" $"Native UInt8 chunk convolution expected singleton retained windows, got {items.Length}."
-
-    let windowStage =
-        Stage.window $"{stageName}.window" (uint windowLength) (uint plan.PadZ) zeroMaker (uint outputBatchSize)
-
-    let retainStage =
-        Stage.map
-            $"{stageName}.retain"
-            retainWindowRefs
-            memoryNeed
-            id
-
-    let computeStage =
-        Stage.parallelCollect
-            $"{stageName}.parallelCollect"
-            1
-            batchSize
-            1
-            0
-            (fun _ retained -> retained)
-            convolveRetained
-            memoryNeed
-            id
-
-    Stage.compose windowStage retainStage
-    |> fun stage -> Stage.compose stage computeStage
+    Stage.parallelCollect
+        $"{stageName}.parallelCollect"
+        windowLength
+        batchSize
+        1
+        (int plan.PadZ)
+        zeroMaker
+        convolveAndRelease
+        memoryNeed
+        id
 
 type ConvolveAxis =
     | X
@@ -835,23 +785,64 @@ let convolveNativeAxisParallelCollect<'T when 'T: equality and 'T: (new: unit ->
             invalidArg "source" $"Chunk native convolve{axisName} expects 2D slice chunks with depth 1, got {source.Size}."
         zeroChunkTyped<'T> (int width) (int height)
 
-    let mapper _debug (window: Window<Chunk<'T>>) =
+    let releaseConsumed (window: Window<Chunk<'T>>) =
+        let _emitStart, emitCount = window.EmitRange
+        if emitCount = 0u then
+            window.Items |> List.iter Chunk.decRef
+        else
+            window.Items
+            |> List.truncate (int window.ReleaseCount)
+            |> List.iter Chunk.decRef
+
+    let singletonMapper _debug (window: Window<Chunk<'T>>) =
         let items = window.Items |> List.toArray
         try
             [ convolveNativeAxisChunk<'T> axis kernel items ]
         finally
             items |> Array.iter Chunk.decRef
 
-    Stage.parallelCollect
-        $"chunkConvolveNative{axisName}.parallelCollect.{typeof<'T>.Name}.k{kernel.Length}.workers{workers}"
-        windowLength
-        workers
-        1
-        padding
-        zeroMaker
-        mapper
-        memoryNeed
-        id
+    let overlappingMapper _debug (window: Window<Chunk<'T>>) =
+        let _emitStart, emitCount = window.EmitRange
+        let items = window.Items |> List.toArray
+        try
+            if emitCount = 0u then
+                []
+            else
+                if items.Length <> windowLength then
+                    invalidArg "window" $"Chunk native convolve{axisName} expected {windowLength} slices for emitting window {window.EmitRange}, got {items.Length}."
+                [ convolveNativeAxisChunk<'T> axis kernel items ]
+        finally
+            releaseConsumed window
+
+    match axis with
+    | X
+    | Y ->
+        Stage.parallelCollect
+            $"chunkConvolveNative{axisName}.parallelCollect.{typeof<'T>.Name}.k{kernel.Length}.workers{workers}"
+            windowLength
+            workers
+            1
+            padding
+            zeroMaker
+            singletonMapper
+            memoryNeed
+            id
+    | Z ->
+        Stage.window
+            $"chunkConvolveNativeZ.window.{typeof<'T>.Name}.k{kernel.Length}"
+            (uint windowLength)
+            (uint padding)
+            zeroMaker
+            1u
+        |> fun stage ->
+            Stage.compose
+                stage
+                (Stage.map
+                    $"chunkConvolveNativeZ.compute.{typeof<'T>.Name}.k{kernel.Length}"
+                    overlappingMapper
+                    memoryNeed
+                    id)
+        |> fun stage -> Stage.compose stage (Stage.flatten $"chunkConvolveNativeZ.flatten.{typeof<'T>.Name}.k{kernel.Length}")
 
 let convolveNativeXParallelCollect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> kernel workers =
     convolveNativeAxisParallelCollect<'T> X kernel workers
@@ -984,7 +975,7 @@ let convolveFixedKernelParallel<'T when 'T: equality and 'T: (new: unit -> 'T) a
 let convolveFixedKernelNativeFloat32
     kernel
     : Stage<Chunk<float32>, Chunk<float32>> =
-    chunkConvolveFixedKernelNativeFloat32Stage kernel 1
+    chunkConvolveFixedKernelNativeStage<float32> kernel 1
 
 let convolveFixedKernelNativeFloat32Parallel
     kernel
@@ -993,12 +984,12 @@ let convolveFixedKernelNativeFloat32Parallel
     if windowSize <= 1 then
         convolveFixedKernelNativeFloat32 kernel
     else
-        chunkConvolveFixedKernelNativeFloat32Stage kernel windowSize
+        chunkConvolveFixedKernelNativeStage<float32> kernel windowSize
 
 let convolveFixedKernelNativeUInt8
     kernel
     : Stage<Chunk<uint8>, Chunk<uint8>> =
-    chunkConvolveFixedKernelNativeUInt8Stage kernel 1
+    chunkConvolveFixedKernelNativeStage<uint8> kernel 1
 
 let convolveFixedKernelNativeUInt8Parallel
     kernel
@@ -1007,4 +998,18 @@ let convolveFixedKernelNativeUInt8Parallel
     if windowSize <= 1 then
         convolveFixedKernelNativeUInt8 kernel
     else
-        chunkConvolveFixedKernelNativeUInt8Stage kernel windowSize
+        chunkConvolveFixedKernelNativeStage<uint8> kernel windowSize
+
+let convolveFixedKernelNative<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    kernel
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    chunkConvolveFixedKernelNativeStage<'T> kernel 1
+
+let convolveFixedKernelNativeParallel<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    kernel
+    windowSize
+    : Stage<Chunk<'T>, Chunk<'T>> =
+    if windowSize <= 1 then
+        convolveFixedKernelNative<'T> kernel
+    else
+        chunkConvolveFixedKernelNativeStage<'T> kernel windowSize

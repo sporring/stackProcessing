@@ -76,7 +76,7 @@ The initial benchmark intentionally focuses on TIFF only. Format-specific behavi
 
 The fairness rule is that a case should read the same stack type, use the simplest native 3D operator available in that environment, and write the same output type across all backends. All generated inputs are deterministic ramps over the same value range `0..255`, regardless of storage type. `threshold` uses an inclusive lower threshold (`input >= 128`). `dilate` and `connectedComponents` are defined only for `UInt8` source stacks and use `input >= 128` to form their binary masks.
 
-`convolve` is represented in StackProcessing by constructing a Float64 uniform kernel, casting typed benchmark inputs into the operation, and casting back to the requested output type. `copy`, `convolve`, and `median` write the same pixel type they read (`UInt8`, `UInt16`, or `Float32`). `threshold`, `dilate`, and `connectedComponents` write `UInt8` mask/label-style outputs for all backends. `dilate` is kept to `UInt8` because the operation is binary morphology, not gray-value morphology over `UInt16` or `Float32` intensities. The dilation implementations are not identical internally: StackProcessing uses its streaming zonohedral/VHGW line approximation, Python/scikit-image/SciPy uses scikit-image's decomposed 3D ball sequence, MATLAB uses `strel("sphere", r)` with MATLAB's structuring-element decomposition machinery, and C++/ITK currently remains the exact binary-ball baseline. `connectedComponents` is included because it is an important dependency-sensitive operation. The semantic target for all TIFF-stack backends is 3D component labelling: StackProcessing may stream internally, while MATLAB, Python/scikit-image/SciPy, and C++/ITK read the full stack into a volume before processing.
+`convolve` is represented in StackProcessing by the Chunk-native fixed-kernel convolution path with `Float32` kernels. Typed integer chunks stay in their storage type across the DSL stage; the native hot loop reads the source type, accumulates in `Float32`, and clamps/rounds back to the same output type. `copy`, `convolve`, and `median` write the same pixel type they read (`UInt8`, `UInt16`, or `Float32`). The `UInt8` median row uses the current StackProcessing policy path, while `UInt16` and `Float32` median rows use the Chunk-native C++ `nth_element` implementation. `threshold` and `dilate` write `UInt8` masks. `connectedComponents` writes `UInt32` labels for the StackProcessing rows and is plotted as a label-producing operation rather than as a byte mask. `dilate` is kept to `UInt8` because the operation is binary morphology, not gray-value morphology over `UInt16` or `Float32` intensities. The dilation implementations are not identical internally: StackProcessing uses its streaming zonohedral/VHGW line approximation, Python/scikit-image/SciPy uses scikit-image's decomposed 3D ball sequence, MATLAB uses `strel("sphere", r)` with MATLAB's structuring-element decomposition machinery, and C++/ITK currently remains the exact binary-ball baseline. `connectedComponents` is included because it is an important dependency-sensitive operation. The semantic target for all TIFF-stack backends is 3D component labelling: StackProcessing may stream internally, while MATLAB, Python/scikit-image/SciPy, and C++/ITK read the full stack into a volume before processing.
 
 The StackProcessing backend deliberately runs with the StackProcessing optimiser disabled. This keeps the benchmark focused on the current streaming implementation and avoids mixing benchmark results with experimental optimiser choices.
 
@@ -129,9 +129,9 @@ benchmarks/results/summary.csv
 Generate paper-oriented PDF figures from the summary table:
 
 ```bash
-python3 -m pip install matplotlib
+.venv-benchmarks/bin/python -m pip install matplotlib
 
-python3 benchmarks/tools/plot_results.py \
+.venv-benchmarks/bin/python benchmarks/tools/plot_results.py \
   --input benchmarks/results/summary.csv \
   --output-dir benchmarks/results/figures
 ```
@@ -334,6 +334,201 @@ python3 benchmarks/tools/plot_zarr_halo_comparison.py \
   --input tmp/zarr-halo-comparison-none.csv \
   --output-dir benchmarks/results/figures \
   --latex-dir notes/LMIP_Optimiser_and_Studio/figures
+```
+
+The OME-Zarr figures are a special case. The current no-legacy StackProcessing
+benchmark harness does not rerun the retired Zarr median bridge through the main
+`run-zarr` path. During the 2026-06-13 refresh, older `stackprocessing-zarr*`
+rows were removed from the active Zarr raw/summary files and figures; treat
+those figures as Dask/OME-Zarr storage-layout baselines until a fresh
+Chunk-native Zarr neighbourhood benchmark has been restored.
+
+## 2026-06-13 LMIP Figure Refresh
+
+The LMIP note figures were refreshed from StackProcessing measurements with the
+following sequence. The machine was plugged in for the recorded run; an earlier
+partial run was left isolated in `raw.stackprocessing-refresh-20260613.csv` and
+was not merged.
+
+1. Build the benchmark DLL in Release:
+
+```bash
+dotnet build benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj \
+  --configuration Release --nologo -maxcpucount:1
+```
+
+2. Run the StackProcessing TIFF-stack matrix into a separate raw/summary pair,
+using existing deterministic TIFF inputs:
+
+```bash
+bash benchmarks/run_all.sh \
+  --repeat 3 \
+  --backends stackprocessing \
+  --skip-inputs \
+  --skip-builds \
+  --stackprocessing-dll benchmarks/StackProcessing.Benchmarks/bin/Release/net10.0/StackProcessing.Benchmarks.dll \
+  --output-root tmp/benchmarks/output-stackprocessing-redo-20260613 \
+  --results benchmarks/results/raw.stackprocessing-redo-20260613.csv \
+  --summary benchmarks/results/summary.stackprocessing-redo-20260613.csv
+```
+
+3. After fixing the connected-components alias to use the Chunk SAUF UInt32
+label path, resume only missing or failed rows:
+
+```bash
+bash benchmarks/run_all.sh \
+  --repeat 3 \
+  --backends stackprocessing \
+  --skip-inputs \
+  --skip-builds \
+  --skip-existing \
+  --stackprocessing-dll benchmarks/StackProcessing.Benchmarks/bin/Release/net10.0/StackProcessing.Benchmarks.dll \
+  --output-root tmp/benchmarks/output-stackprocessing-redo-20260613 \
+  --results benchmarks/results/raw.stackprocessing-redo-20260613.csv \
+  --summary benchmarks/results/summary.stackprocessing-redo-20260613.csv
+```
+
+4. Filter the one failed pre-fix row out of the replacement CSV, remove all
+older StackProcessing-family rows from the active benchmark table, insert the
+clean plugged-in `stackprocessing` rows, and regenerate the main summary:
+
+```bash
+python3 -c "import csv; src='benchmarks/results/raw.stackprocessing-redo-20260613.csv'; dst='benchmarks/results/raw.stackprocessing-redo-20260613.clean.csv'; rows=list(csv.DictReader(open(src, newline=''))); fields=rows[0].keys(); kept=[r for r in rows if r['exitCode']=='0']; w=csv.DictWriter(open(dst,'w',newline=''), fieldnames=fields); w.writeheader(); w.writerows(kept); print(f'kept {len(kept)} of {len(rows)} rows -> {dst}')"
+
+python3 -c "import csv, shutil; raw='benchmarks/results/raw.csv'; repl='benchmarks/results/raw.stackprocessing-redo-20260613.clean.csv'; backup='benchmarks/results/raw.before-drop-old-stackprocessing-20260613.csv'; shutil.copy2(raw, backup); rows=list(csv.DictReader(open(raw, newline=''))); repl_rows=list(csv.DictReader(open(repl, newline=''))); fields=rows[0].keys(); kept=[r for r in rows if not r['backend'].startswith('stackprocessing')]; w=csv.DictWriter(open(raw, 'w', newline=''), fieldnames=fields); w.writeheader(); w.writerows(kept); w.writerows(repl_rows); print(f'backup: {backup}; kept {len(kept)} non-stackprocessing rows; inserted {len(repl_rows)} today stackprocessing rows')"
+
+python3 benchmarks/tools/summarize_results.py \
+  --input benchmarks/results/raw.csv \
+  --output benchmarks/results/summary.csv
+```
+
+The same cleanup was applied to the active OME-Zarr raw file before regenerating
+the Zarr figures:
+
+```bash
+python3 -c "import csv, shutil; raw='benchmarks/results/raw.zarr-none.csv'; backup='benchmarks/results/raw.zarr-none.before-drop-old-stackprocessing-20260613.csv'; shutil.copy2(raw, backup); rows=list(csv.DictReader(open(raw, newline=''))); fields=rows[0].keys(); kept=[r for r in rows if not r['backend'].startswith('stackprocessing')]; w=csv.DictWriter(open(raw, 'w', newline=''), fieldnames=fields); w.writeheader(); w.writerows(kept); print(f'backup: {backup}; kept {len(kept)} rows; dropped {len(rows)-len(kept)} older stackprocessing rows')"
+
+python3 benchmarks/tools/summarize_results.py \
+  --input benchmarks/results/raw.zarr-none.csv \
+  --output benchmarks/results/summary.zarr-none.csv
+```
+
+For the Zarr halo plot, the temporary comparison CSV was filtered the same way
+before plotting:
+
+```bash
+python3 -c "import csv, shutil; raw='tmp/zarr-halo-comparison-none.csv'; backup='tmp/zarr-halo-comparison-none.before-drop-old-stackprocessing-20260613.csv'; shutil.copy2(raw, backup); rows=list(csv.DictReader(open(raw, newline=''))); fields=rows[0].keys(); kept=[r for r in rows if not r['backend'].startswith('stackprocessing')]; w=csv.DictWriter(open(raw, 'w', newline=''), fieldnames=fields); w.writeheader(); w.writerows(kept); print(f'backup: {backup}; kept {len(kept)} rows; dropped {len(rows)-len(kept)} older stackprocessing rows')"
+```
+
+5. Regenerate the main comparative figures and copy them into the LMIP note:
+
+```bash
+.venv-benchmarks/bin/python benchmarks/tools/plot_results.py \
+  --input benchmarks/results/summary.csv \
+  --output-dir benchmarks/results/figures
+
+cp benchmarks/results/figures/runtime-by-size-uint8.pdf \
+   benchmarks/results/figures/runtime-by-size-uint16.pdf \
+   benchmarks/results/figures/runtime-by-size-float32.pdf \
+   benchmarks/results/figures/runtime-by-complexity-uint8.pdf \
+   benchmarks/results/figures/runtime-by-complexity-uint16.pdf \
+   benchmarks/results/figures/runtime-by-complexity-float32.pdf \
+   benchmarks/results/figures/memory-pressure-by-size-uint8.pdf \
+   benchmarks/results/figures/memory-pressure-by-size-uint16.pdf \
+   benchmarks/results/figures/memory-pressure-by-size-float32.pdf \
+   benchmarks/results/figures/memory-pressure-by-complexity-uint8.pdf \
+   benchmarks/results/figures/memory-pressure-by-complexity-uint16.pdf \
+   benchmarks/results/figures/memory-pressure-by-complexity-float32.pdf \
+   benchmarks/results/figures/runtime-vs-memory.pdf \
+   benchmarks/results/figures/wrapper-overhead.pdf \
+   benchmarks/results/figures/connected-components-window-policy.pdf \
+   notes/LMIP_Optimiser_and_Studio/figures/
+```
+
+6. After the StackProcessing convolve DSL was updated to keep typed integer
+chunks in their storage type at the stage boundary, rerun only the
+StackProcessing convolve matrix, replace the active StackProcessing convolve
+rows, and regenerate the summary and report figures:
+
+```bash
+bash benchmarks/run_all.sh \
+  --repeat 3 \
+  --backends stackprocessing \
+  --operations convolve \
+  --parameters kernelSize=3,kernelSize=5,kernelSize=7 \
+  --skip-inputs \
+  --skip-builds \
+  --stackprocessing-dll benchmarks/StackProcessing.Benchmarks/bin/Release/net10.0/StackProcessing.Benchmarks.dll \
+  --output-root tmp/benchmarks/output-stackprocessing-convolve-typed-20260613 \
+  --results benchmarks/results/raw.stackprocessing-convolve-typed-20260613.csv \
+  --summary benchmarks/results/summary.stackprocessing-convolve-typed-20260613.csv
+
+python3 -c "import csv, shutil; raw='benchmarks/results/raw.csv'; repl='benchmarks/results/raw.stackprocessing-convolve-typed-20260613.csv'; backup='benchmarks/results/raw.before-stackprocessing-convolve-typed-20260613.csv'; shutil.copy2(raw, backup); rows=list(csv.DictReader(open(raw, newline=''))); repl_rows=[r for r in csv.DictReader(open(repl, newline='')) if r['exitCode']=='0']; fields=rows[0].keys(); kept=[r for r in rows if not (r['backend']=='stackprocessing' and r['operation']=='convolve')]; w=csv.DictWriter(open(raw, 'w', newline=''), fieldnames=fields); w.writeheader(); w.writerows(kept); w.writerows(repl_rows); print(f'backup: {backup}; inserted {len(repl_rows)} typed convolve rows')"
+
+python3 benchmarks/tools/summarize_results.py \
+  --input benchmarks/results/raw.csv \
+  --output benchmarks/results/summary.csv
+
+.venv-benchmarks/bin/python benchmarks/tools/plot_results.py \
+  --input benchmarks/results/summary.csv \
+  --output-dir benchmarks/results/figures
+
+cp benchmarks/results/figures/runtime-by-size-uint8.pdf \
+   benchmarks/results/figures/runtime-by-size-uint16.pdf \
+   benchmarks/results/figures/runtime-by-size-float32.pdf \
+   benchmarks/results/figures/runtime-by-complexity-uint8.pdf \
+   benchmarks/results/figures/runtime-by-complexity-uint16.pdf \
+   benchmarks/results/figures/runtime-by-complexity-float32.pdf \
+   benchmarks/results/figures/memory-pressure-by-size-uint8.pdf \
+   benchmarks/results/figures/memory-pressure-by-size-uint16.pdf \
+   benchmarks/results/figures/memory-pressure-by-size-float32.pdf \
+   benchmarks/results/figures/memory-pressure-by-complexity-uint8.pdf \
+   benchmarks/results/figures/memory-pressure-by-complexity-uint16.pdf \
+   benchmarks/results/figures/memory-pressure-by-complexity-float32.pdf \
+   benchmarks/results/figures/runtime-vs-memory.pdf \
+   benchmarks/results/figures/wrapper-overhead.pdf \
+   benchmarks/results/figures/connected-components-window-policy.pdf \
+   notes/LMIP_Optimiser_and_Studio/figures/
+```
+
+The 1024^3 StackProcessing convolve medians after this typed rerun were:
+`UInt8` 121.7/128.4/135.8 MiB for k=3/5/7, `UInt16`
+177.2/192.4/208.6 MiB, and `Float32` 280.2/314.0/327.7 MiB.
+
+7. Rerun and plot the StackProcessing-only histogram and dilation worker sweeps:
+
+```bash
+python3 benchmarks/tools/run_chunk_histogram_parallel.py \
+  --output tmp/benchmarks/chunk-histogram-parallel-raw-20260613.csv \
+  --dll benchmarks/StackProcessing.Benchmarks/bin/Release/net10.0/StackProcessing.Benchmarks.dll \
+  --repeats 6
+
+.venv-benchmarks/bin/python benchmarks/tools/plot_chunk_histogram_parallel.py \
+  --input tmp/benchmarks/chunk-histogram-parallel-raw-20260613.csv \
+  --summary tmp/benchmarks/chunk-histogram-parallel-summary-20260613.csv \
+  --output-dir notes/LMIP_Optimiser_and_Studio/figures
+
+python3 benchmarks/tools/run_chunk_dilate_parallel.py \
+  --output tmp/benchmarks/chunk-dilate-radius3-parallel-raw-20260613.csv \
+  --output-root tmp/benchmarks/output-chunk-dilate-parallel-20260613 \
+  --dll benchmarks/StackProcessing.Benchmarks/bin/Release/net10.0/StackProcessing.Benchmarks.dll \
+  --repeats 6 \
+  --radius 3
+
+.venv-benchmarks/bin/python benchmarks/tools/plot_chunk_dilate_parallel.py \
+  --input tmp/benchmarks/chunk-dilate-radius3-parallel-raw-20260613.csv \
+  --summary tmp/benchmarks/chunk-dilate-radius3-parallel-summary-20260613.csv \
+  --output-dir notes/LMIP_Optimiser_and_Studio/figures
+```
+
+8. Regenerate the convolution worker-sweep figure from the complete plugged-in
+three-repeat grid:
+
+```bash
+.venv-benchmarks/bin/python benchmarks/tools/plot_chunk_convolve_parallel.py \
+  --input tmp/benchmarks/chunk-convolve-float32-k7-parallel-all-sizes-raw.csv \
+  --summary tmp/benchmarks/chunk-convolve-float32-k7-parallel-summary-20260613.csv \
+  --output-dir notes/LMIP_Optimiser_and_Studio/figures
 ```
 
 ## Notes on Fairness

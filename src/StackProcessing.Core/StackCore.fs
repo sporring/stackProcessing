@@ -17,6 +17,7 @@ type ChunkIndex = ChunkPrimitive.ChunkIndex
 type Chunk<'T when 'T: equality> = ChunkPrimitive.Chunk<'T>
 type VectorChunk<'T when 'T: equality> = ChunkPrimitive.VectorChunk<'T>
 type DenseUInt32UnionFind = ChunkPrimitive.DenseUInt32UnionFind
+type ChunkStats = ChunkPrimitive.ChunkStats
 
 type HistogramBinning =
     | FixedEdges of firstLeftEdge: float * lastLeftEdge: float * bins: uint32
@@ -58,6 +59,10 @@ module Histogram =
 
 module Chunk =
     let create<'T when 'T: equality> = ChunkPrimitive.create<'T>
+    let setDebugLevel = ChunkPrimitive.ChunkStats.setDebugLevel
+    let resetStats = ChunkPrimitive.ChunkStats.reset
+    let stats = ChunkPrimitive.ChunkStats.snapshot
+    let formatStats = ChunkPrimitive.ChunkStats.format
     let span<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
         ChunkPrimitive.span<'T> chunk
     let incRef = ChunkPrimitive.incRef
@@ -179,9 +184,14 @@ let ignorePairs () : Stage<_,unit> = Stage.ignorePairs (ignore, ignore)
 
 let sinkOp (pl: Plan<unit,unit>) : unit =
     Plan.sink pl
+    if pl.debug && pl.debugLevel >= 2u then
+        printfn $"[chunkStats] {Chunk.stats() |> Chunk.formatStats}"
 
 let sink (pl: Plan<unit,'T>) : unit =
-    pl >=> ignoreSingles () |> Plan.sink
+    let pl = pl >=> ignoreSingles ()
+    Plan.sink pl
+    if pl.debug && pl.debugLevel >= 2u then
+        printfn $"[chunkStats] {Chunk.stats() |> Chunk.formatStats}"
 
 let sinkList (plLst: Plan<unit,unit> list) : unit = Plan.sinkList plLst
 let drain pl = Plan.drainSingle "drainSingle" pl
@@ -201,6 +211,7 @@ let optimizerEnabled () =
             failwith $"STACKPROCESSING_OPTIMIZE must be true/false, 1/0, yes/no, or on/off; got '{value}'")
 
 let sourceWithOptimizer optimize availableMemory =
+    Chunk.setDebugLevel 0u
     Plan.sourceWithOptimizer optimize availableMemory
 
 let source availableMemory =
@@ -208,6 +219,9 @@ let source availableMemory =
 
 let debug level optimize availableMemory =
     let level = max 1u level
+    Chunk.setDebugLevel level
+    if level >= 2u then
+        Chunk.resetStats()
     Plan.debug level optimize availableMemory
 
 let debugDefault level availableMemory =
