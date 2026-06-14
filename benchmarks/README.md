@@ -111,6 +111,30 @@ bash benchmarks/run_all.sh --repeat 3
 source .venv-benchmarks/bin/activate
 ```
 
+For the LMIP note PDFs, use the report wrapper. It rebuilds the native and
+managed benchmark binaries, reruns the main TIFF matrix, reruns the
+Dask/OME-Zarr storage figures, reruns the StackProcessing-only Chunk worker
+sweeps, regenerates summaries and figures, and copies the generated PDFs into
+`notes/LMIP_Optimiser_and_Studio/figures`:
+
+```bash
+bash benchmarks/run_lmip_pdf_benchmarks.sh
+```
+
+Use `--dry-run` to inspect the full command sequence without starting the long
+measurements.
+
+The wrapper also runs a filesystem-sensitivity OME-Zarr benchmark. It repeats
+the Dask/OME-Zarr copy, threshold, and median cases with both inputs and outputs
+below `slow/benchmarks/...`, so `slow/` can be mounted on a slower filesystem.
+Override that location with `SLOW_ROOT=/path/to/slow`. The generated comparison
+figures are:
+
+```text
+filesystem-zarr-runtime-by-size-and-parameter.pdf
+filesystem-zarr-memory-by-size-and-parameter.pdf
+```
+
 `run_all.sh` prebuilds compiled benchmark backends before generating inputs or measuring cases. It builds the F# benchmark project when StackProcessing is selected, or when TIFF inputs need to be generated, and it configures/builds `cpp-itk` when that backend is selected. These build steps are outside the measured commands. StackProcessing benchmark commands then execute the already-built benchmark DLL with `dotnet`, avoiding the SDK/project-runner overhead from `dotnet run`. Use `--skip-builds` only when you intentionally want to trust existing binaries.
 
 The runner also removes stale `benchmark-internal-*.txt` files in the results directory at the start and end of a non-dry run. Those files are temporary handoff files for backend-reported internal timing and normally disappear immediately.
@@ -137,6 +161,61 @@ Generate paper-oriented PDF figures from the summary table:
 ```
 
 The figure script writes tight-bounding-box PDFs for runtime scaling by image size, runtime scaling by neighbourhood complexity, runtime versus peak memory, and internal-versus-wall-time overhead.
+
+## FFT Roundtrip Comparison
+
+The FFT roundtrip benchmark is kept separate from the regular TIFF-stack
+operation matrix because full-volume FFT has a very different memory shape from
+local stencil operations. It compares:
+
+```text
+C++/ITK:          read TIFF slices -> full-volume FFT3D -> inverse FFT3D -> write TIFF slices
+StackProcessing: read TIFF slices -> real-to-complex FFTW XY -> compact spectral Zarr
+                 -> FFTW Z -> compact spectral Zarr
+                 -> inverse FFTW Z -> compact spectral Zarr
+                 -> complex-to-real inverse FFTW XY -> write TIFF slices
+```
+
+Build both binaries once:
+
+```bash
+dotnet build benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj -c Release
+cmake --build benchmarks/cpp-itk/build --config Release
+```
+
+Run through the normal measurement harness:
+
+```bash
+python3 benchmarks/tools/run_manifest.py \
+  --cases benchmarks/config/fft-roundtrip-cases.csv \
+  --backend stackprocessing \
+  --stackprocessing-dll benchmarks/StackProcessing.Benchmarks/bin/Release/net10.0/StackProcessing.Benchmarks.dll \
+  --results benchmarks/results/raw.fft-roundtrip.csv \
+  --repeat 1
+
+python3 benchmarks/tools/run_manifest.py \
+  --cases benchmarks/config/fft-roundtrip-cases.csv \
+  --backend cpp-itk \
+  --itk-exe benchmarks/cpp-itk/build/benchmark_itk \
+  --results benchmarks/results/raw.fft-roundtrip.csv \
+  --repeat 1
+```
+
+For a direct smoke/manual run, use:
+
+```bash
+benchmarks/cpp-itk/build/benchmark_itk \
+  --operation fftRoundtrip \
+  --pixel-type Float32 \
+  --input tmp/benchmarks/input/Float32_128x128x128 \
+  --output tmp/benchmarks/output/cpp-itk/fftRoundtrip_Float32_128x128x128_none_r01
+
+dotnet benchmarks/StackProcessing.Benchmarks/bin/Release/net10.0/StackProcessing.Benchmarks.dll \
+  run-chunk-fft3d-zarr-roundtrip-io \
+  --shape 128x128x128 \
+  --input tmp/benchmarks/input/Float32_128x128x128 \
+  --output tmp/benchmarks/output/stackprocessing/fftRoundtrip_Float32_128x128x128_none_r01
+```
 
 Use `--dry-run` to print the exact commands without executing them:
 

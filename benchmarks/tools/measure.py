@@ -59,6 +59,56 @@ def upgrade_existing_output(output: Path) -> None:
             writer.writerow({field: row.get(field, "") for field in FIELDNAMES})
 
 
+def command_option(command: list[str], name: str) -> str | None:
+    for index, value in enumerate(command[:-1]):
+        if value == name:
+            return command[index + 1]
+    return None
+
+
+def trim_path_suffix(value: str) -> str:
+    return value.rstrip("/\\")
+
+
+def benchmark_preclean_paths(command: list[str]) -> list[Path]:
+    output = command_option(command, "--output")
+    if not output:
+        return []
+
+    paths = [Path(output)]
+    command_text = " ".join(command)
+    if "run-chunk-fft3d-zarr-roundtrip-io" in command:
+        temp_base = command_option(command, "--temp-zarr") or (trim_path_suffix(output) + ".spectral.tmp.zarr")
+        paths.extend(Path(trim_path_suffix(temp_base) + suffix) for suffix in [".xy", ".z", ".invz"])
+    elif "run-chunk-fft3d-zarr-subchunked-roundtrip-io" in command:
+        temp_base = command_option(command, "--temp-zarr") or (trim_path_suffix(output) + ".spectral-subchunked.tmp.zarr")
+        paths.extend(Path(trim_path_suffix(temp_base) + suffix) for suffix in [".xy", ".invz"])
+    elif "fft3d-zarr" in command_text and (temp_base := command_option(command, "--temp-zarr")):
+        paths.append(Path(temp_base))
+
+    return paths
+
+
+def preclean_paths(paths: list[Path]) -> list[str]:
+    cleaned = []
+    seen = set()
+    for path in paths:
+        normalized = path.resolve()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        if normalized.exists():
+            if normalized.is_dir():
+                import shutil
+
+                shutil.rmtree(normalized)
+            else:
+                normalized.unlink()
+        normalized.mkdir(parents=True, exist_ok=True)
+        cleaned.append(str(normalized))
+    return cleaned
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         description="Measure a benchmark command and append one row to CSV.",
@@ -90,6 +140,10 @@ def main(argv: list[str]) -> int:
 
     env = os.environ.copy()
     env["BENCHMARK_INTERNAL_SECONDS_PATH"] = str(internal_path)
+    precleaned = preclean_paths(benchmark_preclean_paths(command))
+    if precleaned:
+        env["BENCHMARK_PRECLEANED_OUTPUTS"] = os.pathsep.join(precleaned)
+        env["BENCHMARK_SKIP_OUTPUT_CLEANING"] = "1"
 
     before = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
     start = time.perf_counter()

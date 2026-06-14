@@ -635,8 +635,14 @@ let connectedComponentsSauf3DUInt8UInt32ParallelCollect windowSize workers = Sta
 let connectedComponentsSauf3DUInt8 () = StackConnectedComponents.connectedComponentsSauf3DUInt8 ()
 
 let fftXYFloat32ToComplex64Interleaved = StackFFT.fftXYFloat32ToComplex64Interleaved
+let fftRealXYFloat32ToHermitianPackedComplex64Interleaved = StackFFT.fftRealXYFloat32ToHermitianPackedComplex64Interleaved
 let fftXYFloat32ToComplex64InterleavedParallelCollect workers = StackFFT.fftXYFloat32ToComplex64InterleavedParallelCollect workers
+let fftXYThenZFloat32ToComplex64InterleavedPlanned windowLength = StackFFT.fftXYThenZFloat32ToComplex64InterleavedPlanned windowLength
+let fft3DFloat32ToComplex64Interleaved windowLength = StackFFT.fft3DFloat32ToComplex64Interleaved windowLength
+let fft3DRealXYFloat32ToComplex64Interleaved windowLength = StackFFT.fft3DRealXYFloat32ToComplex64Interleaved windowLength
+let invFft3DRealXYComplex64InterleavedToFloat32 windowLength = StackFFT.invFft3DRealXYComplex64InterleavedToFloat32 windowLength
 let invFftXYComplex64InterleavedToFloat32 = StackFFT.invFftXYComplex64InterleavedToFloat32
+let invFftXYHermitianPackedComplex64InterleavedToFloat32 = StackFFT.invFftXYHermitianPackedComplex64InterleavedToFloat32
 let invFftXYComplex64InterleavedToFloat32ParallelCollect workers = StackFFT.invFftXYComplex64InterleavedToFloat32ParallelCollect workers
 let fftShift3DComplex64Interleaved = StackFFT.fftShift3DComplex64Interleaved
 let toComplex64 = StackFFT.toComplex64
@@ -941,17 +947,57 @@ let private releaseConsumedVectorWindow (window: Window<VectorChunk<float32>>) =
     |> List.truncate releaseCount
     |> List.iter (fun vector -> Chunk.decRef vector.Chunk)
 
-let private convolveVectorComponentsXFloat32 (kernel: float32[]) : Stage<VectorChunk<float32>, VectorChunk<float32>> =
-    releaseUnaryVectorToVectorChunk
-        $"chunkConvolveVectorComponentsXFloat32.k{kernel.Length}"
-        (ChunkKernel.convolveVectorComponentsNativeXFloat32 kernel)
-        (fun n -> n * uint64 (chunkElementBytes<float32> * 4))
+let private vectorComponentMemoryNeed componentBudget liveChunks n =
+    uint64 liveChunks * n * uint64 (chunkElementBytes<float32> * componentBudget)
 
-let private convolveVectorComponentsYFloat32 (kernel: float32[]) : Stage<VectorChunk<float32>, VectorChunk<float32>> =
-    releaseUnaryVectorToVectorChunk
-        $"chunkConvolveVectorComponentsYFloat32.k{kernel.Length}"
-        (ChunkKernel.convolveVectorComponentsNativeYFloat32 kernel)
-        (fun n -> n * uint64 (chunkElementBytes<float32> * 4))
+let private convolveVectorComponentsSingleSliceFloat32
+    axisName
+    (kernel: float32[])
+    workers
+    (convolve: float32[] -> VectorChunk<float32> -> VectorChunk<float32>)
+    : Stage<VectorChunk<float32>, VectorChunk<float32>> =
+    if isNull kernel then
+        nullArg "kernel"
+    if kernel.Length = 0 || kernel.Length % 2 = 0 then
+        invalidArg "kernel" $"chunkConvolveVectorComponents{axisName}Float32 expects a non-empty odd-length kernel, got {kernel.Length}."
+    if workers < 1 then
+        invalidArg "workers" $"chunkConvolveVectorComponents{axisName}Float32 expects at least one worker, got {workers}."
+
+    let mapper _debug (window: Window<VectorChunk<float32>>) =
+        match window.Items with
+        | [ vector ] ->
+            try
+                [ convolve kernel vector ]
+            finally
+                Chunk.decRef vector.Chunk
+        | items ->
+            items |> List.iter (fun vector -> Chunk.decRef vector.Chunk)
+            invalidArg "window" $"chunkConvolveVectorComponents{axisName}Float32 expects singleton windows, got {items.Length}."
+
+    Stage.parallelCollect
+        $"chunkConvolveVectorComponents{axisName}Float32.k{kernel.Length}.workers{workers}"
+        1
+        workers
+        1
+        0
+        zeroVectorFloat32Like
+        mapper
+        (vectorComponentMemoryNeed 6 (2 * workers))
+        id
+
+let private convolveVectorComponentsXFloat32 (kernel: float32[]) workers : Stage<VectorChunk<float32>, VectorChunk<float32>> =
+    convolveVectorComponentsSingleSliceFloat32
+        "X"
+        kernel
+        workers
+        ChunkKernel.convolveVectorComponentsNativeXFloat32
+
+let private convolveVectorComponentsYFloat32 (kernel: float32[]) workers : Stage<VectorChunk<float32>, VectorChunk<float32>> =
+    convolveVectorComponentsSingleSliceFloat32
+        "Y"
+        kernel
+        workers
+        ChunkKernel.convolveVectorComponentsNativeYFloat32
 
 let private convolveVectorComponentsZChunkFloat32 (kernel: float32[]) (items: VectorChunk<float32>[]) =
     if items.Length <> kernel.Length then
@@ -986,12 +1032,12 @@ let private convolveVectorComponentsZFloat32 (kernel: float32[]) (workers: int) 
         radius
         zeroVectorFloat32Like
         mapper
-        (fun n -> uint64 (kernel.Length + workers) * n * uint64 (chunkElementBytes<float32> * 6))
+        (vectorComponentMemoryNeed 6 (kernel.Length + 2 * workers - 1))
         id
 
 let convolveVectorComponentsFloat32NativeParallelCollect (xKernel: float32[]) (yKernel: float32[]) (zKernel: float32[]) (workers: int) : Stage<VectorChunk<float32>, VectorChunk<float32>> =
-    convolveVectorComponentsXFloat32 xKernel
-    --> convolveVectorComponentsYFloat32 yKernel
+    convolveVectorComponentsXFloat32 xKernel workers
+    --> convolveVectorComponentsYFloat32 yKernel workers
     --> convolveVectorComponentsZFloat32 zKernel workers
 
 let private gaussianSmoothVectorComponentsFloat32 (sigma: float) (radius: int) (workers: int) =

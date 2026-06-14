@@ -90,6 +90,8 @@ def filter_cases(cases, pixel_types, shapes, operations, parameters):
 
 
 def backend_supports_case(backend, case):
+    if case["operation"] == "fftRoundtrip":
+        return backend in {"stackprocessing", "cpp-itk"} and case["pixelType"] == "Float32"
     if backend == "stackprocessing-zarr":
         return case["pixelType"] in {"UInt8", "UInt16", "Float32"} and case["operation"] == "median"
     if backend == "stackprocessing-zarr-direct":
@@ -153,6 +155,30 @@ def backend_command(args, case, repeat):
     params = parameter_args(case)
 
     if args.backend == "stackprocessing":
+        if case["operation"] == "fftRoundtrip":
+            return [
+                "dotnet",
+                args.stackprocessing_dll,
+                "run-chunk-fft3d-zarr-roundtrip-io",
+                "--shape",
+                case["shape"],
+                "--input",
+                inp,
+                "--output",
+                out,
+            ]
+        if case["operation"] == "copy":
+            return [
+                "dotnet",
+                args.stackprocessing_dll,
+                "run-stack-read-write",
+                "--pixel-type",
+                case["pixelType"],
+                "--input",
+                inp,
+                "--output",
+                out,
+            ]
         return ["dotnet", args.stackprocessing_dll, "run"] + common + params
     if args.backend == "stackprocessing-arraypool":
         return ["dotnet", args.stackprocessing_dll, "run-arraypool"] + common + params

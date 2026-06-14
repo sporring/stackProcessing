@@ -14,12 +14,14 @@ if args.operation == "" || args.input == "" || args.output == ""
     error("operation, input, and output are required");
 end
 
-internalTimer = tic;
-
 if ~exist(args.output, "dir")
     mkdir(args.output);
 end
-delete(fullfile(args.output, "*.tif*"));
+if ~isPrecleanedOutput(args.output)
+    delete(fullfile(args.output, "*.tif*"));
+end
+
+internalTimer = tic;
 
 files = dir(fullfile(args.input, "*.tif*"));
 [~, order] = sort({files.name});
@@ -109,6 +111,47 @@ tags.Compression = Tiff.Compression.None;
 tags.RowsPerStrip = size(slice, 1);
 setTag(t, tags);
 write(t, slice);
+end
+
+function value = isPrecleanedOutput(path)
+value = false;
+precleaned = getenv("BENCHMARK_PRECLEANED_OUTPUTS");
+if isempty(precleaned)
+    return;
+end
+
+target = absolutePath(path);
+parts = split(string(precleaned), pathsep);
+for i = 1:numel(parts)
+    item = strtrim(parts(i));
+    if strlength(item) == 0
+        continue;
+    end
+    candidate = absolutePath(char(item));
+    if strcmp(candidate, target)
+        value = true;
+        return;
+    end
+end
+end
+
+function value = absolutePath(path)
+path = char(path);
+if isfolder(path)
+    old = pwd;
+    cleanup = onCleanup(@() cd(old));
+    cd(path);
+    value = pwd;
+else
+    [parent, name, ext] = fileparts(path);
+    if parent == ""
+        parent = ".";
+    end
+    old = pwd;
+    cleanup = onCleanup(@() cd(old));
+    cd(parent);
+    value = fullfile(pwd, [name ext]);
+end
 end
 
 function bits = bitsPerSample(slice)

@@ -442,7 +442,6 @@ let private sampleCompatibleProbeFeatures (probe: ProbeResultJson) =
         match pixelType.ToLowerInvariant() with
         | "uint8" -> "UInt8"
         | "float32" -> "Float32"
-        | "float32" -> "Float32"
         | other -> other
 
     let readFeature =
@@ -1303,7 +1302,6 @@ let private sourceNode probe =
     let capitalizedType =
         match pixelType.ToLowerInvariant() with
         | "uint8" -> "UInt8"
-        | "float32" -> "Float32"
         | "float32" -> "Float32"
         | other -> other
 
@@ -2394,7 +2392,6 @@ let private operationGraph (probe: ProbeResultJson) =
     let pixelType =
         match (probeParameter "pixelType" probe).ToLowerInvariant() with
         | "uint8" -> "UInt8"
-        | "float32" -> "Float32"
         | "float32" -> "Float32"
         | other -> other
 

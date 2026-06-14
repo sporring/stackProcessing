@@ -74,12 +74,14 @@ module ChunkStats =
     let recordIncRef typeName byteLength refCount currentRefCount =
         lock gate (fun () ->
             incRef <- incRef + 1L
-            printDebugMessage "Increased reference to" typeName byteLength refCount currentRefCount)
+            //printDebugMessage "Increased reference to" typeName byteLength refCount currentRefCount
+            )
 
     let recordDecRef typeName byteLength refCount currentRefCount =
         lock gate (fun () ->
             decRef <- decRef + 1L
-            printDebugMessage "Decreased reference to" typeName byteLength refCount currentRefCount)
+            //printDebugMessage "Decreased reference to" typeName byteLength refCount currentRefCount
+            )
 
     let recordRelease typeName byteLength refCount =
         lock gate (fun () ->
@@ -133,6 +135,15 @@ type VectorChunk<'T when 'T: equality> =
       Components: uint32
       Chunk: Chunk<'T> }
 
+type SpectralLayout =
+    | FullComplex64Interleaved
+    | HermitianPackedComplex64Interleaved of packedAxis: int * realSize: uint64
+
+type SpectralChunk =
+    { LogicalSize: uint64 * uint64 * uint64
+      Layout: SpectralLayout
+      Chunk: Chunk<float32> }
+
 type HistogramBinning =
     | FixedEdges of firstLeftEdge: float * lastLeftEdge: float * bins: uint32
     | FixedWidth of binWidth: uint64
@@ -158,6 +169,63 @@ module NativeSp =
         int width,
         int height)
 
+    [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_real_xy_to_complex")>]
+    extern int fftwfRealXYToComplex(
+        nativeint real,
+        nativeint interleaved,
+        int width,
+        int height)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_real_xy_plan_create")>]
+    extern nativeint fftwfRealXYPlanCreate(
+        nativeint real,
+        nativeint interleaved,
+        int width,
+        int height)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_real_xy_plan_execute")>]
+    extern int fftwfRealXYPlanExecute(
+        nativeint plan,
+        nativeint real,
+        nativeint interleaved)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_real_xy_plan_destroy")>]
+    extern void fftwfRealXYPlanDestroy(
+        nativeint plan)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_complex_xy_to_real_plan_create")>]
+    extern nativeint fftwfComplexXYToRealPlanCreate(
+        nativeint interleaved,
+        nativeint real,
+        int width,
+        int height)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_complex_xy_to_real_plan_execute")>]
+    extern int fftwfComplexXYToRealPlanExecute(
+        nativeint plan,
+        nativeint interleaved,
+        nativeint real)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_complex_xy_to_real_plan_destroy")>]
+    extern void fftwfComplexXYToRealPlanDestroy(
+        nativeint plan)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_complex_xy_plan_create")>]
+    extern nativeint fftwfComplexXYPlanCreate(
+        nativeint interleaved,
+        int width,
+        int height,
+        int inverse)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_complex_xy_plan_execute")>]
+    extern int fftwfComplexXYPlanExecute(
+        nativeint plan,
+        nativeint interleaved)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_complex_xy_plan_destroy")>]
+    extern void fftwfComplexXYPlanDestroy(
+        nativeint plan)
+
     [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_complex_z_inplace")>]
     extern int fftwfComplexZInplace(
         nativeint interleaved,
@@ -168,6 +236,54 @@ module NativeSp =
 
     [<DllImport(LibraryPath, EntryPoint = "sp_inv_fftwf_complex_z_inplace")>]
     extern int invFftwfComplexZInplace(
+        nativeint interleaved,
+        int width,
+        int height,
+        int depth)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_real_z_to_complex")>]
+    extern int fftwfRealZToComplex(
+        nativeint real,
+        nativeint interleaved,
+        int width,
+        int height,
+        int depth)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_complex_z_plan_create")>]
+    extern nativeint fftwfComplexZPlanCreate(
+        nativeint interleaved,
+        int width,
+        int height,
+        int depth,
+        int inverse)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_complex_z_plan_execute")>]
+    extern int fftwfComplexZPlanExecute(
+        nativeint plan,
+        nativeint interleaved)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_complex_z_plan_destroy")>]
+    extern void fftwfComplexZPlanDestroy(
+        nativeint plan)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_complex_3d_inplace")>]
+    extern int fftwfComplex3DInplace(
+        nativeint interleaved,
+        int width,
+        int height,
+        int depth,
+        int inverse)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_inv_fftwf_complex_3d_inplace")>]
+    extern int invFftwfComplex3DInplace(
+        nativeint interleaved,
+        int width,
+        int height,
+        int depth)
+
+    [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_real_3d_to_complex")>]
+    extern int fftwfReal3DToComplex(
+        nativeint real,
         nativeint interleaved,
         int width,
         int height,

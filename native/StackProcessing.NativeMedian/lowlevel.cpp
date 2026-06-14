@@ -1136,6 +1136,205 @@ static int fftwf_complex_xy_inplace(float* interleaved, int width, int height, i
     return 0;
 }
 
+static int fftwf_real_xy_to_complex(float* real, float* interleaved, int width, int height)
+{
+    if (real == nullptr || interleaved == nullptr || width <= 0 || height <= 0) {
+        return 1;
+    }
+
+    fftwf_complex* output = reinterpret_cast<fftwf_complex*>(interleaved);
+    fftwf_plan plan = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(fftwf_planner_mutex);
+        plan = fftwf_plan_dft_r2c_2d(height, width, real, output, FFTW_ESTIMATE);
+    }
+
+    if (plan == nullptr) {
+        return 2;
+    }
+
+    fftwf_execute(plan);
+    fftwf_destroy_plan(plan);
+    return 0;
+}
+
+struct FftwfRealXYPlan {
+    fftwf_plan plan = nullptr;
+    int width = 0;
+    int height = 0;
+};
+
+static FftwfRealXYPlan* fftwf_real_xy_plan_create(float* real, float* interleaved, int width, int height)
+{
+    if (real == nullptr || interleaved == nullptr || width <= 0 || height <= 0) {
+        return nullptr;
+    }
+
+    fftwf_complex* output = reinterpret_cast<fftwf_complex*>(interleaved);
+    fftwf_plan plan = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(fftwf_planner_mutex);
+        plan = fftwf_plan_dft_r2c_2d(height, width, real, output, FFTW_ESTIMATE);
+    }
+
+    if (plan == nullptr) {
+        return nullptr;
+    }
+
+    auto* wrapper = new FftwfRealXYPlan();
+    wrapper->plan = plan;
+    wrapper->width = width;
+    wrapper->height = height;
+    return wrapper;
+}
+
+static int fftwf_real_xy_plan_execute(FftwfRealXYPlan* wrapper, float* real, float* interleaved)
+{
+    if (wrapper == nullptr || wrapper->plan == nullptr || real == nullptr || interleaved == nullptr) {
+        return 1;
+    }
+
+    fftwf_complex* output = reinterpret_cast<fftwf_complex*>(interleaved);
+    fftwf_execute_dft_r2c(wrapper->plan, real, output);
+    return 0;
+}
+
+static void fftwf_real_xy_plan_destroy(FftwfRealXYPlan* wrapper)
+{
+    if (wrapper == nullptr) {
+        return;
+    }
+
+    if (wrapper->plan != nullptr) {
+        fftwf_destroy_plan(wrapper->plan);
+    }
+
+    delete wrapper;
+}
+
+struct FftwfComplexXYToRealPlan {
+    fftwf_plan plan = nullptr;
+    int width = 0;
+    int height = 0;
+};
+
+static FftwfComplexXYToRealPlan* fftwf_complex_xy_to_real_plan_create(float* interleaved, float* real, int width, int height)
+{
+    if (interleaved == nullptr || real == nullptr || width <= 0 || height <= 0) {
+        return nullptr;
+    }
+
+    fftwf_complex* input = reinterpret_cast<fftwf_complex*>(interleaved);
+    fftwf_plan plan = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(fftwf_planner_mutex);
+        plan = fftwf_plan_dft_c2r_2d(height, width, input, real, FFTW_ESTIMATE);
+    }
+
+    if (plan == nullptr) {
+        return nullptr;
+    }
+
+    auto* wrapper = new FftwfComplexXYToRealPlan();
+    wrapper->plan = plan;
+    wrapper->width = width;
+    wrapper->height = height;
+    return wrapper;
+}
+
+static int fftwf_complex_xy_to_real_plan_execute(FftwfComplexXYToRealPlan* wrapper, float* interleaved, float* real)
+{
+    if (wrapper == nullptr || wrapper->plan == nullptr || interleaved == nullptr || real == nullptr) {
+        return 1;
+    }
+
+    fftwf_complex* input = reinterpret_cast<fftwf_complex*>(interleaved);
+    fftwf_execute_dft_c2r(wrapper->plan, input, real);
+
+    const float scale = 1.0f / static_cast<float>(wrapper->width * wrapper->height);
+    const int count = wrapper->width * wrapper->height;
+    for (int i = 0; i < count; ++i) {
+        real[i] *= scale;
+    }
+
+    return 0;
+}
+
+static void fftwf_complex_xy_to_real_plan_destroy(FftwfComplexXYToRealPlan* wrapper)
+{
+    if (wrapper == nullptr) {
+        return;
+    }
+
+    if (wrapper->plan != nullptr) {
+        fftwf_destroy_plan(wrapper->plan);
+    }
+
+    delete wrapper;
+}
+
+struct FftwfComplexXYPlan {
+    fftwf_plan plan = nullptr;
+    int width = 0;
+    int height = 0;
+    int inverse = 0;
+};
+
+static FftwfComplexXYPlan* fftwf_complex_xy_plan_create(float* interleaved, int width, int height, int inverse)
+{
+    if (interleaved == nullptr || width <= 0 || height <= 0) {
+        return nullptr;
+    }
+
+    fftwf_complex* data = reinterpret_cast<fftwf_complex*>(interleaved);
+    const int sign = inverse ? FFTW_BACKWARD : FFTW_FORWARD;
+    fftwf_plan plan = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(fftwf_planner_mutex);
+        plan = fftwf_plan_dft_2d(height, width, data, data, sign, FFTW_ESTIMATE);
+    }
+
+    if (plan == nullptr) {
+        return nullptr;
+    }
+
+    auto* wrapper = new FftwfComplexXYPlan();
+    wrapper->plan = plan;
+    wrapper->width = width;
+    wrapper->height = height;
+    wrapper->inverse = inverse ? 1 : 0;
+    return wrapper;
+}
+
+static int fftwf_complex_xy_plan_execute(FftwfComplexXYPlan* wrapper, float* interleaved)
+{
+    if (wrapper == nullptr || wrapper->plan == nullptr || interleaved == nullptr) {
+        return 1;
+    }
+
+    auto* data = reinterpret_cast<fftwf_complex*>(interleaved);
+    fftwf_execute_dft(wrapper->plan, data, data);
+
+    if (wrapper->inverse) {
+        scale_complex_buffer(interleaved, wrapper->width * wrapper->height, 1.0f / static_cast<float>(wrapper->width * wrapper->height));
+    }
+
+    return 0;
+}
+
+static void fftwf_complex_xy_plan_destroy(FftwfComplexXYPlan* wrapper)
+{
+    if (wrapper == nullptr) {
+        return;
+    }
+
+    if (wrapper->plan != nullptr) {
+        fftwf_destroy_plan(wrapper->plan);
+    }
+
+    delete wrapper;
+}
+
 static int fftwf_complex_z_inplace(float* interleaved, int width, int height, int depth, int inverse)
 {
     if (interleaved == nullptr || width <= 0 || height <= 0 || depth <= 0) {
@@ -1178,6 +1377,174 @@ static int fftwf_complex_z_inplace(float* interleaved, int width, int height, in
         scale_complex_buffer(interleaved, plane * depth, 1.0f / static_cast<float>(depth));
     }
 
+    return 0;
+}
+
+static int fftwf_real_z_to_complex(float* real, float* interleaved, int width, int height, int depth)
+{
+    if (real == nullptr || interleaved == nullptr || width <= 0 || height <= 0 || depth <= 0) {
+        return 1;
+    }
+
+    const int plane = width * height;
+    fftwf_complex* output = reinterpret_cast<fftwf_complex*>(interleaved);
+    int n[] = { depth };
+
+    fftwf_plan plan = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(fftwf_planner_mutex);
+        plan =
+            fftwf_plan_many_dft_r2c(
+                1,
+                n,
+                plane,
+                real,
+                nullptr,
+                plane,
+                1,
+                output,
+                nullptr,
+                plane,
+                1,
+                FFTW_ESTIMATE);
+    }
+
+    if (plan == nullptr) {
+        return 2;
+    }
+
+    fftwf_execute(plan);
+    fftwf_destroy_plan(plan);
+    return 0;
+}
+
+struct FftwfComplexZPlan {
+    fftwf_plan plan = nullptr;
+    int width = 0;
+    int height = 0;
+    int depth = 0;
+    int inverse = 0;
+};
+
+static FftwfComplexZPlan* fftwf_complex_z_plan_create(float* interleaved, int width, int height, int depth, int inverse)
+{
+    if (interleaved == nullptr || width <= 0 || height <= 0 || depth <= 0) {
+        return nullptr;
+    }
+
+    const int plane = width * height;
+    fftwf_complex* data = reinterpret_cast<fftwf_complex*>(interleaved);
+    int n[] = { depth };
+    const int sign = inverse ? FFTW_BACKWARD : FFTW_FORWARD;
+    fftwf_plan plan = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(fftwf_planner_mutex);
+        plan =
+            fftwf_plan_many_dft(
+                1,
+                n,
+                plane,
+                data,
+                nullptr,
+                plane,
+                1,
+                data,
+                nullptr,
+                plane,
+                1,
+                sign,
+                FFTW_ESTIMATE);
+    }
+
+    if (plan == nullptr) {
+        return nullptr;
+    }
+
+    auto* wrapper = new FftwfComplexZPlan();
+    wrapper->plan = plan;
+    wrapper->width = width;
+    wrapper->height = height;
+    wrapper->depth = depth;
+    wrapper->inverse = inverse ? 1 : 0;
+    return wrapper;
+}
+
+static int fftwf_complex_z_plan_execute(FftwfComplexZPlan* wrapper, float* interleaved)
+{
+    if (wrapper == nullptr || wrapper->plan == nullptr || interleaved == nullptr) {
+        return 1;
+    }
+
+    auto* data = reinterpret_cast<fftwf_complex*>(interleaved);
+    fftwf_execute_dft(wrapper->plan, data, data);
+
+    if (wrapper->inverse) {
+        scale_complex_buffer(interleaved, wrapper->width * wrapper->height * wrapper->depth, 1.0f / static_cast<float>(wrapper->depth));
+    }
+
+    return 0;
+}
+
+static void fftwf_complex_z_plan_destroy(FftwfComplexZPlan* wrapper)
+{
+    if (wrapper == nullptr) {
+        return;
+    }
+
+    if (wrapper->plan != nullptr) {
+        fftwf_destroy_plan(wrapper->plan);
+    }
+
+    delete wrapper;
+}
+
+static int fftwf_complex_3d_inplace(float* interleaved, int width, int height, int depth, int inverse)
+{
+    if (interleaved == nullptr || width <= 0 || height <= 0 || depth <= 0) {
+        return 1;
+    }
+
+    fftwf_complex* data = reinterpret_cast<fftwf_complex*>(interleaved);
+    const int sign = inverse ? FFTW_BACKWARD : FFTW_FORWARD;
+    fftwf_plan plan = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(fftwf_planner_mutex);
+        plan = fftwf_plan_dft_3d(depth, height, width, data, data, sign, FFTW_ESTIMATE);
+    }
+
+    if (plan == nullptr) {
+        return 2;
+    }
+
+    fftwf_execute(plan);
+    fftwf_destroy_plan(plan);
+
+    if (inverse) {
+        scale_complex_buffer(interleaved, width * height * depth, 1.0f / static_cast<float>(width * height * depth));
+    }
+
+    return 0;
+}
+
+static int fftwf_real_3d_to_complex(float* real, float* interleaved, int width, int height, int depth)
+{
+    if (real == nullptr || interleaved == nullptr || width <= 0 || height <= 0 || depth <= 0) {
+        return 1;
+    }
+
+    fftwf_complex* output = reinterpret_cast<fftwf_complex*>(interleaved);
+    fftwf_plan plan = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(fftwf_planner_mutex);
+        plan = fftwf_plan_dft_r2c_3d(depth, height, width, real, output, FFTW_ESTIMATE);
+    }
+
+    if (plan == nullptr) {
+        return 2;
+    }
+
+    fftwf_execute(plan);
+    fftwf_destroy_plan(plan);
     return 0;
 }
 
@@ -2139,6 +2506,83 @@ SP_LOWLEVEL_API int sp_inv_fftwf_complex_xy_inplace(
     return fftwf_complex_xy_inplace(interleaved, width, height, 1);
 }
 
+SP_LOWLEVEL_API int sp_fftwf_real_xy_to_complex(
+    float* real,
+    float* interleaved,
+    int width,
+    int height)
+{
+    return fftwf_real_xy_to_complex(real, interleaved, width, height);
+}
+
+SP_LOWLEVEL_API void* sp_fftwf_real_xy_plan_create(
+    float* real,
+    float* interleaved,
+    int width,
+    int height)
+{
+    return fftwf_real_xy_plan_create(real, interleaved, width, height);
+}
+
+SP_LOWLEVEL_API int sp_fftwf_real_xy_plan_execute(
+    void* plan,
+    float* real,
+    float* interleaved)
+{
+    return fftwf_real_xy_plan_execute(static_cast<FftwfRealXYPlan*>(plan), real, interleaved);
+}
+
+SP_LOWLEVEL_API void sp_fftwf_real_xy_plan_destroy(
+    void* plan)
+{
+    fftwf_real_xy_plan_destroy(static_cast<FftwfRealXYPlan*>(plan));
+}
+
+SP_LOWLEVEL_API void* sp_fftwf_complex_xy_to_real_plan_create(
+    float* interleaved,
+    float* real,
+    int width,
+    int height)
+{
+    return fftwf_complex_xy_to_real_plan_create(interleaved, real, width, height);
+}
+
+SP_LOWLEVEL_API int sp_fftwf_complex_xy_to_real_plan_execute(
+    void* plan,
+    float* interleaved,
+    float* real)
+{
+    return fftwf_complex_xy_to_real_plan_execute(static_cast<FftwfComplexXYToRealPlan*>(plan), interleaved, real);
+}
+
+SP_LOWLEVEL_API void sp_fftwf_complex_xy_to_real_plan_destroy(
+    void* plan)
+{
+    fftwf_complex_xy_to_real_plan_destroy(static_cast<FftwfComplexXYToRealPlan*>(plan));
+}
+
+SP_LOWLEVEL_API void* sp_fftwf_complex_xy_plan_create(
+    float* interleaved,
+    int width,
+    int height,
+    int inverse)
+{
+    return fftwf_complex_xy_plan_create(interleaved, width, height, inverse);
+}
+
+SP_LOWLEVEL_API int sp_fftwf_complex_xy_plan_execute(
+    void* plan,
+    float* interleaved)
+{
+    return fftwf_complex_xy_plan_execute(static_cast<FftwfComplexXYPlan*>(plan), interleaved);
+}
+
+SP_LOWLEVEL_API void sp_fftwf_complex_xy_plan_destroy(
+    void* plan)
+{
+    fftwf_complex_xy_plan_destroy(static_cast<FftwfComplexXYPlan*>(plan));
+}
+
 SP_LOWLEVEL_API int sp_fftwf_complex_z_inplace(
     float* interleaved,
     int width,
@@ -2156,6 +2600,68 @@ SP_LOWLEVEL_API int sp_inv_fftwf_complex_z_inplace(
     int depth)
 {
     return fftwf_complex_z_inplace(interleaved, width, height, depth, 1);
+}
+
+SP_LOWLEVEL_API int sp_fftwf_real_z_to_complex(
+    float* real,
+    float* interleaved,
+    int width,
+    int height,
+    int depth)
+{
+    return fftwf_real_z_to_complex(real, interleaved, width, height, depth);
+}
+
+SP_LOWLEVEL_API void* sp_fftwf_complex_z_plan_create(
+    float* interleaved,
+    int width,
+    int height,
+    int depth,
+    int inverse)
+{
+    return fftwf_complex_z_plan_create(interleaved, width, height, depth, inverse);
+}
+
+SP_LOWLEVEL_API int sp_fftwf_complex_z_plan_execute(
+    void* plan,
+    float* interleaved)
+{
+    return fftwf_complex_z_plan_execute(static_cast<FftwfComplexZPlan*>(plan), interleaved);
+}
+
+SP_LOWLEVEL_API void sp_fftwf_complex_z_plan_destroy(
+    void* plan)
+{
+    fftwf_complex_z_plan_destroy(static_cast<FftwfComplexZPlan*>(plan));
+}
+
+SP_LOWLEVEL_API int sp_fftwf_complex_3d_inplace(
+    float* interleaved,
+    int width,
+    int height,
+    int depth,
+    int inverse)
+{
+    return fftwf_complex_3d_inplace(interleaved, width, height, depth, inverse);
+}
+
+SP_LOWLEVEL_API int sp_inv_fftwf_complex_3d_inplace(
+    float* interleaved,
+    int width,
+    int height,
+    int depth)
+{
+    return fftwf_complex_3d_inplace(interleaved, width, height, depth, 1);
+}
+
+SP_LOWLEVEL_API int sp_fftwf_real_3d_to_complex(
+    float* real,
+    float* interleaved,
+    int width,
+    int height,
+    int depth)
+{
+    return fftwf_real_3d_to_complex(real, interleaved, width, height, depth);
 }
 
 }

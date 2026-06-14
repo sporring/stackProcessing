@@ -119,15 +119,20 @@ def write_ome_metadata(root):
 
 def main():
     args = parse_args()
-    start = time.perf_counter()
     input_array = array_path(args.input)
     output_root = Path(args.output)
     output_array = array_path(output_root)
 
-    if output_root.exists():
+    precleaned = {
+        Path(path).resolve()
+        for path in os.environ.get("BENCHMARK_PRECLEANED_OUTPUTS", "").split(os.pathsep)
+        if path
+    }
+    if output_root.exists() and output_root.resolve() not in precleaned:
         shutil.rmtree(output_root)
     output_array.parent.mkdir(parents=True, exist_ok=True)
 
+    start = time.perf_counter()
     arr = da.from_zarr(str(input_array))
     out = process(image_volume(arr), args)
     out5 = out[None, None, :, :, :]

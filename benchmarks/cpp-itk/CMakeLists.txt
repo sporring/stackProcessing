@@ -20,6 +20,12 @@ find_package(
 )
 include(${ITK_USE_FILE})
 
+get_property(_itk_benchmark_includes DIRECTORY PROPERTY INCLUDE_DIRECTORIES)
+if(_itk_benchmark_includes)
+  list(FILTER _itk_benchmark_includes EXCLUDE REGEX "/Library/Developer/CommandLineTools/SDKs/.*/usr/include$")
+  set_property(DIRECTORY PROPERTY INCLUDE_DIRECTORIES ${_itk_benchmark_includes})
+endif()
+
 add_executable(benchmark_itk benchmark_itk.cxx)
 target_compile_features(benchmark_itk PRIVATE cxx_std_17)
 target_link_libraries(benchmark_itk PRIVATE ${ITK_LIBRARIES})

@@ -2,9 +2,12 @@ module StackIO
 
 open SlimPipeline // Core processing model
 open System
+open System.Buffers
 open System.IO
 open System.Reflection
 open System.Runtime.InteropServices
+open System.Text.Json
+open System.Text.Json.Nodes
 open System.Text.RegularExpressions
 open System.Threading
 open System.Threading.Tasks
@@ -16,6 +19,7 @@ open PureHDF.Selections
 open ZarrNET.Core
 open ZarrNET.Core.Nodes
 open ZarrNET.Core.OmeZarr.Coordinates
+open ZarrNET.Core.Zarr
 
 type FileInfo =
     { dimensions: uint
@@ -189,6 +193,120 @@ let private tiffFieldIntDefaulted (tiff: Tiff) tag fallback =
     let field = tiff.GetFieldDefaulted(tag)
     if isNull field || field.Length = 0 then fallback else field[0].ToInt()
 
+[<Struct; StructLayout(LayoutKind.Sequential)>]
+type private NativeUInt8TiffInfo =
+    val mutable Width: uint32
+    val mutable Height: uint32
+    val mutable RowsPerStrip: uint32
+    val mutable Strips: uint32
+    val mutable BitsPerSample: uint16
+    val mutable SampleFormat: uint16
+    val mutable SamplesPerPixel: uint16
+    val mutable PlanarConfig: uint16
+    val mutable Compression: uint16
+    val mutable IsTiled: int32
+    val mutable IsByteSwapped: int32
+    val mutable PageBytes: uint64
+    val mutable RawPageBytes: uint64
+
+module private NativeUInt8LibTiff =
+    [<Literal>]
+    let Ok = 0
+
+    [<Literal>]
+    let CompressionNone = 1us
+
+    [<Literal>]
+    let PlanarConfigContig = 1us
+
+    [<Literal>]
+    let SampleFormatUInt = 1us
+
+    [<DllImport("sp_libtiff_shim", EntryPoint = "sp_tiff_read_info", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
+    extern int readInfo(string path, NativeUInt8TiffInfo& info)
+
+    [<DllImport("sp_libtiff_shim", EntryPoint = "sp_tiff_read_raw_page", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
+    extern int readRawPage(string path, byte[] buffer, UIntPtr capacity, uint64& bytesRead)
+
+    [<DllImport("sp_libtiff_shim", EntryPoint = "sp_tiff_read_raw_page_into", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
+    extern int readRawPageInto(string path, byte[] buffer, UIntPtr bufferOffset, UIntPtr capacity, uint64& bytesRead)
+
+    [<DllImport("sp_libtiff_shim", EntryPoint = "sp_tiff_write_raw_page", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
+    extern int writeRawPage(string path, byte[] buffer, UIntPtr count, uint32 width, uint32 height, uint16 bitsPerSample, uint16 sampleFormat)
+
+    [<DllImport("sp_libtiff_shim", EntryPoint = "sp_tiff_write_raw_page_from", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
+    extern int writeRawPageFrom(string path, byte[] buffer, UIntPtr bufferOffset, UIntPtr count, UIntPtr capacity, uint32 width, uint32 height, uint16 bitsPerSample, uint16 sampleFormat)
+
+let private isNativeUInt8TiffPage expectedWidth expectedHeight (info: NativeUInt8TiffInfo) =
+    info.Width = expectedWidth &&
+    info.Height = expectedHeight &&
+    info.BitsPerSample = 8us &&
+    info.SampleFormat = NativeUInt8LibTiff.SampleFormatUInt &&
+    info.SamplesPerPixel = 1us &&
+    info.PlanarConfig = NativeUInt8LibTiff.PlanarConfigContig &&
+    info.Compression = NativeUInt8LibTiff.CompressionNone &&
+    info.IsTiled = 0 &&
+    info.IsByteSwapped = 0 &&
+    info.PageBytes = info.RawPageBytes &&
+    info.PageBytes = uint64 expectedWidth * uint64 expectedHeight
+
+let private tryReadNativeUInt8RawTiffSliceInto fileName expectedWidth expectedHeight sliceOffsetBytes (chunk: Chunk<uint8>) =
+    try
+        let mutable info = NativeUInt8TiffInfo()
+        if NativeUInt8LibTiff.readInfo(fileName, &info) <> NativeUInt8LibTiff.Ok ||
+           not (isNativeUInt8TiffPage expectedWidth expectedHeight info) ||
+           info.PageBytes > uint64 Int32.MaxValue ||
+           sliceOffsetBytes < 0 ||
+           chunk.ByteLength < sliceOffsetBytes + int info.PageBytes then
+            false
+        else
+            let mutable bytesRead = 0UL
+            let status =
+                NativeUInt8LibTiff.readRawPageInto(
+                    fileName,
+                    chunk.Bytes,
+                    UIntPtr(uint64 sliceOffsetBytes),
+                    UIntPtr(uint64 chunk.ByteLength),
+                    &bytesRead)
+            status = NativeUInt8LibTiff.Ok && bytesRead = info.PageBytes
+    with
+    | :? DllNotFoundException
+    | :? EntryPointNotFoundException
+    | :? BadImageFormatException ->
+        false
+
+let private tryReadNativeUInt8RawTiffSlice fileName expectedWidth expectedHeight (chunk: Chunk<uint8>) =
+    tryReadNativeUInt8RawTiffSliceInto fileName expectedWidth expectedHeight 0 chunk
+
+let private tryWriteNativeUInt8RawTiffSliceFrom fileName width height sliceOffsetBytes (chunk: Chunk<uint8>) =
+    try
+        let pageBytes = uint64 width * uint64 height
+        if pageBytes > uint64 Int32.MaxValue ||
+           sliceOffsetBytes < 0 ||
+           chunk.ByteLength < sliceOffsetBytes + int pageBytes then
+            false
+        else
+            let status =
+                NativeUInt8LibTiff.writeRawPageFrom(
+                    fileName,
+                    chunk.Bytes,
+                    UIntPtr(uint64 sliceOffsetBytes),
+                    UIntPtr pageBytes,
+                    UIntPtr(uint64 chunk.ByteLength),
+                    uint32 width,
+                    uint32 height,
+                    8us,
+                    NativeUInt8LibTiff.SampleFormatUInt)
+            status = NativeUInt8LibTiff.Ok
+    with
+    | :? DllNotFoundException
+    | :? EntryPointNotFoundException
+    | :? BadImageFormatException ->
+        false
+
+let private tryWriteNativeUInt8RawTiffSlice fileName width height (chunk: Chunk<uint8>) =
+    tryWriteNativeUInt8RawTiffSliceFrom fileName width height 0 chunk
+
 let private tiffDirectoryCount (filename: string) =
     use tiff = Tiff.Open(filename, "r")
     if isNull tiff then
@@ -236,6 +354,9 @@ let private inspectChunkTiffSlice<'T> fileName =
     if isNull tiff then
         invalidOp $"Could not open '{fileName}' for TIFF reading."
 
+    if not (tiff.SetDirectory(int16 0)) then
+        invalidOp $"Could not select TIFF page 0 in '{fileName}'."
+
     let width = uint (tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
     let height = uint (tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
     if width = 0u || height = 0u then
@@ -254,10 +375,103 @@ let private inspectChunkTiffSlice<'T> fileName =
 
     width, height, int width * expectedBytesPerSample, max (int width * expectedBytesPerSample) (tiff.ScanlineSize())
 
-let private readChunkTiffSlice<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> fileName =
+let private tryReadTiffEncodedStripsInto (tiff: Tiff) (chunk: Chunk<'T>) sliceOffsetBytes sliceBytes =
+    if tiff.IsTiled() then
+        false
+    else
+        let planarConfig =
+            tiffFieldIntDefaulted tiff TiffTag.PLANARCONFIG (int PlanarConfig.CONTIG)
+            |> enum<PlanarConfig>
+
+        if planarConfig <> PlanarConfig.CONTIG then
+            false
+        else
+            let strips = tiff.NumberOfStrips()
+            if strips < 1 then
+                false
+            else
+                let stripSize = tiff.StripSize()
+
+                let rec readStrip strip offset =
+                    if strip = strips then
+                        offset = sliceBytes
+                    else
+                        let remaining = sliceBytes - offset
+                        if remaining <= 0 || stripSize <= 0 then
+                            false
+                        else
+                            let requested = min remaining stripSize
+                            let bytesRead = tiff.ReadEncodedStrip(strip, chunk.Bytes, sliceOffsetBytes + offset, requested)
+                            if bytesRead < 0 || bytesRead > remaining then
+                                false
+                            else
+                                readStrip (strip + 1) (offset + bytesRead)
+
+                readStrip 0 0
+
+let private tryReadTiffRawStripsInto expectedBytesPerSample (tiff: Tiff) (chunk: Chunk<'T>) sliceOffsetBytes sliceBytes =
+    if tiff.IsTiled() then
+        false
+    else
+        let compression =
+            tiffFieldIntDefaulted tiff TiffTag.COMPRESSION (int Compression.NONE)
+            |> enum<Compression>
+
+        let planarConfig =
+            tiffFieldIntDefaulted tiff TiffTag.PLANARCONFIG (int PlanarConfig.CONTIG)
+            |> enum<PlanarConfig>
+
+        if compression <> Compression.NONE ||
+           planarConfig <> PlanarConfig.CONTIG ||
+           (expectedBytesPerSample > 1 && tiff.IsByteSwapped()) then
+            false
+        else
+            let strips = tiff.NumberOfStrips()
+            if strips < 1 then
+                false
+            else
+                let rawStripSizes =
+                    Array.init strips (fun strip ->
+                        let size = tiff.RawStripSize(strip)
+                        if size <= 0L || size > int64 Int32.MaxValue then
+                            -1
+                        else
+                            int size)
+
+                if rawStripSizes |> Array.exists ((=) -1) then
+                    false
+                else
+                    let rawBytes = rawStripSizes |> Array.sum
+                    if rawBytes <> sliceBytes then
+                        false
+                    else
+                        let rec readStrip strip offset =
+                            if strip = strips then
+                                offset = sliceBytes
+                            else
+                                let count = rawStripSizes[strip]
+                                let bytesRead = tiff.ReadRawStrip(strip, chunk.Bytes, sliceOffsetBytes + offset, count)
+                                if bytesRead <> count then
+                                    false
+                                else
+                                    readStrip (strip + 1) (offset + count)
+
+                        readStrip 0 0
+
+let private readChunkTiffSliceIntoOffset<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    fileName
+    pageIndex
+    (chunk: Chunk<'T>)
+    expectedWidth
+    expectedHeight
+    sliceOffsetBytes
+    =
+
     use tiff = Tiff.Open(fileName, "r")
     if isNull tiff then
         invalidOp $"Could not open '{fileName}' for TIFF reading."
+    if not (tiff.SetDirectory(int16 pageIndex)) then
+        invalidOp $"Could not select TIFF page {pageIndex} in '{fileName}'."
 
     let expectedBits, expectedFormat, expectedBytesPerSample = tiffPixelLayout<'T> ()
     let width = uint (tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
@@ -276,43 +490,46 @@ let private readChunkTiffSlice<'T when 'T: equality and 'T: (new: unit -> 'T) an
     if bitsPerSample <> expectedBits || sampleFormat <> expectedFormat then
         invalidOp $"Input slice '{fileName}' does not match {typeof<'T>.Name}: got {bitsPerSample}-bit {sampleFormat}."
 
+    if width <> expectedWidth || height <> expectedHeight then
+        invalidOp $"Input slice '{fileName}' has shape {width}x{height}, expected {expectedWidth}x{expectedHeight}."
+
     let rowBytes = int width * expectedBytesPerSample
     let scanlineSize = max rowBytes (tiff.ScanlineSize())
+    let sliceBytes = rowBytes * int height
+    if sliceOffsetBytes < 0 || chunk.ByteLength < sliceOffsetBytes + sliceBytes then
+        invalidArg "chunk" $"Chunk byte length {chunk.ByteLength} is too small to read slice '{fileName}' at offset {sliceOffsetBytes} with length {sliceBytes}."
+
+    if tryReadTiffRawStripsInto expectedBytesPerSample tiff chunk sliceOffsetBytes sliceBytes then
+        ()
+    elif tryReadTiffEncodedStripsInto tiff chunk sliceOffsetBytes sliceBytes then
+        ()
+    elif scanlineSize <= rowBytes then
+        for row in 0 .. int height - 1 do
+            if not (tiff.ReadScanline(chunk.Bytes, sliceOffsetBytes + row * rowBytes, row, int16 0)) then
+                invalidOp $"Failed to read TIFF scanline {row} from '{fileName}'."
+    else
+        let scratch = System.Buffers.ArrayPool<byte>.Shared.Rent(scanlineSize)
+        try
+            for row in 0 .. int height - 1 do
+                if not (tiff.ReadScanline(scratch, row)) then
+                    invalidOp $"Failed to read TIFF scanline {row} from '{fileName}'."
+                Buffer.BlockCopy(scratch, 0, chunk.Bytes, sliceOffsetBytes + row * rowBytes, rowBytes)
+        finally
+            System.Buffers.ArrayPool<byte>.Shared.Return(scratch)
+
+let private readChunkTiffSlice<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> fileName =
+    let width, height, rowBytes, _scanlineSize = inspectChunkTiffSlice<'T> fileName
     let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
     try
-        if scanlineSize <= rowBytes then
-            for row in 0 .. int height - 1 do
-                if not (tiff.ReadScanline(chunk.Bytes, row * rowBytes, row, int16 0)) then
-                    invalidOp $"Failed to read TIFF scanline {row} from '{fileName}'."
-        else
-            let scratch = System.Buffers.ArrayPool<byte>.Shared.Rent(scanlineSize)
-            try
-                for row in 0 .. int height - 1 do
-                    if not (tiff.ReadScanline(scratch, row)) then
-                        invalidOp $"Failed to read TIFF scanline {row} from '{fileName}'."
-                    Buffer.BlockCopy(scratch, 0, chunk.Bytes, row * rowBytes, rowBytes)
-            finally
-                System.Buffers.ArrayPool<byte>.Shared.Return(scratch)
+        readChunkTiffSliceIntoOffset<'T> fileName 0 chunk width height 0
         chunk
     with
     | ex ->
         Chunk.decRef chunk
         reraise()
 
-let private writeChunkTiffSlice<'T when 'T: equality> fileName (chunk: Chunk<'T>) =
-    let bitsPerSample, sampleFormat, bytesPerSample = tiffPixelLayout<'T> ()
-    let width, height, depth = chunk.Size
-    if depth <> 1UL then
-        invalidArg "chunk" $"writeChunkSlices expects 2D slice chunks with depth 1, got {chunk.Size}."
-
-    let rowBytes = int width * bytesPerSample
-    if chunk.ByteLength < rowBytes * int height then
-        invalidArg "chunk" $"Chunk byte length {chunk.ByteLength} is smaller than the TIFF page payload {rowBytes * int height}."
-
-    use tiff = Tiff.Open(fileName, tiffWriteMode fileName)
-    if isNull tiff then
-        invalidOp $"Could not open '{fileName}' for TIFF writing."
-
+let private setChunkTiffPageFields<'T> (tiff: Tiff) width height =
+    let bitsPerSample, sampleFormat, _bytesPerSample = tiffPixelLayout<'T> ()
     tiff.SetField(TiffTag.IMAGEWIDTH, int width) |> ignore
     tiff.SetField(TiffTag.IMAGELENGTH, int height) |> ignore
     tiff.SetField(TiffTag.SAMPLESPERPIXEL, 1) |> ignore
@@ -323,12 +540,61 @@ let private writeChunkTiffSlice<'T when 'T: equality> fileName (chunk: Chunk<'T>
     tiff.SetField(TiffTag.ROWSPERSTRIP, int height) |> ignore
     tiff.SetField(TiffTag.COMPRESSION, Compression.NONE) |> ignore
 
-    for row in 0 .. int height - 1 do
-        if not (tiff.WriteScanline(chunk.Bytes, row * rowBytes, row, int16 0)) then
-            invalidOp $"Failed to write TIFF scanline {row} to '{fileName}'."
+let private writeChunkTiffSliceToOpenTiff<'T when 'T: equality> fileName (tiff: Tiff) (chunk: Chunk<'T>) width height sliceOffsetBytes =
+    let _bitsPerSample, _sampleFormat, bytesPerSample = tiffPixelLayout<'T> ()
+    let rowBytes = int width * bytesPerSample
+    let sliceBytes = rowBytes * int height
+    if sliceOffsetBytes < 0 || chunk.ByteLength < sliceOffsetBytes + sliceBytes then
+        invalidArg "chunk" $"Chunk byte length {chunk.ByteLength} is smaller than the requested TIFF page payload at offset {sliceOffsetBytes} with length {sliceBytes}."
+
+    setChunkTiffPageFields<'T> tiff width height
+    let written = tiff.WriteRawStrip(0, chunk.Bytes, sliceOffsetBytes, sliceBytes)
+    if written < 0 then
+        invalidOp $"Failed to write TIFF strip to '{fileName}'."
+    if written <> sliceBytes then
+        invalidOp $"Wrote {written} bytes to TIFF strip in '{fileName}', expected {sliceBytes}."
 
     if not (tiff.WriteDirectory()) then
         invalidOp $"Failed to write TIFF directory to '{fileName}'."
+
+let private writeChunkTiffSliceFromOffset<'T when 'T: equality> fileName (chunk: Chunk<'T>) width height sliceOffsetBytes =
+    let writtenNative =
+        if typeof<'T> = typeof<uint8> then
+            let byteChunk = box chunk :?> Chunk<uint8>
+            tryWriteNativeUInt8RawTiffSliceFrom fileName width height sliceOffsetBytes byteChunk
+        else
+            false
+
+    if not writtenNative then
+        use tiff = Tiff.Open(fileName, tiffWriteMode fileName)
+        if isNull tiff then
+            invalidOp $"Could not open '{fileName}' for TIFF writing."
+
+        writeChunkTiffSliceToOpenTiff<'T> fileName tiff chunk width height sliceOffsetBytes
+
+let private writeChunkTiffSlice<'T when 'T: equality> fileName (chunk: Chunk<'T>) =
+    let width, height, depth = chunk.Size
+    if depth <> 1UL then
+        invalidArg "chunk" $"writeChunkSlices expects 2D slice chunks with depth 1, got {chunk.Size}."
+
+    writeChunkTiffSliceFromOffset<'T> fileName chunk width height 0
+
+let private writeChunkTiffFile<'T when 'T: equality> fileName (chunk: Chunk<'T>) =
+    let width, height, depth = chunk.Size
+    if depth = 0UL then
+        invalidArg "chunk" $"Cannot write an empty-depth TIFF chunk: {chunk.Size}."
+
+    let _bitsPerSample, _sampleFormat, bytesPerSample = tiffPixelLayout<'T> ()
+    let sliceBytes = int width * int height * bytesPerSample
+    if chunk.ByteLength < sliceBytes * int depth then
+        invalidArg "chunk" $"Chunk byte length {chunk.ByteLength} is smaller than {depth} TIFF pages of {sliceBytes} bytes."
+
+    use tiff = Tiff.Open(fileName, tiffWriteMode fileName)
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF writing."
+
+    for localZ in 0 .. int depth - 1 do
+        writeChunkTiffSliceToOpenTiff<'T> fileName tiff chunk width height (localZ * sliceBytes)
 
 let private inspectColorChunkTiffSlice fileName =
     use tiff = Tiff.Open(fileName, "r")
@@ -426,6 +692,19 @@ let private runTask (task: Task<'T>) : 'T =
 let private runUnitTask (task: Task) : unit =
     task.GetAwaiter().GetResult()
 
+let private collectZarrChunks (array: ZarrArray) =
+    let chunks = ResizeArray<ZarrChunkRef>()
+    let enumerator = array.EnumerateChunksAsync(CancellationToken.None).GetAsyncEnumerator()
+    try
+        let mutable more = true
+        while more do
+            more <- enumerator.MoveNextAsync().AsTask() |> runTask
+            if more then
+                chunks.Add(enumerator.Current)
+    finally
+        enumerator.DisposeAsync().AsTask() |> runUnitTask
+    chunks.ToArray()
+
 let private deleteZarrNetDebugLogs () =
     let candidates =
         [ Path.Combine(Directory.GetCurrentDirectory(), @"C:\Users\Public\biolog.txt")
@@ -459,6 +738,74 @@ let private suppressZarrNetDebugLogging () =
     setField "ZarrNET.Core.Zarr.ZarrArray, ZarrNET" "s_writeDebugCount" (box Int32.MaxValue)
     setField "ZarrNET.Core.Zarr.ZarrArray, ZarrNET" "s_readDebugCount" (box Int32.MaxValue)
     setField "ZarrNET.Core.Zarr.Store.LocalFileSystemStore, ZarrNET" "s_debugCount" (box Int32.MaxValue)
+
+let private jsonOptions =
+    JsonSerializerOptions(WriteIndented = true)
+
+let private jsonObjectProperty (name: string) (parent: JsonObject) =
+    match parent[name] with
+    | null ->
+        let child = JsonObject()
+        parent[name] <- child
+        child
+    | node -> node.AsObject()
+
+let private jsonInt64Array (values: int list) =
+    let array = JsonArray()
+    for value in values do
+        array.Add(JsonValue.Create<int64>(int64 value))
+    array
+
+let private tagSpectralZarrMetadataFile fileName (realWidth: int) (height: int) (depth: int) (packedAxis: int) (packedComplexWidth: int) =
+    if File.Exists fileName then
+        let root = JsonNode.Parse(File.ReadAllText fileName).AsObject()
+        let attributes = jsonObjectProperty "attributes" root
+        let stackProcessing = JsonObject()
+        stackProcessing["complex_storage"] <- JsonValue.Create<string>("complex64_interleaved")
+        stackProcessing["spectral_layout"] <- JsonValue.Create<string>("hermitian_packed")
+        stackProcessing["packed_axis"] <- JsonValue.Create<int>(packedAxis)
+        stackProcessing["real_size"] <- jsonInt64Array [ realWidth; height; depth ]
+        stackProcessing["stored_complex_size"] <- jsonInt64Array [ packedComplexWidth; height; depth ]
+        attributes["stackprocessing"] <- stackProcessing
+        File.WriteAllText(fileName, root.ToJsonString(jsonOptions))
+
+let private tagSpectralZarrMetadata outputPath realWidth height depth packedAxis packedComplexWidth =
+    tagSpectralZarrMetadataFile (Path.Combine(outputPath, "zarr.json")) realWidth height depth packedAxis packedComplexWidth
+    tagSpectralZarrMetadataFile (Path.Combine(outputPath, "0", "zarr.json")) realWidth height depth packedAxis packedComplexWidth
+
+let private tryReadSpectralZarrMetadata outputPath =
+    let readFrom fileName =
+        if not (File.Exists fileName) then
+            None
+        else
+            try
+                let root = JsonNode.Parse(File.ReadAllText fileName).AsObject()
+                match root["attributes"] with
+                | null -> None
+                | attributes ->
+                    match attributes.AsObject()["stackprocessing"] with
+                    | null -> None
+                    | metadata ->
+                        let metadata = metadata.AsObject()
+                        let layout = metadata["spectral_layout"].GetValue<string>()
+                        if not (String.Equals(layout, "hermitian_packed", StringComparison.OrdinalIgnoreCase)) then
+                            None
+                        else
+                            let packedAxis = metadata["packed_axis"].GetValue<int>()
+                            let realSize = metadata["real_size"].AsArray()
+                            if realSize.Count <> 3 then
+                                None
+                            else
+                                Some(
+                                    packedAxis,
+                                    uint64 (realSize[0].GetValue<int64>()),
+                                    uint64 (realSize[1].GetValue<int64>()),
+                                    uint64 (realSize[2].GetValue<int64>()))
+            with _ ->
+                None
+
+    readFrom (Path.Combine(outputPath, "zarr.json"))
+    |> Option.orElseWith (fun () -> readFrom (Path.Combine(outputPath, "0", "zarr.json")))
 
 let private zarrDataType<'T> () =
     if typeof<'T> = typeof<uint8> then
@@ -851,6 +1198,23 @@ let private getStackFiles inputDir suffix =
     |> Seq.sort
     |> Seq.toArray
 
+let private getStackPagesForFiles (files: string[]) =
+    if files.Length = 0 then
+        [||]
+    else
+        let firstPageCount = tiffDirectoryCount files[0] |> int
+        if firstPageCount = 1 then
+            files |> Array.map (fun fileName -> fileName, 0)
+        else
+            files
+            |> Array.collect (fun fileName ->
+                let pageCount = tiffDirectoryCount fileName |> int
+                Array.init pageCount (fun pageIndex -> fileName, pageIndex))
+
+let private getStackPages inputDir suffix =
+    getStackFiles inputDir suffix
+    |> getStackPagesForFiles
+
 let getStackDepth (inputDir: string) (suffix: string) : uint =
     let files = getStackFiles inputDir suffix
     files.Length |> uint
@@ -932,12 +1296,22 @@ let readChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
         let fileName = files[i]
         if pl.debug then
             printfn $"[{name}] Reading chunk slice {i}: {fileName} as {typeof<'T>.Name}"
-        let chunk = readChunkTiffSlice<'T> fileName
-        let chunkWidth, chunkHeight, _ = chunk.Size
-        if chunkWidth <> uint64 width || chunkHeight <> uint64 height then
+        let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+        try
+            let readNative =
+                if typeof<'T> = typeof<uint8> then
+                    let byteChunk = box chunk :?> Chunk<uint8>
+                    tryReadNativeUInt8RawTiffSlice fileName width height byteChunk
+                else
+                    false
+
+            if not readNative then
+                readChunkTiffSliceIntoOffset<'T> fileName 0 chunk width height 0
+            chunk
+        with
+        | _ ->
             Chunk.decRef chunk
-            invalidOp $"Input slice '{fileName}' has shape {chunkWidth}x{chunkHeight}, expected {width}x{height}."
-        chunk
+            reraise()
 
     let transition = ProfileTransition.create Unit Streaming
     let memoryNeed _ = elementBytes
@@ -954,11 +1328,140 @@ let readChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
     |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
+let readChunkThick<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (chunkDepth: uint)
+    inputDir
+    suffix
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+
+    let name = "readChunkThick"
+    ensureDirectTiffChunkRead<'T> suffix
+    let chunkDepth = max 1u chunkDepth |> int
+    let files = getStackFiles inputDir suffix
+    if files.Length = 0 then
+        stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
+
+    let pages = getStackPagesForFiles files
+    let width, height, rowBytes, scanlineSize = inspectChunkTiffSlice<'T> files[0]
+    let sliceBytes = rowBytes * int height
+    let groupCount = (pages.Length + chunkDepth - 1) / chunkDepth
+    let elementBytes = uint64 sliceBytes * uint64 chunkDepth
+    let sourcePeek =
+        SourcePeek.create
+            name
+            elementBytes
+            (Some(uint64 groupCount))
+            (Map.ofList
+                [ "kind", "chunk-tiff-slice-groups"
+                  "inputDir", inputDir
+                  "suffix", suffix
+                  "width", string width
+                  "height", string height
+                  "sourceDepth", string pages.Length
+                  "sourceFiles", string files.Length
+                  "chunkDepth", string chunkDepth
+                  "groups", string groupCount
+                  "pixelType", typeof<'T>.Name
+                  "scanlineSize", string scanlineSize ])
+
+    let mapper (groupIndex: int) =
+        let firstSlice = groupIndex * chunkDepth
+        let zCount = min chunkDepth (pages.Length - firstSlice)
+        if pl.debug then
+            printfn $"[{name}] Reading slices {firstSlice}..{firstSlice + zCount - 1} from {inputDir} as {typeof<'T>.Name}"
+
+        let chunk = Chunk.create<'T> (uint64 width, uint64 height, uint64 zCount)
+        try
+            for localZ in 0 .. zCount - 1 do
+                let fileName, pageIndex = pages[firstSlice + localZ]
+                readChunkTiffSliceIntoOffset<'T> fileName pageIndex chunk width height (localZ * sliceBytes)
+            chunk
+        with
+        | _ ->
+            Chunk.decRef chunk
+            reraise()
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memoryNeed _ = elementBytes
+    let elementTransformation _ = uint64 width * uint64 height * uint64 chunkDepth
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        StageTimeCostModel.ioRead Source (Some $"readChunkThick.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> uint64 chunkDepth)
+    let stage =
+        Stage.init name (uint groupCount) mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    Plan.createWithOptimizer stage pl.memAvail elementBytes elementBytes (uint64 groupCount) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
+    |> Plan.withSourcePeek sourcePeek
+
+let readChunkThickFiles<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> inputDir suffix (pl: Plan<unit, unit>) : Plan<unit, Chunk<'T>> =
+    let name = "readChunkThickFiles"
+    ensureDirectTiffChunkRead<'T> suffix
+    let files = getStackFiles inputDir suffix
+    if files.Length = 0 then
+        stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
+
+    let pageCounts = files |> Array.map (tiffDirectoryCount >> int)
+    let width, height, rowBytes, scanlineSize = inspectChunkTiffSlice<'T> files[0]
+    let sliceBytes = rowBytes * int height
+    let maxPagesPerFile = pageCounts |> Array.max
+    let elementBytes = uint64 sliceBytes * uint64 maxPagesPerFile
+    let sourcePeek =
+        SourcePeek.create
+            name
+            elementBytes
+            (Some(uint64 files.Length))
+            (Map.ofList
+                [ "kind", "chunk-tiff-files"
+                  "inputDir", inputDir
+                  "suffix", suffix
+                  "width", string width
+                  "height", string height
+                  "files", string files.Length
+                  "sourceDepth", string (pageCounts |> Array.sum)
+                  "maxPagesPerFile", string maxPagesPerFile
+                  "pixelType", typeof<'T>.Name
+                  "scanlineSize", string scanlineSize ])
+
+    let mapper (i: int) =
+        let fileName = files[i]
+        let zCount = pageCounts[i]
+        if pl.debug then
+            printfn $"[{name}] Reading chunk file {i}: {fileName} with {zCount} page(s) as {typeof<'T>.Name}"
+
+        let chunk = Chunk.create<'T> (uint64 width, uint64 height, uint64 zCount)
+        try
+            for localZ in 0 .. zCount - 1 do
+                readChunkTiffSliceIntoOffset<'T> fileName localZ chunk width height (localZ * sliceBytes)
+            chunk
+        with
+        | _ ->
+            Chunk.decRef chunk
+            reraise()
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memoryNeed _ = elementBytes
+    let elementTransformation _ = uint64 width * uint64 height * uint64 maxPagesPerFile
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        StageTimeCostModel.ioRead Source (Some $"readChunkThickFiles.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> uint64 maxPagesPerFile)
+    let stage =
+        Stage.init name (uint files.Length) mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    Plan.createWithOptimizer stage pl.memAvail elementBytes elementBytes (uint64 files.Length) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
+    |> Plan.withSourcePeek sourcePeek
+
 let private readSelectedChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (name: string)
     (inputDir: string)
     (suffix: string)
-    (selectFiles: string[] -> string[])
+    (selectPages: (string * int)[] -> (string * int)[])
     (sourcePeekFields: (string * string) list)
     (pl: Plan<unit, unit>)
     : Plan<unit, Chunk<'T>> =
@@ -967,39 +1470,43 @@ let private readSelectedChunkSlices<'T when 'T: equality and 'T: (new: unit -> '
     if sourceFiles.Length = 0 then
         stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
 
-    let files = selectFiles sourceFiles
-    if files.Length = 0 then
+    let sourcePages = getStackPagesForFiles sourceFiles
+    let pages = selectPages sourcePages
+    if pages.Length = 0 then
         stopWithInputError $"{name} selected no {suffixDescription suffix} files from input stack directory: {inputDir}"
 
-    let width, height, rowBytes, scanlineSize = inspectChunkTiffSlice<'T> files[0]
+    let width, height, rowBytes, scanlineSize = inspectChunkTiffSlice<'T> sourceFiles[0]
     let elementBytes = uint64 rowBytes * uint64 height
     let sourcePeek =
         SourcePeek.create
             name
             elementBytes
-            (Some(uint64 files.Length))
+            (Some(uint64 pages.Length))
             (Map.ofList
                 ([ "kind", "chunk-tiff-slices"
                    "inputDir", inputDir
                    "suffix", suffix
                    "width", string width
                    "height", string height
-                   "depth", string files.Length
-                   "sourceDepth", string sourceFiles.Length
+                   "depth", string pages.Length
+                   "sourceDepth", string sourcePages.Length
+                   "sourceFiles", string sourceFiles.Length
                    "pixelType", typeof<'T>.Name
                    "scanlineSize", string scanlineSize ]
                  @ sourcePeekFields))
 
     let mapper (i: int) =
-        let fileName = files[i]
+        let fileName, pageIndex = pages[i]
         if pl.debug then
-            printfn $"[{name}] Reading chunk slice {i}: {fileName} as {typeof<'T>.Name}"
-        let chunk = readChunkTiffSlice<'T> fileName
-        let chunkWidth, chunkHeight, _ = chunk.Size
-        if chunkWidth <> uint64 width || chunkHeight <> uint64 height then
+            printfn $"[{name}] Reading chunk slice {i}: {fileName} page {pageIndex} as {typeof<'T>.Name}"
+        let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+        try
+            readChunkTiffSliceIntoOffset<'T> fileName pageIndex chunk width height 0
+            chunk
+        with
+        | _ ->
             Chunk.decRef chunk
-            invalidOp $"Input slice '{fileName}' has shape {chunkWidth}x{chunkHeight}, expected {width}x{height}."
-        chunk
+            reraise()
 
     let transition = ProfileTransition.create Unit Streaming
     let memoryNeed _ = elementBytes
@@ -1008,11 +1515,11 @@ let private readSelectedChunkSlices<'T when 'T: equality and 'T: (new: unit -> '
     let timeCostModel =
         StageTimeCostModel.ioRead Source (Some $"{name}.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> 1UL)
     let stage =
-        Stage.init name (uint files.Length) mapper transition memoryNeed elementTransformation
+        Stage.init name (uint pages.Length) mapper transition memoryNeed elementTransformation
         |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
-    Plan.createWithOptimizer stage pl.memAvail elementBytes elementBytes (uint64 files.Length) pl.debug pl.optimize
+    Plan.createWithOptimizer stage pl.memAvail elementBytes elementBytes (uint64 pages.Length) pl.debug pl.optimize
     |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
@@ -2880,6 +3387,63 @@ let write<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Ima
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 #endif
 
+let private writeChunkThickCore<'T when 'T: equality> split3DChunks (outputDir: string) (suffix: string) : Stage<Chunk<'T>, unit> =
+    ensureDirectTiffChunkWrite<'T> suffix
+    Directory.CreateDirectory(outputDir) |> ignore
+    let cleaned = lazy (cleanImageSeriesFiles outputDir suffix)
+    let indexLock = obj()
+    let mutable nextSliceIndex = 0L
+
+    let mapper (debug: bool) (idx: int64) (chunk: Chunk<'T>) =
+        cleaned.Force()
+        try
+            let width, height, depth = chunk.Size
+            if depth = 0UL then
+                invalidArg "chunk" $"writeChunkThick cannot write an empty-depth chunk: {chunk.Size}."
+
+            let _bitsPerSample, _sampleFormat, bytesPerSample = tiffPixelLayout<'T> ()
+            let sliceBytes = int width * int height * bytesPerSample
+            if chunk.ByteLength < sliceBytes * int depth then
+                invalidArg "chunk" $"Chunk byte length {chunk.ByteLength} is smaller than {depth} TIFF slice payloads of {sliceBytes} bytes."
+
+            if split3DChunks then
+                let firstSliceIndex =
+                    lock indexLock (fun () ->
+                        let first = nextSliceIndex
+                        nextSliceIndex <- nextSliceIndex + int64 depth
+                        first)
+
+                for localZ in 0 .. int depth - 1 do
+                    let sliceIndex = firstSliceIndex + int64 localZ
+                    let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" sliceIndex suffix)
+                    let sliceOffset = localZ * sliceBytes
+                    if debug then
+                        if depth = 1UL then
+                            printfn $"[writeChunkThick] Saved chunk slice {sliceIndex} to {fileName} as {typeof<'T>.Name}"
+                        else
+                            printfn $"[writeChunkThick] Saved chunk {idx} local z {localZ} as slice {sliceIndex} to {fileName} as {typeof<'T>.Name}"
+                    writeChunkTiffSliceFromOffset<'T> fileName chunk width height sliceOffset
+            else
+                let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
+                if debug then
+                    printfn $"[writeChunkThick] Saved chunk {idx} with depth {depth} to {fileName} as {typeof<'T>.Name}"
+                writeChunkTiffFile<'T> fileName chunk
+        finally
+            Chunk.decRef chunk
+
+    let memoryNeed = id
+    let memoryModel = StageMemoryModel.fromSinglePeak Iter memoryNeed
+    let timeCostModel =
+        imageIoCost<'T>
+            "write"
+            Iter
+            $"writeChunkThick.{suffixCostLabel suffix}.{typeof<'T>.Name}"
+            (fun input -> inputValue input)
+            (fun _ -> 1UL)
+
+    Stage.mapi $"writeChunkThick \"{outputDir}/*{suffix}\"" mapper memoryNeed id
+    |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+
 let writeChunkSlices<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Chunk<'T>, unit> =
     ensureDirectTiffChunkWrite<'T> suffix
     Directory.CreateDirectory(outputDir) |> ignore
@@ -2887,11 +3451,15 @@ let writeChunkSlices<'T when 'T: equality> (outputDir: string) (suffix: string) 
 
     let mapper (debug: bool) (idx: int64) (chunk: Chunk<'T>) =
         cleaned.Force()
-        let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
         try
+            let width, height, depth = chunk.Size
+            if depth <> 1UL then
+                invalidArg "chunk" $"write expects slice chunks with depth 1. Use writeThick for depth {depth} chunks."
+
+            let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
             if debug then
                 printfn $"[writeChunkSlices] Saved chunk slice {idx} to {fileName} as {typeof<'T>.Name}"
-            writeChunkTiffSlice<'T> fileName chunk
+            writeChunkTiffSliceFromOffset<'T> fileName chunk width height 0
         finally
             Chunk.decRef chunk
 
@@ -2907,6 +3475,12 @@ let writeChunkSlices<'T when 'T: equality> (outputDir: string) (suffix: string) 
 
     Stage.mapi $"writeChunkSlices \"{outputDir}/*{suffix}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+
+let writeChunkThick<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Chunk<'T>, unit> =
+    writeChunkThickCore<'T> true outputDir suffix
+
+let writeChunkThickFiles<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Chunk<'T>, unit> =
+    writeChunkThickCore<'T> false outputDir suffix
 
 let writeColorChunkSlices (outputDir: string) (suffix: string) : Stage<VectorChunk<uint8>, unit> =
     if not (isTiffStackSuffix suffix) then
@@ -3657,7 +4231,677 @@ let writeZarrComplex64InterleavedFloat32
         physicalSizeZ
         maxConcurrentWrites
 
-let fftZComplex64InterleavedZarrTiles
+let private validateSpectralComplex64InterleavedFloat32
+    name
+    (realWidth: int)
+    (height: int)
+    (depth: int)
+    (idx: int64)
+    (spectral: SpectralChunk)
+    =
+
+    if realWidth <= 0 || height <= 0 || depth <= 0 then
+        invalidArg "shape" $"{name} expects positive logical width, height, and depth."
+    if idx >= int64 depth then
+        failwith $"{name} received slice {idx}, but declared depth is {depth}."
+
+    match spectral.Layout with
+    | SpectralLayout.HermitianPackedComplex64Interleaved(packedAxis, originalWidth) ->
+        if packedAxis <> 0 then
+            failwith $"{name} currently supports Hermitian packing along X only; got packed axis {packedAxis}."
+        if originalWidth <> uint64 realWidth then
+            failwith $"{name} expected real width {realWidth}, got spectral real width {originalWidth}."
+    | SpectralLayout.FullComplex64Interleaved ->
+        failwith $"{name} expects compact Hermitian spectra, got full complex spectra."
+
+    let logicalWidth, logicalHeight, logicalDepth = spectral.LogicalSize
+    if logicalWidth <> uint64 realWidth || logicalHeight <> uint64 height || logicalDepth <> uint64 depth then
+        failwith $"{name} expected logical size {realWidth}x{height}x{depth}, got {spectral.LogicalSize}."
+
+    let packedComplexWidth = realWidth / 2 + 1
+    let chunkWidth, chunkHeight, chunkDepth = spectral.Chunk.Size
+    if chunkDepth <> 1UL then
+        failwith $"{name} expects 2D interleaved compact complex64 chunks with depth 1, got {spectral.Chunk.Size}."
+    if chunkWidth <> uint64 (2 * packedComplexWidth) || chunkHeight <> uint64 height then
+        failwith $"{name} expected chunk size {2 * packedComplexWidth}x{height}x1, got {spectral.Chunk.Size}."
+
+    let expectedBytes = packedComplexWidth * height * 2 * sizeof<float32>
+    if spectral.Chunk.ByteLength <> expectedBytes then
+        failwith $"{name} expected {expectedBytes} bytes, got {spectral.Chunk.ByteLength}."
+
+    packedComplexWidth, expectedBytes
+
+let writeZarrSpectralComplex64InterleavedFloat32WithCompression
+    (compression: ZarrCompression)
+    (outputPath: string)
+    (name: string)
+    (realWidth: uint)
+    (height: uint)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<SpectralChunk, unit> =
+
+    let realWidth = int realWidth
+    let height = int height
+    let depth = int depth
+    let packedComplexWidth = realWidth / 2 + 1
+    let _requestedChunkX = max 1u chunkX |> int
+    let _requestedChunkY = max 1u chunkY |> int
+    let chunkZ = max 1u chunkZ |> int
+    let mutable writer: OmeZarrWriter option = None
+    let mutable level: ResolutionLevelNode option = None
+    let mutable array: ZarrNET.Core.Zarr.ZarrArray option = None
+    let expectedPlaneBytes = packedComplexWidth * height * 2 * sizeof<float32>
+    let expectedFullChunkBytes = expectedPlaneBytes * chunkZ
+
+    suppressZarrNetDebugLogging ()
+
+    let createWriter () =
+        let descriptor =
+            BioImageDescriptor(
+                packedComplexWidth,
+                height,
+                ZCT(depth, 1, 1),
+                Name = name,
+                DataType = "complex64",
+                ChunkX = packedComplexWidth,
+                ChunkY = height,
+                ChunkZ = chunkZ,
+                ChunkC = 1,
+                ChunkT = 1,
+                PhysicalSizeX = physicalSizeX,
+                PhysicalSizeY = physicalSizeY,
+                PhysicalSizeZ = physicalSizeZ,
+                Compression = compression)
+
+        let created =
+            OmeZarrWriter.CreateAsync(outputPath, descriptor, CancellationToken.None)
+            |> runTask
+        deleteZarrNetDebugLogs ()
+        tagSpectralZarrMetadata outputPath realWidth height depth 0 packedComplexWidth
+
+        if maxConcurrentWrites > 0 then
+            OmeZarrWriter.MaxConcurrentWrites <- maxConcurrentWrites
+
+        writer <- Some created
+        level <- Some(openZarrResolutionLevel outputPath 0 0)
+        let zarrArray =
+            let reader =
+                OmeZarrReader.OpenAsync(outputPath, ct = CancellationToken.None)
+                |> runTask
+            reader.RootGroup.OpenArrayAsync("0", CancellationToken.None)
+            |> runTask
+        array <- Some zarrArray
+        created
+
+    let writeSlab debug slabIndex (spectra: ResizeArray<SpectralChunk>) =
+        if spectra.Count = 0 then
+            ()
+        else
+            let zStart = slabIndex * chunkZ
+            let zCount = spectra.Count
+            let zStop = zStart + zCount
+            if zStop > depth then
+                failwith $"writeZarrSpectralComplex64InterleavedFloat32 received slab {slabIndex} ending at z={zStop}, but declared depth is {depth}."
+
+            let slabBytes = Array.zeroCreate<byte> expectedFullChunkBytes
+            for i = 0 to spectra.Count - 1 do
+                let spectral = spectra[i]
+                let _packedWidth, _expectedBytes =
+                    validateSpectralComplex64InterleavedFloat32
+                        "writeZarrSpectralComplex64InterleavedFloat32"
+                        realWidth
+                        height
+                        depth
+                        (int64 (zStart + i))
+                        spectral
+                Buffer.BlockCopy(spectral.Chunk.Bytes, 0, slabBytes, i * expectedPlaneBytes, expectedPlaneBytes)
+
+            let zarrArray =
+                match array with
+                | Some array -> array
+                | None ->
+                    createWriter () |> ignore
+                    array.Value
+
+            if debug then
+                printfn "[writeZarrSpectralComplex64InterleavedFloat32] Saved chunk z %d..%d to %s as compact complex64" zStart (zStop - 1) outputPath
+
+            zarrArray.WriteChunkDecodedAsync([| 0L; 0L; int64 slabIndex; 0L; 0L |], slabBytes.AsMemory(), true, CancellationToken.None)
+            |> runUnitTask
+            deleteZarrNetDebugLogs ()
+
+            if zStop = depth then
+                match writer with
+                | Some zarrWriter ->
+                    zarrWriter.DisposeAsync().AsTask()
+                    |> runUnitTask
+                    writer <- None
+                    level <- None
+                    array <- None
+                    tagSpectralZarrMetadata outputPath realWidth height depth 0 packedComplexWidth
+                    deleteZarrNetDebugLogs ()
+                | None -> ()
+
+    let apply debug (input: AsyncSeq<SpectralChunk>) =
+        asyncSeq {
+            let slab = ResizeArray<SpectralChunk>(chunkZ)
+            let mutable slabIndex = 0
+
+            let releaseSlab () =
+                for spectral in slab do
+                    Chunk.decRef spectral.Chunk
+                slab.Clear()
+
+            try
+                for spectral in input do
+                    slab.Add spectral
+                    if slab.Count = chunkZ then
+                        try
+                            writeSlab debug slabIndex slab
+                        finally
+                            releaseSlab ()
+                        slabIndex <- slabIndex + 1
+
+                if slab.Count > 0 then
+                    try
+                        writeSlab debug slabIndex slab
+                    finally
+                        releaseSlab ()
+
+                yield ()
+            with
+            | ex ->
+                releaseSlab ()
+                raise ex
+        }
+
+    let memoryNeed nPixels =
+        nPixels * uint64 chunkZ * uint64 (sizeof<float32> * 4)
+
+    Stage.fromAsyncSeq
+        $"writeZarrSpectralComplex64InterleavedFloat32 \"{outputPath}\""
+        apply
+        (ProfileTransition.create Streaming Constant)
+        (StageMemoryModel.fromSinglePeak Reduce memoryNeed)
+        id
+
+let writeZarrSpectralComplex64InterleavedFloat32
+    (outputPath: string)
+    (name: string)
+    (realWidth: uint)
+    (height: uint)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<SpectralChunk, unit> =
+
+    writeZarrSpectralComplex64InterleavedFloat32WithCompression
+        ZarrCompression.None
+        outputPath
+        name
+        realWidth
+        height
+        depth
+        chunkX
+        chunkY
+        chunkZ
+        physicalSizeX
+        physicalSizeY
+        physicalSizeZ
+        maxConcurrentWrites
+
+let writeZarrSpectralComplex64InterleavedFloat32Tiled
+    (outputPath: string)
+    (name: string)
+    (realWidth: uint)
+    (height: uint)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<SpectralChunk, unit> =
+
+    suppressZarrNetDebugLogging ()
+
+    let realWidth = int realWidth
+    let height = int height
+    let depth = int depth
+    let packedComplexWidth = realWidth / 2 + 1
+    let chunkX = max 1u chunkX |> int
+    let chunkY = max 1u chunkY |> int
+    let chunkZ = max 1u chunkZ |> int
+    let chunkBytes = chunkX * chunkY * chunkZ * 2 * sizeof<float32>
+    let planeBytes = packedComplexWidth * height * 2 * sizeof<float32>
+    let xChunks = (packedComplexWidth + chunkX - 1) / chunkX
+    let yChunks = (height + chunkY - 1) / chunkY
+
+    let mutable writer: OmeZarrWriter option = None
+    let mutable array: ZarrArray option = None
+
+    let createWriter () =
+        let descriptor =
+            BioImageDescriptor(
+                packedComplexWidth,
+                height,
+                ZCT(depth, 1, 1),
+                Name = name,
+                DataType = "complex64",
+                ChunkX = chunkX,
+                ChunkY = chunkY,
+                ChunkZ = chunkZ,
+                ChunkC = 1,
+                ChunkT = 1,
+                PhysicalSizeX = physicalSizeX,
+                PhysicalSizeY = physicalSizeY,
+                PhysicalSizeZ = physicalSizeZ,
+                Compression = ZarrCompression.None)
+
+        let created =
+            OmeZarrWriter.CreateAsync(outputPath, descriptor, CancellationToken.None)
+            |> runTask
+        deleteZarrNetDebugLogs ()
+        tagSpectralZarrMetadata outputPath realWidth height depth 0 packedComplexWidth
+
+        if maxConcurrentWrites > 0 then
+            OmeZarrWriter.MaxConcurrentWrites <- maxConcurrentWrites
+
+        let zarrArray =
+            let reader =
+                OmeZarrReader.OpenAsync(outputPath, ct = CancellationToken.None)
+                |> runTask
+            reader.RootGroup.OpenArrayAsync("0", CancellationToken.None)
+            |> runTask
+
+        writer <- Some created
+        array <- Some zarrArray
+        created
+
+    let validate idx (spectral: SpectralChunk) =
+        validateSpectralComplex64InterleavedFloat32
+            "writeZarrSpectralComplex64InterleavedFloat32Tiled"
+            realWidth
+            height
+            depth
+            idx
+            spectral
+        |> ignore
+
+    let writeSlab debug slabIndex (spectra: ResizeArray<SpectralChunk>) =
+        if spectra.Count > 0 then
+            let zStart = slabIndex * chunkZ
+            let zStop = zStart + spectra.Count
+            if zStop > depth then
+                failwith $"writeZarrSpectralComplex64InterleavedFloat32Tiled received slab {slabIndex} ending at z={zStop}, but declared depth is {depth}."
+
+            let zarrArray =
+                match array with
+                | Some zarrArray -> zarrArray
+                | None ->
+                    createWriter () |> ignore
+                    array.Value
+
+            for localZ = 0 to spectra.Count - 1 do
+                validate (int64 (zStart + localZ)) spectra[localZ]
+
+            for yc = 0 to yChunks - 1 do
+                let y0 = yc * chunkY
+                let validY = min chunkY (height - y0)
+                for xc = 0 to xChunks - 1 do
+                    let x0 = xc * chunkX
+                    let validX = min chunkX (packedComplexWidth - x0)
+                    let payload = Array.zeroCreate<byte> chunkBytes
+
+                    for localZ = 0 to spectra.Count - 1 do
+                        let source = spectra[localZ].Chunk.Bytes
+                        for yy = 0 to validY - 1 do
+                            let sourceOffset = ((y0 + yy) * packedComplexWidth + x0) * 2 * sizeof<float32>
+                            let targetOffset = ((localZ * chunkY + yy) * chunkX) * 2 * sizeof<float32>
+                            Buffer.BlockCopy(source, sourceOffset, payload, targetOffset, validX * 2 * sizeof<float32>)
+
+                    if debug then
+                        printfn "[writeZarrSpectralComplex64InterleavedFloat32Tiled] Saved chunk z=%d y=%d x=%d to %s" slabIndex yc xc outputPath
+
+                    zarrArray.WriteChunkDecodedAsync(
+                        [| 0L; 0L; int64 slabIndex; int64 yc; int64 xc |],
+                        payload.AsMemory(),
+                        true,
+                        CancellationToken.None)
+                    |> runUnitTask
+                    deleteZarrNetDebugLogs ()
+
+            if zStop = depth then
+                match writer with
+                | Some zarrWriter ->
+                    zarrWriter.DisposeAsync().AsTask()
+                    |> runUnitTask
+                    writer <- None
+                    array <- None
+                    tagSpectralZarrMetadata outputPath realWidth height depth 0 packedComplexWidth
+                    deleteZarrNetDebugLogs ()
+                | None -> ()
+
+    let apply debug (input: AsyncSeq<SpectralChunk>) =
+        asyncSeq {
+            let slab = ResizeArray<SpectralChunk>(chunkZ)
+            let mutable slabIndex = 0
+
+            let releaseSlab () =
+                for spectral in slab do
+                    Chunk.decRef spectral.Chunk
+                slab.Clear()
+
+            try
+                for spectral in input do
+                    slab.Add spectral
+                    if slab.Count = chunkZ then
+                        try
+                            writeSlab debug slabIndex slab
+                        finally
+                            releaseSlab ()
+                        slabIndex <- slabIndex + 1
+
+                if slab.Count > 0 then
+                    try
+                        writeSlab debug slabIndex slab
+                    finally
+                        releaseSlab ()
+
+                yield ()
+            with
+            | ex ->
+                releaseSlab ()
+                raise ex
+        }
+
+    Stage.fromAsyncSeq
+        $"writeZarrSpectralComplex64InterleavedFloat32Tiled \"{outputPath}\""
+        apply
+        (ProfileTransition.create Streaming Constant)
+        (StageMemoryModel.fromSinglePeak Reduce (fun _ -> uint64 (chunkBytes + planeBytes * chunkZ)))
+        id
+
+let readZarrSpectralComplex64InterleavedFloat32Range
+    (first: uint)
+    (step: int)
+    (last: uint)
+    (path: string)
+    (multiscaleIndex: int)
+    (datasetIndex: int)
+    (timepoint: int)
+    (channel: int)
+    (maxParallelChunks: int)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, SpectralChunk> =
+
+    suppressZarrNetDebugLogging ()
+
+    let name = "readZarrSpectralComplex64InterleavedFloat32Range"
+    let level = openZarrResolutionLevel path multiscaleIndex datasetIndex
+    let sizeT, sizeC, sizeZ, sizeY, sizeX = zarrShapeTCZYX level.Shape
+    if not (String.Equals(level.DataType, "complex64", StringComparison.OrdinalIgnoreCase)) then
+        invalidOp $"{name} expected complex64 Zarr data, got {level.DataType}."
+
+    if timepoint < 0 || timepoint >= sizeT then
+        invalidArg "timepoint" $"Timepoint {timepoint} is outside the Zarr time range 0..{sizeT - 1}."
+    if channel < 0 || channel >= sizeC then
+        invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
+
+    let packedAxis, realWidth, realHeight, realDepth =
+        match tryReadSpectralZarrMetadata path with
+        | Some metadata -> metadata
+        | None -> 0, uint64 ((sizeX - 1) * 2), uint64 sizeY, uint64 sizeZ
+
+    if packedAxis <> 0 then
+        invalidOp $"{name} currently supports compact spectra packed along X only; got packed axis {packedAxis}."
+    if realHeight <> uint64 sizeY || realDepth <> uint64 sizeZ then
+        invalidOp $"{name} metadata logical size {realWidth}x{realHeight}x{realDepth} does not match stored Zarr shape {sizeX}x{sizeY}x{sizeZ}."
+
+    let expectedPackedWidth = int (realWidth / 2UL + 1UL)
+    if expectedPackedWidth <> sizeX then
+        invalidOp $"{name} metadata real width {realWidth} implies packed complex width {expectedPackedWidth}, but Zarr x-size is {sizeX}."
+
+    let reader =
+        OmeZarrReader.OpenAsync(path, ct = CancellationToken.None)
+        |> runTask
+    let zarrArray =
+        reader.RootGroup.OpenArrayAsync(level.Dataset.Path, CancellationToken.None)
+        |> runTask
+    let chunkShape = zarrArray.Metadata.ChunkShape
+    let chunkShapeText = String.Join("x", chunkShape)
+    if chunkShape.Length <> 5 then
+        invalidOp $"{name} expected 5D OME-Zarr chunk shape, got {chunkShapeText}."
+    if chunkShape[0] <> 1 || chunkShape[1] <> 1 then
+        invalidOp $"{name} expected singleton t/c Zarr chunks, got chunk shape {chunkShapeText}."
+    if chunkShape[3] <> sizeY || chunkShape[4] <> sizeX then
+        invalidOp $"{name} requires full packed XY chunks for direct chunk IO; got chunk shape {chunkShapeText} for stored XY {sizeX}x{sizeY}."
+
+    let chunkZ = max 1 chunkShape[2]
+    let selected = rangeIndices first step last sizeZ
+    let selectedByChunk =
+        selected
+        |> Array.groupBy (fun z -> z / chunkZ)
+
+    let expectedBytes = sizeX * sizeY * 2 * sizeof<float32>
+    let expectedFullChunkBytes = expectedBytes * chunkZ
+    let sourcePeek =
+        SourcePeek.create
+            name
+            (uint64 expectedBytes)
+            (Some (uint64 selected.Length))
+            (Map.ofList
+                [ "kind", "zarr-spectral-complex64-range"
+                  "path", path
+                  "realWidth", string realWidth
+                  "height", string realHeight
+                  "depth", string selected.Length
+                  "sourceDepth", string sizeZ
+                  "storedComplexWidth", string sizeX
+                  "multiscaleIndex", string multiscaleIndex
+                  "datasetIndex", string datasetIndex
+                  "timepoint", string timepoint
+                  "channel", string channel
+                  "first", string first
+                  "step", string step
+                  "last", string last ])
+
+    let mapper (outputIndex: int) : SpectralChunk list =
+        let zChunk, zIndices = selectedByChunk[outputIndex]
+        if pl.debug then
+            printfn $"[{name}] Reading Zarr chunk z-block {zChunk} from {path} as compact complex64"
+
+        let scratch = ArrayPool<byte>.Shared.Rent(expectedFullChunkBytes)
+        try
+            zarrArray.ReadChunkDecodedAsync(
+                [| int64 timepoint; int64 channel; int64 zChunk; 0L; 0L |],
+                scratch.AsMemory(0, expectedFullChunkBytes),
+                true,
+                CancellationToken.None)
+            |> runUnitTask
+            deleteZarrNetDebugLogs ()
+
+            [ for zIndex in zIndices do
+                let localZ = zIndex - zChunk * chunkZ
+                let chunk = Chunk.create<float32> (uint64 (2 * sizeX), uint64 sizeY, 1UL)
+                try
+                    Buffer.BlockCopy(scratch, localZ * expectedBytes, chunk.Bytes, 0, expectedBytes)
+                    ({ LogicalSize = (realWidth, uint64 sizeY, uint64 sizeZ)
+                       Layout = SpectralLayout.HermitianPackedComplex64Interleaved(0, realWidth)
+                       Chunk = chunk }
+                     : SpectralChunk)
+                with
+                | ex ->
+                    Chunk.decRef chunk
+                    raise ex ]
+        finally
+            ArrayPool<byte>.Shared.Return(scratch)
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memPeak = uint64 (expectedFullChunkBytes + expectedBytes * chunkZ)
+    let memoryNeed = fun _ -> memPeak
+    let elementTransformation = id
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        StageTimeCostModel.ioRead Source (Some name) (fun _ -> uint64 expectedBytes) (fun _ -> 1UL)
+    let stage =
+        Stage.init name (uint selectedByChunk.Length) mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    Plan.createWithOptimizer stage pl.memAvail memPeak memPeak (uint64 selectedByChunk.Length) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
+    |> Plan.withSourcePeek sourcePeek
+    >=> flattenList ()
+
+let readZarrSpectralComplex64InterleavedFloat32TiledRange
+    (first: uint)
+    (step: int)
+    (last: uint)
+    (path: string)
+    (multiscaleIndex: int)
+    (datasetIndex: int)
+    (timepoint: int)
+    (channel: int)
+    (maxParallelChunks: int)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, SpectralChunk> =
+
+    suppressZarrNetDebugLogging ()
+
+    let name = "readZarrSpectralComplex64InterleavedFloat32TiledRange"
+    let level = openZarrResolutionLevel path multiscaleIndex datasetIndex
+    let sizeT, sizeC, sizeZ, sizeY, sizeX = zarrShapeTCZYX level.Shape
+    if not (String.Equals(level.DataType, "complex64", StringComparison.OrdinalIgnoreCase)) then
+        invalidOp $"{name} expected complex64 Zarr data, got {level.DataType}."
+
+    if timepoint < 0 || timepoint >= sizeT then
+        invalidArg "timepoint" $"Timepoint {timepoint} is outside the Zarr time range 0..{sizeT - 1}."
+    if channel < 0 || channel >= sizeC then
+        invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
+
+    let packedAxis, realWidth, realHeight, realDepth =
+        match tryReadSpectralZarrMetadata path with
+        | Some metadata -> metadata
+        | None -> 0, uint64 ((sizeX - 1) * 2), uint64 sizeY, uint64 sizeZ
+
+    if packedAxis <> 0 then
+        invalidOp $"{name} currently supports compact spectra packed along X only; got packed axis {packedAxis}."
+    if realHeight <> uint64 sizeY || realDepth <> uint64 sizeZ then
+        invalidOp $"{name} metadata logical size {realWidth}x{realHeight}x{realDepth} does not match stored Zarr shape {sizeX}x{sizeY}x{sizeZ}."
+
+    let expectedPackedWidth = int (realWidth / 2UL + 1UL)
+    if expectedPackedWidth <> sizeX then
+        invalidOp $"{name} metadata real width {realWidth} implies packed complex width {expectedPackedWidth}, but Zarr x-size is {sizeX}."
+
+    let reader =
+        OmeZarrReader.OpenAsync(path, ct = CancellationToken.None)
+        |> runTask
+    let zarrArray =
+        reader.RootGroup.OpenArrayAsync(level.Dataset.Path, CancellationToken.None)
+        |> runTask
+    let chunkShape = zarrArray.Metadata.ChunkShape
+    let chunkShapeText = String.Join("x", chunkShape)
+    if chunkShape.Length <> 5 then
+        invalidOp $"{name} expected 5D OME-Zarr chunk shape, got {chunkShapeText}."
+    if chunkShape[0] <> 1 || chunkShape[1] <> 1 then
+        invalidOp $"{name} expected singleton t/c Zarr chunks, got chunk shape {chunkShapeText}."
+
+    let chunkZ = max 1 chunkShape[2]
+    let chunkY = max 1 chunkShape[3]
+    let chunkX = max 1 chunkShape[4]
+    let xChunks = (sizeX + chunkX - 1) / chunkX
+    let yChunks = (sizeY + chunkY - 1) / chunkY
+    let selected = rangeIndices first step last sizeZ
+    let selectedByChunk =
+        selected
+        |> Array.groupBy (fun z -> z / chunkZ)
+
+    let planeBytes = sizeX * sizeY * 2 * sizeof<float32>
+    let chunkBytes = chunkX * chunkY * chunkZ * 2 * sizeof<float32>
+    let memPeak = uint64 (chunkBytes + planeBytes * chunkZ)
+
+    let mapper (outputIndex: int) : SpectralChunk list =
+        let zChunk, zIndices = selectedByChunk[outputIndex]
+        let zStart = zChunk * chunkZ
+        let validDepth = min chunkZ (sizeZ - zStart)
+        let outputs: SpectralChunk[] =
+            zIndices
+            |> Array.map (fun zIndex ->
+                let chunk = Chunk.create<float32> (uint64 (2 * sizeX), uint64 sizeY, 1UL)
+                let logicalSize = (realWidth, uint64 sizeY, uint64 sizeZ)
+                let layout = SpectralLayout.HermitianPackedComplex64Interleaved(0, realWidth)
+                { LogicalSize = logicalSize
+                  Layout = layout
+                  Chunk = chunk })
+
+        let outputByLocalZ =
+            zIndices
+            |> Array.mapi (fun i zIndex -> zIndex - zStart, outputs[i])
+            |> Map.ofArray
+
+        let scratch = ArrayPool<byte>.Shared.Rent(chunkBytes)
+        try
+            try
+                for yc = 0 to yChunks - 1 do
+                    let y0 = yc * chunkY
+                    let validY = min chunkY (sizeY - y0)
+                    for xc = 0 to xChunks - 1 do
+                        let x0 = xc * chunkX
+                        let validX = min chunkX (sizeX - x0)
+
+                        zarrArray.ReadChunkDecodedAsync(
+                            [| int64 timepoint; int64 channel; int64 zChunk; int64 yc; int64 xc |],
+                            scratch.AsMemory(0, chunkBytes),
+                            true,
+                            CancellationToken.None)
+                        |> runUnitTask
+                        deleteZarrNetDebugLogs ()
+
+                        for localZ = 0 to validDepth - 1 do
+                            match outputByLocalZ.TryFind localZ with
+                            | None -> ()
+                            | Some spectral ->
+                                for yy = 0 to validY - 1 do
+                                    let sourceOffset = ((localZ * chunkY + yy) * chunkX) * 2 * sizeof<float32>
+                                    let targetOffset = ((y0 + yy) * sizeX + x0) * 2 * sizeof<float32>
+                                    Buffer.BlockCopy(scratch, sourceOffset, spectral.Chunk.Bytes, targetOffset, validX * 2 * sizeof<float32>)
+
+                outputs |> Array.toList
+            with
+            | ex ->
+                for spectral in outputs do
+                    Chunk.decRef spectral.Chunk
+                raise ex
+        finally
+            ArrayPool<byte>.Shared.Return(scratch)
+
+    let stage =
+        Stage.init name (uint selectedByChunk.Length) mapper (ProfileTransition.create Unit Streaming) (fun _ -> memPeak) id
+        |> withCostModel (StageCostModel.create (StageMemoryModel.fromSinglePeak Source (fun _ -> memPeak)) (StageTimeCostModel.ioRead Source (Some name) (fun _ -> uint64 planeBytes) (fun _ -> 1UL)))
+        |> Some
+
+    Plan.createWithOptimizer stage pl.memAvail memPeak memPeak (uint64 selectedByChunk.Length) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
+    >=> flattenList ()
+
+let private transformZComplex64InterleavedZarrTiles
+    inverse
+    operationName
     (inputPath: string)
     (outputPath: string)
     (name: string)
@@ -3688,16 +4932,18 @@ let fftZComplex64InterleavedZarrTiles
     let chunkZ = max 1u chunkZ |> int
 
     if width <= 0 || height <= 0 || depth <= 0 then
-        invalidArg "shape" "fftZComplex64InterleavedZarrTiles expects positive width, height, and depth."
+        invalidArg "shape" $"{operationName} expects positive width, height, and depth."
 
     let inputLevel = openZarrResolutionLevel inputPath 0 0
     if not (String.Equals(inputLevel.DataType, "complex64", StringComparison.OrdinalIgnoreCase)) then
-        invalidOp $"fftZComplex64InterleavedZarrTiles expected complex64 input Zarr, got {inputLevel.DataType}."
+        invalidOp $"{operationName} expected complex64 input Zarr, got {inputLevel.DataType}."
     if inputLevel.Shape.Length <> 5 then
-        invalidOp $"fftZComplex64InterleavedZarrTiles expected 5D OME-Zarr input, got rank {inputLevel.Shape.Length}."
+        invalidOp $"{operationName} expected 5D OME-Zarr input, got rank {inputLevel.Shape.Length}."
     if inputLevel.Shape[0] <> 1L || inputLevel.Shape[1] <> 1L || inputLevel.Shape[2] <> int64 depth || inputLevel.Shape[3] <> int64 height || inputLevel.Shape[4] <> int64 width then
         let actualShape = String.Join(",", inputLevel.Shape)
-        invalidOp $"fftZComplex64InterleavedZarrTiles expected input shape [1,1,{depth},{height},{width}], got [{actualShape}]."
+        invalidOp $"{operationName} expected input shape [1,1,{depth},{height},{width}], got [{actualShape}]."
+
+    let spectralMetadata = tryReadSpectralZarrMetadata inputPath
 
     let descriptor =
         BioImageDescriptor(
@@ -3725,6 +4971,10 @@ let fftZComplex64InterleavedZarrTiles
         OmeZarrWriter.MaxConcurrentWrites <- maxConcurrentWrites
 
     let outputLevel = openZarrResolutionLevel outputPath 0 0
+    spectralMetadata
+    |> Option.iter (fun (packedAxis, realWidth, realHeight, realDepth) ->
+        if packedAxis = 0 && realHeight = uint64 height && realDepth = uint64 depth then
+            tagSpectralZarrMetadata outputPath (int realWidth) height depth packedAxis width)
 
     try
         let mutable y0 = 0
@@ -3744,15 +4994,15 @@ let fftZComplex64InterleavedZarrTiles
 
                 let expectedBytes = currentTileX * currentTileY * depth * 2 * sizeof<float32>
                 if result.Data.Length <> expectedBytes then
-                    invalidOp $"fftZComplex64InterleavedZarrTiles expected tile payload {expectedBytes} bytes, got {result.Data.Length}."
+                    invalidOp $"{operationName} expected tile payload {expectedBytes} bytes, got {result.Data.Length}."
 
                 let mutable dataHandle = Unchecked.defaultof<GCHandle>
                 let mutable dataPinned = false
                 try
                     dataHandle <- GCHandle.Alloc(result.Data, GCHandleType.Pinned)
                     dataPinned <- true
-                    NativeSp.fftwfComplexZInplace(dataHandle.AddrOfPinnedObject(), currentTileX, currentTileY, depth, 0)
-                    |> NativeSp.checkStatus "fftwf z complex tiled"
+                    NativeSp.fftwfComplexZInplace(dataHandle.AddrOfPinnedObject(), currentTileX, currentTileY, depth, if inverse then 1 else 0)
+                    |> NativeSp.checkStatus (if inverse then "inverse fftwf z complex tiled" else "fftwf z complex tiled")
                 finally
                     if dataPinned then
                         dataHandle.Free()
@@ -3766,7 +5016,561 @@ let fftZComplex64InterleavedZarrTiles
     finally
         writer.DisposeAsync().AsTask()
         |> runUnitTask
+        spectralMetadata
+        |> Option.iter (fun (packedAxis, realWidth, realHeight, realDepth) ->
+            if packedAxis = 0 && realHeight = uint64 height && realDepth = uint64 depth then
+                tagSpectralZarrMetadata outputPath (int realWidth) height depth packedAxis width)
         deleteZarrNetDebugLogs ()
+
+let private transformZComplex64InterleavedZarrRawChunks
+    inverse
+    operationName
+    (inputPath: string)
+    (outputPath: string)
+    (name: string)
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    =
+
+    suppressZarrNetDebugLogging ()
+    NativeSp.ensureAvailable ()
+
+    let width = int width
+    let height = int height
+    let depth = int depth
+    let chunkZ = max 1u chunkZ |> int
+
+    if width <= 0 || height <= 0 || depth <= 0 then
+        invalidArg "shape" $"{operationName} expects positive width, height, and depth."
+
+    let inputLevel = openZarrResolutionLevel inputPath 0 0
+    if not (String.Equals(inputLevel.DataType, "complex64", StringComparison.OrdinalIgnoreCase)) then
+        invalidOp $"{operationName} expected complex64 input Zarr, got {inputLevel.DataType}."
+    if inputLevel.Shape.Length <> 5 then
+        invalidOp $"{operationName} expected 5D OME-Zarr input, got rank {inputLevel.Shape.Length}."
+    if inputLevel.Shape[0] <> 1L || inputLevel.Shape[1] <> 1L || inputLevel.Shape[2] <> int64 depth || inputLevel.Shape[3] <> int64 height || inputLevel.Shape[4] <> int64 width then
+        let actualShape = String.Join(",", inputLevel.Shape)
+        invalidOp $"{operationName} expected input shape [1,1,{depth},{height},{width}], got [{actualShape}]."
+
+    let inputReader =
+        OmeZarrReader.OpenAsync(inputPath, ct = CancellationToken.None)
+        |> runTask
+    let inputArray =
+        inputReader.RootGroup.OpenArrayAsync(inputLevel.Dataset.Path, CancellationToken.None)
+        |> runTask
+    let inputChunkShape = inputArray.Metadata.ChunkShape
+    let expectedInputChunkShape = [| 1; 1; chunkZ; height; width |]
+    if inputChunkShape <> expectedInputChunkShape then
+        let expectedText = String.Join(",", expectedInputChunkShape)
+        let actualText = String.Join(",", inputChunkShape)
+        invalidOp
+            $"{operationName} raw path expects input chunk shape [{expectedText}], got [{actualText}]."
+
+    let spectralMetadata = tryReadSpectralZarrMetadata inputPath
+
+    let descriptor =
+        BioImageDescriptor(
+            width,
+            height,
+            ZCT(depth, 1, 1),
+            Name = name,
+            DataType = "complex64",
+            ChunkX = width,
+            ChunkY = height,
+            ChunkZ = chunkZ,
+            ChunkC = 1,
+            ChunkT = 1,
+            PhysicalSizeX = physicalSizeX,
+            PhysicalSizeY = physicalSizeY,
+            PhysicalSizeZ = physicalSizeZ,
+            Compression = ZarrCompression.None)
+
+    let writer =
+        OmeZarrWriter.CreateAsync(outputPath, descriptor, CancellationToken.None)
+        |> runTask
+    deleteZarrNetDebugLogs ()
+
+    if maxConcurrentWrites > 0 then
+        OmeZarrWriter.MaxConcurrentWrites <- maxConcurrentWrites
+
+    let outputLevel = openZarrResolutionLevel outputPath 0 0
+    let outputReader =
+        OmeZarrReader.OpenAsync(outputPath, ct = CancellationToken.None)
+        |> runTask
+    let outputArray =
+        outputReader.RootGroup.OpenArrayAsync(outputLevel.Dataset.Path, CancellationToken.None)
+        |> runTask
+    let outputChunkShape = outputArray.Metadata.ChunkShape
+    if outputChunkShape <> expectedInputChunkShape then
+        let expectedText = String.Join(",", expectedInputChunkShape)
+        let actualText = String.Join(",", outputChunkShape)
+        invalidOp
+            $"{operationName} raw path expected output chunk shape [{expectedText}], got [{actualText}]."
+
+    spectralMetadata
+    |> Option.iter (fun (packedAxis, realWidth, realHeight, realDepth) ->
+        if packedAxis = 0 && realHeight = uint64 height && realDepth = uint64 depth then
+            tagSpectralZarrMetadata outputPath (int realWidth) height depth packedAxis width)
+
+    let planeBytes = width * height * 2 * sizeof<float32>
+    let fullBytes = planeBytes * depth
+    let chunkBytes = planeBytes * chunkZ
+    let chunkCount = (depth + chunkZ - 1) / chunkZ
+    let inputChunks = collectZarrChunks inputArray
+    let outputChunks = collectZarrChunks outputArray
+    if inputChunks.Length <> chunkCount then
+        invalidOp $"{operationName} expected {chunkCount} input chunks, got {inputChunks.Length}."
+    if outputChunks.Length <> chunkCount then
+        invalidOp $"{operationName} expected {chunkCount} output chunks, got {outputChunks.Length}."
+    let buffer = ArrayPool<byte>.Shared.Rent(fullBytes)
+
+    try
+        for zChunk = 0 to chunkCount - 1 do
+            let zStart = zChunk * chunkZ
+            let validDepth = min chunkZ (depth - zStart)
+            let validBytes = planeBytes * validDepth
+            let targetOffset = zStart * planeBytes
+            let encoded =
+                inputArray.ReadChunkEncodedAsync(inputChunks[zChunk], CancellationToken.None)
+                |> runTask
+
+            if isNull encoded then
+                buffer.AsSpan(targetOffset, validBytes).Clear()
+            else
+                if encoded.Length < validBytes then
+                    invalidOp $"{operationName} raw chunk {zChunk} has {encoded.Length} bytes, expected at least {validBytes}."
+                Buffer.BlockCopy(encoded, 0, buffer, targetOffset, validBytes)
+
+        let mutable handle = Unchecked.defaultof<GCHandle>
+        try
+            handle <- GCHandle.Alloc(buffer, GCHandleType.Pinned)
+            NativeSp.fftwfComplexZInplace(handle.AddrOfPinnedObject(), width, height, depth, if inverse then 1 else 0)
+            |> NativeSp.checkStatus (if inverse then "inverse fftwf z complex raw chunks" else "fftwf z complex raw chunks")
+        finally
+            if handle.IsAllocated then
+                handle.Free()
+
+        for zChunk = 0 to chunkCount - 1 do
+            let zStart = zChunk * chunkZ
+            let sourceOffset = zStart * planeBytes
+            outputArray.WriteChunkEncodedAsync(
+                outputChunks[zChunk],
+                buffer.AsMemory(sourceOffset, chunkBytes),
+                CancellationToken.None)
+            |> runUnitTask
+            deleteZarrNetDebugLogs ()
+    finally
+        ArrayPool<byte>.Shared.Return(buffer)
+        writer.DisposeAsync().AsTask()
+        |> runUnitTask
+        spectralMetadata
+        |> Option.iter (fun (packedAxis, realWidth, realHeight, realDepth) ->
+            if packedAxis = 0 && realHeight = uint64 height && realDepth = uint64 depth then
+                tagSpectralZarrMetadata outputPath (int realWidth) height depth packedAxis width)
+        deleteZarrNetDebugLogs ()
+
+let private transformZComplex64InterleavedZarrSubchunksWithSigns
+    (signs: int list)
+    operationName
+    (inputPath: string)
+    (outputPath: string)
+    (name: string)
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    =
+
+    suppressZarrNetDebugLogging ()
+    NativeSp.ensureAvailable ()
+
+    let width = int width
+    let height = int height
+    let depth = int depth
+    let chunkX = max 1u chunkX |> int
+    let chunkY = max 1u chunkY |> int
+    let chunkZ = max 1u chunkZ |> int
+
+    if width <= 0 || height <= 0 || depth <= 0 then
+        invalidArg "shape" $"{operationName} expects positive width, height, and depth."
+
+    let inputLevel = openZarrResolutionLevel inputPath 0 0
+    if not (String.Equals(inputLevel.DataType, "complex64", StringComparison.OrdinalIgnoreCase)) then
+        invalidOp $"{operationName} expected complex64 input Zarr, got {inputLevel.DataType}."
+    if inputLevel.Shape.Length <> 5 then
+        invalidOp $"{operationName} expected 5D OME-Zarr input, got rank {inputLevel.Shape.Length}."
+    if inputLevel.Shape[0] <> 1L || inputLevel.Shape[1] <> 1L || inputLevel.Shape[2] <> int64 depth || inputLevel.Shape[3] <> int64 height || inputLevel.Shape[4] <> int64 width then
+        let actualShape = String.Join(",", inputLevel.Shape)
+        invalidOp $"{operationName} expected input shape [1,1,{depth},{height},{width}], got [{actualShape}]."
+
+    let inputReader =
+        OmeZarrReader.OpenAsync(inputPath, ct = CancellationToken.None)
+        |> runTask
+    let inputArray =
+        inputReader.RootGroup.OpenArrayAsync(inputLevel.Dataset.Path, CancellationToken.None)
+        |> runTask
+    let expectedChunkShape = [| 1; 1; chunkZ; chunkY; chunkX |]
+    let inputChunkShape = inputArray.Metadata.ChunkShape
+    if inputChunkShape <> expectedChunkShape then
+        let expectedText = String.Join(",", expectedChunkShape)
+        let actualText = String.Join(",", inputChunkShape)
+        invalidOp $"{operationName} expects input chunk shape [{expectedText}], got [{actualText}]."
+
+    let spectralMetadata = tryReadSpectralZarrMetadata inputPath
+
+    let descriptor =
+        BioImageDescriptor(
+            width,
+            height,
+            ZCT(depth, 1, 1),
+            Name = name,
+            DataType = "complex64",
+            ChunkX = chunkX,
+            ChunkY = chunkY,
+            ChunkZ = chunkZ,
+            ChunkC = 1,
+            ChunkT = 1,
+            PhysicalSizeX = physicalSizeX,
+            PhysicalSizeY = physicalSizeY,
+            PhysicalSizeZ = physicalSizeZ,
+            Compression = ZarrCompression.None)
+
+    let writer =
+        OmeZarrWriter.CreateAsync(outputPath, descriptor, CancellationToken.None)
+        |> runTask
+    deleteZarrNetDebugLogs ()
+
+    if maxConcurrentWrites > 0 then
+        OmeZarrWriter.MaxConcurrentWrites <- maxConcurrentWrites
+
+    let outputLevel = openZarrResolutionLevel outputPath 0 0
+    let outputReader =
+        OmeZarrReader.OpenAsync(outputPath, ct = CancellationToken.None)
+        |> runTask
+    let outputArray =
+        outputReader.RootGroup.OpenArrayAsync(outputLevel.Dataset.Path, CancellationToken.None)
+        |> runTask
+    let outputChunkShape = outputArray.Metadata.ChunkShape
+    if outputChunkShape <> expectedChunkShape then
+        let expectedText = String.Join(",", expectedChunkShape)
+        let actualText = String.Join(",", outputChunkShape)
+        invalidOp $"{operationName} expects output chunk shape [{expectedText}], got [{actualText}]."
+
+    spectralMetadata
+    |> Option.iter (fun (packedAxis, realWidth, realHeight, realDepth) ->
+        if packedAxis = 0 && realHeight = uint64 height && realDepth = uint64 depth then
+            tagSpectralZarrMetadata outputPath (int realWidth) height depth packedAxis width)
+
+    let xChunks = (width + chunkX - 1) / chunkX
+    let yChunks = (height + chunkY - 1) / chunkY
+    let zChunks = (depth + chunkZ - 1) / chunkZ
+    let fullChunkBytes = chunkX * chunkY * chunkZ * 2 * sizeof<float32>
+    let fullTileValues = chunkX * chunkY * depth * 2
+    let tile = ArrayPool<float32>.Shared.Rent(fullTileValues)
+    let chunkBuffer = ArrayPool<byte>.Shared.Rent(fullChunkBytes)
+
+    try
+        for yc = 0 to yChunks - 1 do
+            let y0 = yc * chunkY
+            let validY = min chunkY (height - y0)
+            for xc = 0 to xChunks - 1 do
+                let x0 = xc * chunkX
+                let validX = min chunkX (width - x0)
+                let tileValues = validX * validY * depth * 2
+                tile.AsSpan(0, tileValues).Clear()
+
+                for zc = 0 to zChunks - 1 do
+                    let zStart = zc * chunkZ
+                    let validZ = min chunkZ (depth - zStart)
+
+                    inputArray.ReadChunkDecodedAsync(
+                        [| 0L; 0L; int64 zc; int64 yc; int64 xc |],
+                        chunkBuffer.AsMemory(0, fullChunkBytes),
+                        true,
+                        CancellationToken.None)
+                    |> runUnitTask
+                    deleteZarrNetDebugLogs ()
+
+                    for localZ = 0 to validZ - 1 do
+                        for yy = 0 to validY - 1 do
+                            let sourceOffset = ((localZ * chunkY + yy) * chunkX) * 2 * sizeof<float32>
+                            let targetOffset = (((zStart + localZ) * validY + yy) * validX) * 2
+                            Buffer.BlockCopy(chunkBuffer, sourceOffset, tile, targetOffset * sizeof<float32>, validX * 2 * sizeof<float32>)
+
+                let mutable handle = Unchecked.defaultof<GCHandle>
+                try
+                    handle <- GCHandle.Alloc(tile, GCHandleType.Pinned)
+                    for sign in signs do
+                        NativeSp.fftwfComplexZInplace(handle.AddrOfPinnedObject(), validX, validY, depth, sign)
+                        |> NativeSp.checkStatus (if sign = 0 then "fftwf z complex subchunks" else "inverse fftwf z complex subchunks")
+                finally
+                    if handle.IsAllocated then
+                        handle.Free()
+
+                for zc = 0 to zChunks - 1 do
+                    let zStart = zc * chunkZ
+                    let validZ = min chunkZ (depth - zStart)
+                    chunkBuffer.AsSpan(0, fullChunkBytes).Clear()
+
+                    for localZ = 0 to validZ - 1 do
+                        for yy = 0 to validY - 1 do
+                            let sourceOffset = (((zStart + localZ) * validY + yy) * validX) * 2 * sizeof<float32>
+                            let targetOffset = ((localZ * chunkY + yy) * chunkX) * 2 * sizeof<float32>
+                            Buffer.BlockCopy(tile, sourceOffset, chunkBuffer, targetOffset, validX * 2 * sizeof<float32>)
+
+                    outputArray.WriteChunkDecodedAsync(
+                        [| 0L; 0L; int64 zc; int64 yc; int64 xc |],
+                        chunkBuffer.AsMemory(0, fullChunkBytes),
+                        true,
+                        CancellationToken.None)
+                    |> runUnitTask
+                    deleteZarrNetDebugLogs ()
+    finally
+        ArrayPool<byte>.Shared.Return(chunkBuffer)
+        ArrayPool<float32>.Shared.Return(tile)
+        writer.DisposeAsync().AsTask()
+        |> runUnitTask
+        spectralMetadata
+        |> Option.iter (fun (packedAxis, realWidth, realHeight, realDepth) ->
+            if packedAxis = 0 && realHeight = uint64 height && realDepth = uint64 depth then
+                tagSpectralZarrMetadata outputPath (int realWidth) height depth packedAxis width)
+        deleteZarrNetDebugLogs ()
+
+let fftZComplex64InterleavedZarrTiles
+    (inputPath: string)
+    (outputPath: string)
+    (name: string)
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (tileX: uint)
+    (tileY: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    =
+    transformZComplex64InterleavedZarrTiles
+        false
+        "fftZComplex64InterleavedZarrTiles"
+        inputPath
+        outputPath
+        name
+        width
+        height
+        depth
+        tileX
+        tileY
+        chunkX
+        chunkY
+        chunkZ
+        physicalSizeX
+        physicalSizeY
+        physicalSizeZ
+        maxConcurrentWrites
+
+let invFftZComplex64InterleavedZarrTiles
+    (inputPath: string)
+    (outputPath: string)
+    (name: string)
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (tileX: uint)
+    (tileY: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    =
+    transformZComplex64InterleavedZarrTiles
+        true
+        "invFftZComplex64InterleavedZarrTiles"
+        inputPath
+        outputPath
+        name
+        width
+        height
+        depth
+        tileX
+        tileY
+        chunkX
+        chunkY
+        chunkZ
+        physicalSizeX
+        physicalSizeY
+        physicalSizeZ
+        maxConcurrentWrites
+
+let fftZComplex64InterleavedZarrRawChunks
+    (inputPath: string)
+    (outputPath: string)
+    (name: string)
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    =
+    transformZComplex64InterleavedZarrRawChunks
+        false
+        "fftZComplex64InterleavedZarrRawChunks"
+        inputPath
+        outputPath
+        name
+        width
+        height
+        depth
+        chunkZ
+        physicalSizeX
+        physicalSizeY
+        physicalSizeZ
+        maxConcurrentWrites
+
+let invFftZComplex64InterleavedZarrRawChunks
+    (inputPath: string)
+    (outputPath: string)
+    (name: string)
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    =
+    transformZComplex64InterleavedZarrRawChunks
+        true
+        "invFftZComplex64InterleavedZarrRawChunks"
+        inputPath
+        outputPath
+        name
+        width
+        height
+        depth
+        chunkZ
+        physicalSizeX
+        physicalSizeY
+        physicalSizeZ
+        maxConcurrentWrites
+
+let fftZComplex64InterleavedZarrSubchunks
+    (inputPath: string)
+    (outputPath: string)
+    (name: string)
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    =
+    transformZComplex64InterleavedZarrSubchunksWithSigns
+        [ 0 ]
+        "fftZComplex64InterleavedZarrSubchunks"
+        inputPath
+        outputPath
+        name
+        width
+        height
+        depth
+        chunkX
+        chunkY
+        chunkZ
+        physicalSizeX
+        physicalSizeY
+        physicalSizeZ
+        maxConcurrentWrites
+
+let invFftZComplex64InterleavedZarrSubchunks
+    (inputPath: string)
+    (outputPath: string)
+    (name: string)
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    =
+    transformZComplex64InterleavedZarrSubchunksWithSigns
+        [ 1 ]
+        "invFftZComplex64InterleavedZarrSubchunks"
+        inputPath
+        outputPath
+        name
+        width
+        height
+        depth
+        chunkX
+        chunkY
+        chunkZ
+        physicalSizeX
+        physicalSizeY
+        physicalSizeZ
+        maxConcurrentWrites
+
+let fftRoundtripZComplex64InterleavedZarrSubchunks
+    (inputPath: string)
+    (outputPath: string)
+    (name: string)
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    =
+    transformZComplex64InterleavedZarrSubchunksWithSigns
+        [ 0; 1 ]
+        "fftRoundtripZComplex64InterleavedZarrSubchunks"
+        inputPath
+        outputPath
+        name
+        width
+        height
+        depth
+        chunkX
+        chunkY
+        chunkZ
+        physicalSizeX
+        physicalSizeY
+        physicalSizeZ
+        maxConcurrentWrites
 
 #if LEGACY_IMAGE
 let private writeZarrSlabStage<'T when 'T: equality>

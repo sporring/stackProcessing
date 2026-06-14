@@ -10,6 +10,7 @@ open System.Text.Json
 open System.Text.Json.Nodes
 open System.Threading.Tasks
 open BitMiracle.LibTiff.Classic
+open FSharp.Control
 open Image
 open StackProcessing
 open ZarrNET.Core
@@ -74,7 +75,13 @@ Run:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-xy-float32-zarr --shape WxHxD --input DIR --output ZARR [--chunk-size N] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-z-complex64-zarr --shape WxHxD --input ZARR --output ZARR [--chunk-size N]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-native-float32-zarr --shape WxHxD --input DIR --output ZARR [--chunk-size N] [--workers N] [--available-memory BYTES]
-  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-fft3d-kernel --shape WxHxD [--variant simpleitk|lowlevel|all] [--iterations N]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-fft3d-kernel --shape WxHxD [--variant simpleitk|lowlevel|lowlevel-xy-plan-z|lowlevel-xy-z-plan|lowlevel-3d|lowlevel-r2c-3d|sharpfftw|all] [--iterations N]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft3d-stage --shape WxHxD [--variant complex-xy|real-xy|real-xy-roundtrip|all] [--iterations N]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft3d-stage-io --shape WxHxD --input DIR --output DIR [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft3d-stage-overhead --shape WxHxD [--iterations N]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft3d-spectral-zarr --shape WxHxD --output ZARR [--variant write|read|roundtrip] [--chunk-size N] [--iterations N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft3d-zarr-roundtrip-io --shape WxHxD --input DIR --output DIR [--temp-zarr ZARR] [--chunk-size N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft3d-zarr-subchunked-roundtrip-io --shape WxHxD --input DIR --output DIR [--temp-zarr ZARR] [--chunk-size N] [--available-memory BYTES]
 
 ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-arraypool --operation copy|threshold|connectedComponents --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X]
@@ -96,6 +103,14 @@ ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-raw-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-native-libtiff-raw-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-native-libtiff-raw-strip-chunk-copy --operation copy --pixel-type UInt8 --input DIR --output DIR
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-native-libtiff-raw-strip-volume-chunk-copy --operation copy --pixel-type UInt8 --input DIR --output DIR
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-stack-read-write --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--available-memory BYTES] [--debug-level N]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-native-libtiff-raw-strip-readonly --pixel-type UInt8|UInt16|Float32 --input DIR
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-native-libtiff-raw-strip-chunk-readonly --pixel-type UInt8 --input DIR
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-native-libtiff-raw-strip-writeonly --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-native-libtiff-raw-strip-chunk-writeonly --pixel-type UInt8 --input DIR --output DIR
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-native-libtiff-scanline-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-tifflibrary-raw-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-imagesharp-copy --operation copy --pixel-type UInt8|UInt16 --input DIR --output DIR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-direct-readonly --pixel-type UInt8|UInt16|Float32 --input DIR
@@ -200,10 +215,50 @@ let private parseShape (value: string) =
       Height = UInt32.Parse(parts[1], invariant)
       Depth = UInt32.Parse(parts[2], invariant) }
 
-let private ensureCleanDirectory path =
+let private precleanedDirectories = System.Collections.Generic.HashSet<string>(StringComparer.Ordinal)
+let private precleanedDirectoriesLock = obj()
+
+let private fullPath path =
+    Path.GetFullPath path
+
+let private registerExternallyPrecleanedDirectories () =
+    let value = Environment.GetEnvironmentVariable("BENCHMARK_PRECLEANED_OUTPUTS")
+    if not (String.IsNullOrWhiteSpace value) then
+        let parts = value.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+        lock precleanedDirectoriesLock (fun () ->
+            for path in parts do
+                precleanedDirectories.Add(fullPath path) |> ignore)
+
+registerExternallyPrecleanedDirectories ()
+
+let private cleanDirectoryNow path =
     if Directory.Exists path then
         Directory.Delete(path, true)
     Directory.CreateDirectory path |> ignore
+
+let private consumePrecleanedDirectory normalized =
+    lock precleanedDirectoriesLock (fun () ->
+        if precleanedDirectories.Contains normalized then
+            precleanedDirectories.Remove normalized |> ignore
+            true
+        else
+            false)
+
+let private ensureCleanDirectory path =
+    let normalized = fullPath path
+    if consumePrecleanedDirectory normalized then
+        Directory.CreateDirectory normalized |> ignore
+    else
+        cleanDirectoryNow normalized
+
+let private precleanDirectoryForTimedRun path =
+    let normalized = fullPath path
+    if consumePrecleanedDirectory normalized then
+        Directory.CreateDirectory normalized |> ignore
+    else
+        cleanDirectoryNow normalized
+        lock precleanedDirectoriesLock (fun () ->
+            precleanedDirectories.Add normalized |> ignore)
 
 let private outputFile outputDir z =
     Path.Combine(outputDir, sprintf "slice_%05d.tiff" z)
@@ -435,8 +490,20 @@ module private NativeLibTiff =
     [<DllImport("sp_libtiff_shim", EntryPoint = "sp_tiff_read_raw_page", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
     extern int readRawPage(string path, byte[] buffer, UIntPtr capacity, uint64& bytesRead)
 
+    [<DllImport("sp_libtiff_shim", EntryPoint = "sp_tiff_read_raw_page_into", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
+    extern int readRawPageInto(string path, byte[] buffer, UIntPtr bufferOffset, UIntPtr capacity, uint64& bytesRead)
+
+    [<DllImport("sp_libtiff_shim", EntryPoint = "sp_tiff_read_scanline_page", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
+    extern int readScanlinePage(string path, byte[] buffer, UIntPtr capacity, uint64& bytesRead)
+
     [<DllImport("sp_libtiff_shim", EntryPoint = "sp_tiff_write_raw_page", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
     extern int writeRawPage(string path, byte[] buffer, UIntPtr count, uint32 width, uint32 height, uint16 bitsPerSample, uint16 sampleFormat)
+
+    [<DllImport("sp_libtiff_shim", EntryPoint = "sp_tiff_write_raw_page_from", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
+    extern int writeRawPageFrom(string path, byte[] buffer, UIntPtr bufferOffset, UIntPtr count, UIntPtr capacity, uint32 width, uint32 height, uint16 bitsPerSample, uint16 sampleFormat)
+
+    [<DllImport("sp_libtiff_shim", EntryPoint = "sp_tiff_write_scanline_page", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
+    extern int writeScanlinePage(string path, byte[] buffer, UIntPtr count, uint32 width, uint32 height, uint16 bitsPerSample, uint16 sampleFormat)
 
     let describeStatus status =
         match status with
@@ -791,6 +858,22 @@ let private readNativeRawTiffSliceInto pixelType fileName expectedWidth expected
     if bytesRead <> uint64 expectedPageBytes then
         invalidOp $"Native libtiff read {bytesRead} bytes from '{fileName}', expected {expectedPageBytes}."
 
+let private readNativeRawTiffSliceIntoOffset pixelType fileName expectedWidth expectedHeight expectedRowBytes expectedPageBytes offset (pageBuffer: byte[]) =
+    let info, rowBytes, _bytesPerSample = readNativeTiffInfo pixelType fileName
+    if info.Width <> expectedWidth || info.Height <> expectedHeight then
+        invalidOp $"Native libtiff input slice '{fileName}' has shape {info.Width}x{info.Height}, expected {expectedWidth}x{expectedHeight}."
+    if rowBytes <> expectedRowBytes || int info.PageBytes <> expectedPageBytes then
+        invalidOp $"Native libtiff input slice '{fileName}' layout changed: rowBytes={rowBytes}, pageBytes={info.PageBytes}; expected {expectedRowBytes}, {expectedPageBytes}."
+    if offset < 0 || pageBuffer.Length < offset + expectedPageBytes then
+        invalidArg "pageBuffer" $"Native libtiff page buffer too small: need offset {offset} + {expectedPageBytes}, got {pageBuffer.Length}."
+
+    let mutable bytesRead = 0UL
+    let status = NativeLibTiff.readRawPageInto(fileName, pageBuffer, UIntPtr(uint64 offset), UIntPtr(uint64 pageBuffer.Length), &bytesRead)
+    if status <> NativeLibTiff.Ok then
+        NativeLibTiff.failStatus "read-raw-page-into" fileName status
+    if bytesRead <> uint64 expectedPageBytes then
+        invalidOp $"Native libtiff read {bytesRead} bytes from '{fileName}', expected {expectedPageBytes}."
+
 let private writeNativeRawTiffPage pixelType fileName width height pageBytes (pageBuffer: byte[]) =
     let bitsPerSample, sampleFormat, _bytesPerSample = scalarNativeTiffLayoutForPixelType pixelType
     if pageBuffer.Length < pageBytes then
@@ -799,6 +882,40 @@ let private writeNativeRawTiffPage pixelType fileName width height pageBytes (pa
     let status = NativeLibTiff.writeRawPage(fileName, pageBuffer, UIntPtr(uint64 pageBytes), width, height, bitsPerSample, sampleFormat)
     if status <> NativeLibTiff.Ok then
         NativeLibTiff.failStatus "write-raw-page" fileName status
+
+let private writeNativeRawTiffPageFromOffset pixelType fileName width height pageBytes offset (pageBuffer: byte[]) =
+    let bitsPerSample, sampleFormat, _bytesPerSample = scalarNativeTiffLayoutForPixelType pixelType
+    if offset < 0 || pageBuffer.Length < offset + pageBytes then
+        invalidArg "pageBuffer" $"Native libtiff page buffer too small: need offset {offset} + {pageBytes}, got {pageBuffer.Length}."
+
+    let status = NativeLibTiff.writeRawPageFrom(fileName, pageBuffer, UIntPtr(uint64 offset), UIntPtr(uint64 pageBytes), UIntPtr(uint64 pageBuffer.Length), width, height, bitsPerSample, sampleFormat)
+    if status <> NativeLibTiff.Ok then
+        NativeLibTiff.failStatus "write-raw-page-from" fileName status
+
+let private readNativeScanlineTiffSliceInto pixelType fileName expectedWidth expectedHeight expectedRowBytes expectedPageBytes (pageBuffer: byte[]) =
+    let info, rowBytes, _bytesPerSample = readNativeTiffInfo pixelType fileName
+    if info.Width <> expectedWidth || info.Height <> expectedHeight then
+        invalidOp $"Native libtiff input slice '{fileName}' has shape {info.Width}x{info.Height}, expected {expectedWidth}x{expectedHeight}."
+    if rowBytes <> expectedRowBytes || int info.PageBytes <> expectedPageBytes then
+        invalidOp $"Native libtiff input slice '{fileName}' layout changed: rowBytes={rowBytes}, pageBytes={info.PageBytes}; expected {expectedRowBytes}, {expectedPageBytes}."
+    if pageBuffer.Length < expectedPageBytes then
+        invalidArg "pageBuffer" $"Native libtiff page buffer too small: need {expectedPageBytes}, got {pageBuffer.Length}."
+
+    let mutable bytesRead = 0UL
+    let status = NativeLibTiff.readScanlinePage(fileName, pageBuffer, UIntPtr(uint64 expectedPageBytes), &bytesRead)
+    if status <> NativeLibTiff.Ok then
+        NativeLibTiff.failStatus "read-scanline-page" fileName status
+    if bytesRead <> uint64 expectedPageBytes then
+        invalidOp $"Native libtiff scanline read {bytesRead} bytes from '{fileName}', expected {expectedPageBytes}."
+
+let private writeNativeScanlineTiffPage pixelType fileName width height pageBytes (pageBuffer: byte[]) =
+    let bitsPerSample, sampleFormat, _bytesPerSample = scalarNativeTiffLayoutForPixelType pixelType
+    if pageBuffer.Length < pageBytes then
+        invalidArg "pageBuffer" $"Native libtiff page buffer too small: need {pageBytes}, got {pageBuffer.Length}."
+
+    let status = NativeLibTiff.writeScanlinePage(fileName, pageBuffer, UIntPtr(uint64 pageBytes), width, height, bitsPerSample, sampleFormat)
+    if status <> NativeLibTiff.Ok then
+        NativeLibTiff.failStatus "write-scanline-page" fileName status
 
 let private inspectTiffLibraryTags pixelType (fileName: string) (reader: TiffLibrary.TiffFileReader) (tagReader: TiffLibrary.TiffTagReader) =
     let expectedBits, expectedSampleFormat, expectedBytesPerSample = scalarTiffLibraryLayoutForPixelType pixelType
@@ -1169,6 +1286,14 @@ let private generate opts =
 let private runChunkCopyTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> input output availableMemory =
     ensureCleanDirectory output
     let src = benchmarkSource availableMemory
+    src
+    |> read<'T> input ".tiff"
+    >=> write<'T> output ".tiff"
+    |> sink
+    0
+
+let private runChunkReadWriteTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> input output availableMemory debugLevel =
+    let src = benchmarkSourceWithDebug debugLevel availableMemory
     src
     |> read<'T> input ".tiff"
     >=> write<'T> output ".tiff"
@@ -2419,6 +2544,7 @@ let private runZarrChunkCopy opts =
     let input = require "input" opts
     let output = require "output" opts
     let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+    precleanDirectoryForTimedRun output
     let stopwatch = Stopwatch.StartNew()
     let exitCode =
         match pixelType with
@@ -2470,6 +2596,7 @@ let private runZarrWriteOnly opts =
     let output = require "output" opts
     let chunkSize = optional "chunk-size" "128" opts |> UInt32.Parse
     let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+    precleanDirectoryForTimedRun output
     let stopwatch = Stopwatch.StartNew()
     let exitCode =
         match pixelType with
@@ -2603,18 +2730,71 @@ let private runChunkFftNativeFloat32Zarr opts =
 type Fft3DKernelVariant =
     | Fft3DSimpleItk
     | Fft3DLowlevel
+    | Fft3DLowlevelXYPlan
+    | Fft3DLowlevelXYZPlan
+    | Fft3DLowlevelFull
+    | Fft3DLowlevelRealToComplexFull
+    | Fft3DSharpFftw
+
+type ChunkFft3DStageVariant =
+    | ChunkFft3DComplexXY
+    | ChunkFft3DRealXY
+    | ChunkFft3DRealXYRoundTrip
+
+type ChunkFft3DSpectralZarrVariant =
+    | ChunkFft3DSpectralZarrWrite
+    | ChunkFft3DSpectralZarrWritePrecomputed
+    | ChunkFft3DSpectralZarrRead
+    | ChunkFft3DSpectralZarrRoundTrip
 
 let private parseFft3DKernelVariant value =
     match value with
     | "simpleitk" | "SimpleITK" | "sitk" -> [ Fft3DSimpleItk ]
     | "lowlevel" | "native" | "fftw" | "xy-z" -> [ Fft3DLowlevel ]
-    | "all" | "All" | "ALL" -> [ Fft3DSimpleItk; Fft3DLowlevel ]
+    | "lowlevel-xy-plan-z" | "xy-plan-z" | "xyplan-z" -> [ Fft3DLowlevelXYPlan ]
+    | "lowlevel-xy-z-plan" | "xy-z-plan" | "xyz-plan" -> [ Fft3DLowlevelXYZPlan ]
+    | "lowlevel-3d" | "native-3d" | "fftw-3d" -> [ Fft3DLowlevelFull ]
+    | "lowlevel-r2c-3d" | "native-r2c-3d" | "fftw-r2c-3d" | "r2c-3d" -> [ Fft3DLowlevelRealToComplexFull ]
+    | "sharpfftw" | "sharp-fftw" | "fftw3d" -> [ Fft3DSharpFftw ]
+    | "all" | "All" | "ALL" -> [ Fft3DSimpleItk; Fft3DLowlevel; Fft3DLowlevelXYPlan; Fft3DLowlevelXYZPlan; Fft3DLowlevelFull; Fft3DLowlevelRealToComplexFull; Fft3DSharpFftw ]
     | _ -> failwith $"unsupported FFT3D kernel variant '{value}'"
 
 let private fft3DKernelVariantName variant =
     match variant with
     | Fft3DSimpleItk -> "simpleitk"
     | Fft3DLowlevel -> "lowlevel-xy-z"
+    | Fft3DLowlevelXYPlan -> "lowlevel-xy-plan-z"
+    | Fft3DLowlevelXYZPlan -> "lowlevel-xy-z-plan"
+    | Fft3DLowlevelFull -> "lowlevel-3d"
+    | Fft3DLowlevelRealToComplexFull -> "lowlevel-r2c-3d"
+    | Fft3DSharpFftw -> "sharpfftw-3d"
+
+let private parseChunkFft3DStageVariant value =
+    match value with
+    | "complex-xy" | "complexxy" | "c2c" | "complex" -> [ ChunkFft3DComplexXY ]
+    | "real-xy" | "realxy" | "r2c" | "real" -> [ ChunkFft3DRealXY ]
+    | "real-xy-roundtrip" | "realxy-roundtrip" | "r2c-c2r" | "roundtrip" -> [ ChunkFft3DRealXYRoundTrip ]
+    | "all" | "All" | "ALL" -> [ ChunkFft3DComplexXY; ChunkFft3DRealXY; ChunkFft3DRealXYRoundTrip ]
+    | _ -> failwith $"unsupported Chunk FFT3D stage variant '{value}'"
+
+let private chunkFft3DStageVariantName = function
+    | ChunkFft3DComplexXY -> "chunk-stage-fft3d-complex-xy-z-plan"
+    | ChunkFft3DRealXY -> "chunk-stage-fft3d-real-xy-z-plan"
+    | ChunkFft3DRealXYRoundTrip -> "chunk-stage-fft3d-real-xy-z-roundtrip"
+
+let private parseChunkFft3DSpectralZarrVariant value =
+    match value with
+    | "write" -> ChunkFft3DSpectralZarrWrite
+    | "write-precomputed" | "write-only" -> ChunkFft3DSpectralZarrWritePrecomputed
+    | "read" -> ChunkFft3DSpectralZarrRead
+    | "roundtrip" -> ChunkFft3DSpectralZarrRoundTrip
+    | _ -> failwith $"unsupported Chunk FFT3D spectral Zarr variant '{value}'"
+
+let private chunkFft3DSpectralZarrVariantName = function
+    | ChunkFft3DSpectralZarrWrite -> "chunk-stage-fft3d-spectral-zarr-write"
+    | ChunkFft3DSpectralZarrWritePrecomputed -> "chunk-stage-fft3d-spectral-zarr-write-precomputed"
+    | ChunkFft3DSpectralZarrRead -> "chunk-stage-fft3d-spectral-zarr-read"
+    | ChunkFft3DSpectralZarrRoundTrip -> "chunk-stage-fft3d-spectral-zarr-roundtrip"
 
 let private fft3DInputValue x y z =
     let value = (x * 17 + y * 31 + z * 43 + (x ^^^ y ^^^ z) * 7) &&& 1023
@@ -2649,6 +2829,50 @@ let private checksumComplex64Interleaved (values: float32[]) =
     checksum <- (checksum * 16777619u) ^^^ uint32 values.Length
     checksum
 
+let private checksumComplex64InterleavedChunks (chunks: StackCore.Chunk<float32>[]) =
+    let totalValues = chunks |> Array.sumBy (fun chunk -> (StackCore.Chunk.span<float32> chunk).Length)
+    let stride = max 2 ((totalValues / 4096) &&& ~~~1)
+    let mutable checksum = 2166136261u
+    let mutable linear = 0
+    let mutable nextSample = 0
+
+    for chunk in chunks do
+        let values = StackCore.Chunk.span<float32> chunk
+        let mutable i = 0
+        while i + 1 < values.Length do
+            if linear >= nextSample then
+                checksum <- (checksum * 16777619u) ^^^ uint32 (BitConverter.SingleToInt32Bits values[i])
+                checksum <- (checksum * 16777619u) ^^^ uint32 (BitConverter.SingleToInt32Bits values[i + 1])
+                nextSample <- nextSample + stride
+            i <- i + 2
+            linear <- linear + 2
+
+    checksum <- (checksum * 16777619u) ^^^ uint32 totalValues
+    checksum
+
+let private checksumSpectralChunks (chunks: StackCore.SpectralChunk[]) =
+    chunks |> Array.map (fun spectral -> spectral.Chunk) |> checksumComplex64InterleavedChunks
+
+let private checksumFloat32Chunks (chunks: StackCore.Chunk<float32>[]) =
+    let totalValues = chunks |> Array.sumBy (fun chunk -> (StackCore.Chunk.span<float32> chunk).Length)
+    let stride = max 1 (totalValues / 4096)
+    let mutable checksum = 2166136261u
+    let mutable linear = 0
+    let mutable nextSample = 0
+
+    for chunk in chunks do
+        let values = StackCore.Chunk.span<float32> chunk
+        let mutable i = 0
+        while i < values.Length do
+            if linear >= nextSample then
+                checksum <- (checksum * 16777619u) ^^^ uint32 (BitConverter.SingleToInt32Bits values[i])
+                nextSample <- nextSample + stride
+            i <- i + 1
+            linear <- linear + 1
+
+    checksum <- (checksum * 16777619u) ^^^ uint32 totalValues
+    checksum
+
 let private checksumComplexFloat32Array3D (values: ComplexFloat32[,,]) =
     let width = values.GetLength 0
     let height = values.GetLength 1
@@ -2676,7 +2900,7 @@ let private runSimpleItkFft3DKernel iterations (input: Image<float32>) =
             if not (isNull (box last)) then
                 last.decRefCount()
             use fft = new itk.simple.ForwardFFTImageFilter()
-            use inputItk = input.toSimpleITK()
+            use inputItk = new itk.simple.Image(input.toSimpleITK())
             let transformed = fft.Execute(inputItk)
             last <- Image<ComplexFloat32>.ofSimpleITKNDispose(transformed, "fft3d.simpleitk", 0)
         stopwatch.Stop()
@@ -2710,6 +2934,160 @@ let private runLowlevelFft3DKernel iterations (source: float32[,,]) =
     finally
         handle.Free()
 
+let private runLowlevelXYPlanFft3DKernel iterations (source: float32[,,]) =
+    let width = source.GetLength 0
+    let height = source.GetLength 1
+    let depth = source.GetLength 2
+    let planeComplex = width * height
+    let planeValues = planeComplex * 2
+    let values = Array.zeroCreate<float32> (planeValues * depth)
+    let handle = GCHandle.Alloc(values, GCHandleType.Pinned)
+    let mutable xyPlan = nativeint 0
+    try
+        let basePointer = handle.AddrOfPinnedObject()
+        fillInterleavedComplex64FromReal source values
+        xyPlan <- Chunk.NativeSp.fftwfComplexXYPlanCreate(basePointer, width, height, 0)
+        if xyPlan = nativeint 0 then
+            invalidOp "fft3d.lowlevel.xy.plan create failed in native helper."
+
+        let stopwatch = Stopwatch.StartNew()
+        for _ in 1 .. iterations do
+            fillInterleavedComplex64FromReal source values
+            for z in 0 .. depth - 1 do
+                let planePointer = IntPtr.Add(basePointer, z * planeValues * sizeof<float32>)
+                Chunk.NativeSp.fftwfComplexXYPlanExecute(xyPlan, planePointer)
+                |> Chunk.NativeSp.checkStatus "fft3d.lowlevel.xy.plan.execute"
+            Chunk.NativeSp.fftwfComplexZInplace(basePointer, width, height, depth, 0)
+            |> Chunk.NativeSp.checkStatus "fft3d.lowlevel.z"
+        stopwatch.Stop()
+        stopwatch.Elapsed, checksumComplex64Interleaved values
+    finally
+        if xyPlan <> nativeint 0 then
+            Chunk.NativeSp.fftwfComplexXYPlanDestroy(xyPlan)
+        handle.Free()
+
+let private runLowlevelXYZPlanFft3DKernel iterations (source: float32[,,]) =
+    let width = source.GetLength 0
+    let height = source.GetLength 1
+    let depth = source.GetLength 2
+    let planeComplex = width * height
+    let planeValues = planeComplex * 2
+    let values = Array.zeroCreate<float32> (planeValues * depth)
+    let handle = GCHandle.Alloc(values, GCHandleType.Pinned)
+    let mutable xyPlan = nativeint 0
+    let mutable zPlan = nativeint 0
+    try
+        let basePointer = handle.AddrOfPinnedObject()
+        fillInterleavedComplex64FromReal source values
+        xyPlan <- Chunk.NativeSp.fftwfComplexXYPlanCreate(basePointer, width, height, 0)
+        if xyPlan = nativeint 0 then
+            invalidOp "fft3d.lowlevel.xy.plan create failed in native helper."
+        zPlan <- Chunk.NativeSp.fftwfComplexZPlanCreate(basePointer, width, height, depth, 0)
+        if zPlan = nativeint 0 then
+            invalidOp "fft3d.lowlevel.z.plan create failed in native helper."
+
+        let stopwatch = Stopwatch.StartNew()
+        for _ in 1 .. iterations do
+            fillInterleavedComplex64FromReal source values
+            for z in 0 .. depth - 1 do
+                let planePointer = IntPtr.Add(basePointer, z * planeValues * sizeof<float32>)
+                Chunk.NativeSp.fftwfComplexXYPlanExecute(xyPlan, planePointer)
+                |> Chunk.NativeSp.checkStatus "fft3d.lowlevel.xy.plan.execute"
+            Chunk.NativeSp.fftwfComplexZPlanExecute(zPlan, basePointer)
+            |> Chunk.NativeSp.checkStatus "fft3d.lowlevel.z.plan.execute"
+        stopwatch.Stop()
+        stopwatch.Elapsed, checksumComplex64Interleaved values
+    finally
+        if zPlan <> nativeint 0 then
+            Chunk.NativeSp.fftwfComplexZPlanDestroy(zPlan)
+        if xyPlan <> nativeint 0 then
+            Chunk.NativeSp.fftwfComplexXYPlanDestroy(xyPlan)
+        handle.Free()
+
+let private runLowlevelFullFft3DKernel iterations (source: float32[,,]) =
+    let width = source.GetLength 0
+    let height = source.GetLength 1
+    let depth = source.GetLength 2
+    let complexCount = width * height * depth
+    let values = Array.zeroCreate<float32> (complexCount * 2)
+    let handle = GCHandle.Alloc(values, GCHandleType.Pinned)
+    try
+        let basePointer = handle.AddrOfPinnedObject()
+        let stopwatch = Stopwatch.StartNew()
+        for _ in 1 .. iterations do
+            fillInterleavedComplex64FromReal source values
+            Chunk.NativeSp.fftwfComplex3DInplace(basePointer, width, height, depth, 0)
+            |> Chunk.NativeSp.checkStatus "fft3d.lowlevel.full"
+        stopwatch.Stop()
+        stopwatch.Elapsed, checksumComplex64Interleaved values
+    finally
+        handle.Free()
+
+let private fillRealVolumeFromReal (source: float32[,,]) (target: float32[]) =
+    let width = source.GetLength 0
+    let height = source.GetLength 1
+    let depth = source.GetLength 2
+    let mutable offset = 0
+    for z in 0 .. depth - 1 do
+        for y in 0 .. height - 1 do
+            for x in 0 .. width - 1 do
+                target[offset] <- source[x, y, z]
+                offset <- offset + 1
+
+let private runLowlevelRealToComplexFullFft3DKernel iterations (source: float32[,,]) =
+    let width = source.GetLength 0
+    let height = source.GetLength 1
+    let depth = source.GetLength 2
+    let realCount = width * height * depth
+    let complexWidth = width / 2 + 1
+    let complexCount = complexWidth * height * depth
+    let real = Array.zeroCreate<float32> realCount
+    let values = Array.zeroCreate<float32> (complexCount * 2)
+    let realHandle = GCHandle.Alloc(real, GCHandleType.Pinned)
+    let complexHandle = GCHandle.Alloc(values, GCHandleType.Pinned)
+    try
+        let realPointer = realHandle.AddrOfPinnedObject()
+        let complexPointer = complexHandle.AddrOfPinnedObject()
+        let stopwatch = Stopwatch.StartNew()
+        for _ in 1 .. iterations do
+            fillRealVolumeFromReal source real
+            Chunk.NativeSp.fftwfReal3DToComplex(realPointer, complexPointer, width, height, depth)
+            |> Chunk.NativeSp.checkStatus "fft3d.lowlevel.r2c.full"
+        stopwatch.Stop()
+        stopwatch.Elapsed, checksumComplex64Interleaved values
+    finally
+        complexHandle.Free()
+        realHandle.Free()
+
+let private runSharpFftwFft3DKernel iterations (source: float32[,,]) =
+    let width = source.GetLength 0
+    let height = source.GetLength 1
+    let depth = source.GetLength 2
+    let complexCount = width * height * depth
+    let values = Array.zeroCreate<float32> (complexCount * 2)
+
+    use input = new SharpFFTW.Single.ComplexArray(complexCount)
+    use output = new SharpFFTW.Single.ComplexArray(complexCount)
+    use plan =
+        SharpFFTW.Single.Plan.Create3(
+            depth,
+            height,
+            width,
+            input,
+            output,
+            SharpFFTW.Direction.Forward,
+            SharpFFTW.Options.Estimate)
+
+    let stopwatch = Stopwatch.StartNew()
+    for _ in 1 .. iterations do
+        fillInterleavedComplex64FromReal source values
+        input.Set(values)
+        plan.Execute()
+    stopwatch.Stop()
+
+    output.CopyTo(values)
+    stopwatch.Elapsed, checksumComplex64Interleaved values
+
 let private runFft3DKernel opts =
     let shape = require "shape" opts |> parseShape
     let iterations = optional "iterations" "1" opts |> Int32.Parse
@@ -2733,6 +3111,11 @@ let private runFft3DKernel opts =
                 match variant with
                 | Fft3DSimpleItk -> runSimpleItkFft3DKernel iterations inputImage.Value
                 | Fft3DLowlevel -> runLowlevelFft3DKernel iterations source
+                | Fft3DLowlevelXYPlan -> runLowlevelXYPlanFft3DKernel iterations source
+                | Fft3DLowlevelXYZPlan -> runLowlevelXYZPlanFft3DKernel iterations source
+                | Fft3DLowlevelFull -> runLowlevelFullFft3DKernel iterations source
+                | Fft3DLowlevelRealToComplexFull -> runLowlevelRealToComplexFullFft3DKernel iterations source
+                | Fft3DSharpFftw -> runSharpFftwFft3DKernel iterations source
             total <- total + elapsed
             printfn
                 "variant=%s shape=%ux%ux%u iterations=%d totalSeconds=%s perIterationSeconds=%s checksum=%u"
@@ -2750,6 +3133,555 @@ let private runFft3DKernel opts =
     finally
         inputImage |> Option.iter (fun image -> image.decRefCount())
 
+let private fft3DInputChunks (shape: Shape) =
+    if shape.Width > uint Int32.MaxValue || shape.Height > uint Int32.MaxValue || shape.Depth > uint Int32.MaxValue then
+        invalidArg "shape" $"Chunk FFT3D kernel benchmark dimensions must fit Int32, got {shape.Width}x{shape.Height}x{shape.Depth}."
+
+    let width = int shape.Width
+    let height = int shape.Height
+    let depth = int shape.Depth
+    let plane = width * height
+
+    Array.init depth (fun z ->
+        let chunk = StackCore.Chunk.create<float32> (uint64 width, uint64 height, 1UL)
+        let values = StackCore.Chunk.span<float32> chunk
+        if values.Length <> plane then
+            invalidOp $"Created slice has {values.Length} pixels, expected {plane}."
+
+        for y in 0 .. height - 1 do
+            let row = y * width
+            for x in 0 .. width - 1 do
+                values[row + x] <- fft3DInputValue x y z
+
+        chunk)
+
+let private cloneFloat32Chunks (input: StackCore.Chunk<float32>[]) =
+    input
+    |> Array.map (fun source ->
+        let target = StackCore.Chunk.create<float32> source.Size
+        (StackCore.Chunk.span<float32> source).CopyTo(StackCore.Chunk.span<float32> target)
+        target)
+
+let private runDirectChunkRealXYRoundTripWithPlans
+    (forwardPlans: ChunkCore.ChunkFunctions.FftRealXYAndZPlanCache)
+    (inversePlans: ChunkCore.ChunkFunctions.InvFftRealXYAndZPlanCache)
+    (input: StackCore.Chunk<float32>[])
+    =
+    let ownedInput = cloneFloat32Chunks input
+    let mutable spectral: StackCore.SpectralChunk[] = [||]
+    let mutable output: StackCore.Chunk<float32>[] = [||]
+    try
+        spectral <- forwardPlans.ForwardFloat32SlicesToComplex64Interleaved(ownedInput)
+        output <- inversePlans.InverseHermitianPackedToFloat32Slices(spectral)
+        checksumFloat32Chunks output
+    finally
+        output |> Array.iter StackCore.Chunk.decRef
+        spectral |> Array.iter (fun item -> StackCore.Chunk.decRef item.Chunk)
+        ownedInput |> Array.iter StackCore.Chunk.decRef
+
+let private runDirectChunkRealXYRoundTrip (input: StackCore.Chunk<float32>[]) =
+    use forwardPlans = new ChunkCore.ChunkFunctions.FftRealXYAndZPlanCache()
+    use inversePlans = new ChunkCore.ChunkFunctions.InvFftRealXYAndZPlanCache()
+    runDirectChunkRealXYRoundTripWithPlans forwardPlans inversePlans input
+
+let private runStageChunkRealXYRoundTrip (depth: int) (input: StackCore.Chunk<float32>[]) =
+    let ownedInput = cloneFloat32Chunks input
+    let spectral =
+        (fft3DRealXY depth).Build().Apply false (AsyncSeq.ofSeq ownedInput)
+    let output =
+        (invFft3DRealXY depth).Build().Apply false spectral
+        |> AsyncSeq.toListAsync
+        |> Async.RunSynchronously
+        |> List.toArray
+
+    try
+        checksumFloat32Chunks output
+    finally
+        output |> Array.iter StackCore.Chunk.decRef
+
+let private runChunkFft3DStageOverhead opts =
+    let shape = require "shape" opts |> parseShape
+    let iterations = optional "iterations" "1" opts |> Int32.Parse
+    if iterations < 1 then
+        invalidArg "iterations" $"Chunk FFT3D stage overhead benchmark expects positive iterations, got {iterations}."
+
+    let depth = int shape.Depth
+    let source = fft3DInputChunks shape
+
+    try
+        let runTimed variant runner =
+            StackCore.Chunk.resetStats()
+            let stopwatch = Stopwatch.StartNew()
+            let mutable checksum = 0u
+
+            for _ in 1 .. iterations do
+                checksum <- runner source
+
+            stopwatch.Stop()
+            printfn
+                "variant=%s shape=%ux%ux%u iterations=%d totalSeconds=%s perIterationSeconds=%s checksum=%u chunkStats=%s"
+                variant
+                shape.Width
+                shape.Height
+                shape.Depth
+                iterations
+                (stopwatch.Elapsed.TotalSeconds.ToString("F9", invariant))
+                ((stopwatch.Elapsed.TotalSeconds / float iterations).ToString("F9", invariant))
+                checksum
+                (StackCore.Chunk.stats() |> StackCore.Chunk.formatStats)
+
+        runTimed "chunk-core-direct" runDirectChunkRealXYRoundTrip
+
+        use forwardPlans = new ChunkCore.ChunkFunctions.FftRealXYAndZPlanCache()
+        use inversePlans = new ChunkCore.ChunkFunctions.InvFftRealXYAndZPlanCache()
+        runTimed
+            "chunk-core-reused-plans"
+            (runDirectChunkRealXYRoundTripWithPlans forwardPlans inversePlans)
+
+        runTimed "stack-stage" (runStageChunkRealXYRoundTrip depth)
+
+        0
+    finally
+        source |> Array.iter StackCore.Chunk.decRef
+
+let private runChunkFft3DStageIo opts =
+    let shape = require "shape" opts |> parseShape
+    let input = require "input" opts
+    let output = require "output" opts
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+    let depth = int shape.Depth
+
+    ensureCleanDirectory output
+    StackCore.Chunk.resetStats()
+
+    let stopwatch = Stopwatch.StartNew()
+    benchmarkSource availableMemory
+    |> read<float32> input ".tiff"
+    >=> fft3DRealXY depth
+    >=> invFft3DRealXY depth
+    >=> write<float32> output ".tiff"
+    |> sink
+    stopwatch.Stop()
+
+    printfn
+        "variant=chunk-fft3d-stage-io shape=%ux%ux%u totalSeconds=%s chunkStats=%s"
+        shape.Width
+        shape.Height
+        shape.Depth
+        (stopwatch.Elapsed.TotalSeconds.ToString("F9", invariant))
+        (StackCore.Chunk.stats() |> StackCore.Chunk.formatStats)
+
+    writeInternalSeconds stopwatch.Elapsed
+    0
+
+let private runChunkFft3DKernel opts =
+    let shape = require "shape" opts |> parseShape
+    let iterations = optional "iterations" "1" opts |> Int32.Parse
+    if iterations < 1 then
+        invalidArg "iterations" $"Chunk FFT3D kernel benchmark expects positive iterations, got {iterations}."
+
+    let variants = optional "variant" "all" opts |> parseChunkFft3DStageVariant
+    let depth = int shape.Depth
+    let mutable total = TimeSpan.Zero
+
+    for variant in variants do
+        StackCore.Chunk.resetStats()
+        let stopwatch = Stopwatch.StartNew()
+        let mutable checksum = 0u
+
+        for _ in 1 .. iterations do
+            let input = fft3DInputChunks shape
+            match variant with
+            | ChunkFft3DComplexXY ->
+                let output =
+                    (fft3DComplexXY depth).Build().Apply false (AsyncSeq.ofSeq input)
+                    |> AsyncSeq.toListAsync
+                    |> Async.RunSynchronously
+                    |> List.toArray
+
+                try
+                    checksum <- checksumComplex64InterleavedChunks output
+                finally
+                    output |> Array.iter StackCore.Chunk.decRef
+            | ChunkFft3DRealXY ->
+                let output =
+                    (fft3DRealXY depth).Build().Apply false (AsyncSeq.ofSeq input)
+                    |> AsyncSeq.toListAsync
+                    |> Async.RunSynchronously
+                    |> List.toArray
+
+                try
+                    checksum <- checksumSpectralChunks output
+                finally
+                    output |> Array.iter (fun spectral -> StackCore.Chunk.decRef spectral.Chunk)
+            | ChunkFft3DRealXYRoundTrip ->
+                let spectral =
+                    (fft3DRealXY depth).Build().Apply false (AsyncSeq.ofSeq input)
+                    |> AsyncSeq.toListAsync
+                    |> Async.RunSynchronously
+                    |> List.toArray
+
+                let output =
+                    (invFft3DRealXY depth).Build().Apply false (AsyncSeq.ofSeq spectral)
+                    |> AsyncSeq.toListAsync
+                    |> Async.RunSynchronously
+                    |> List.toArray
+
+                try
+                    checksum <- checksumFloat32Chunks output
+                finally
+                    output |> Array.iter StackCore.Chunk.decRef
+
+        stopwatch.Stop()
+        total <- total + stopwatch.Elapsed
+        printfn
+            "variant=%s shape=%ux%ux%u iterations=%d totalSeconds=%s perIterationSeconds=%s checksum=%u chunkStats=%s"
+            (chunkFft3DStageVariantName variant)
+            shape.Width
+            shape.Height
+            shape.Depth
+            iterations
+            (stopwatch.Elapsed.TotalSeconds.ToString("F9", invariant))
+            ((stopwatch.Elapsed.TotalSeconds / float iterations).ToString("F9", invariant))
+            checksum
+            (StackCore.Chunk.stats() |> StackCore.Chunk.formatStats)
+
+    writeInternalSeconds total
+    0
+
+let private runChunkFft3DSpectralZarr opts =
+    let shape = require "shape" opts |> parseShape
+    let output = require "output" opts
+    let variant = optional "variant" "write" opts |> parseChunkFft3DSpectralZarrVariant
+    let chunkSize = optional "chunk-size" "64" opts |> UInt32.Parse
+    let iterations = optional "iterations" "1" opts |> Int32.Parse
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+    if iterations < 1 then
+        invalidArg "iterations" $"Chunk FFT3D spectral Zarr benchmark expects positive iterations, got {iterations}."
+
+    let depth = int shape.Depth
+
+    let writeSpectralStore () =
+        ensureCleanDirectory output
+        let input = fft3DInputChunks shape
+        let spectral =
+            (fft3DRealXY depth).Build().Apply false (AsyncSeq.ofSeq input)
+        let writer =
+            writeZarrSpectralComplex64InterleavedFloat32
+                output
+                "fft_real_xy"
+                shape.Width
+                shape.Height
+                shape.Depth
+                chunkSize
+                chunkSize
+                chunkSize
+                1.0
+                1.0
+                1.0
+                0
+
+        writer.Build().Apply false spectral
+        |> AsyncSeq.toListAsync
+        |> Async.RunSynchronously
+        |> ignore
+
+    let releaseSpectral =
+        SlimPipeline.Stage.consumeWith
+            "releaseSpectralChunk"
+            (fun _debug _index (spectral: StackCore.SpectralChunk) -> StackCore.Chunk.decRef spectral.Chunk)
+            (fun _ -> 0UL)
+
+    let releaseFloat32 =
+        SlimPipeline.Stage.consumeWith
+            "releaseFloat32Chunk"
+            (fun _debug _index (chunk: StackCore.Chunk<float32>) -> StackCore.Chunk.decRef chunk)
+            (fun _ -> 0UL)
+
+    match variant with
+    | ChunkFft3DSpectralZarrRead
+    | ChunkFft3DSpectralZarrRoundTrip ->
+        if not (File.Exists(Path.Combine(output, "0", "zarr.json"))) then
+            writeSpectralStore ()
+    | ChunkFft3DSpectralZarrWrite
+    | ChunkFft3DSpectralZarrWritePrecomputed -> ()
+
+    StackCore.Chunk.resetStats()
+    let stopwatch = Stopwatch()
+
+    for _ in 1 .. iterations do
+        match variant with
+        | ChunkFft3DSpectralZarrWrite ->
+            stopwatch.Start()
+            writeSpectralStore ()
+            stopwatch.Stop()
+        | ChunkFft3DSpectralZarrWritePrecomputed ->
+            ensureCleanDirectory output
+            let input = fft3DInputChunks shape
+            let spectral =
+                (fft3DRealXY depth).Build().Apply false (AsyncSeq.ofSeq input)
+                |> AsyncSeq.toListAsync
+                |> Async.RunSynchronously
+                |> List.toArray
+
+            let writer =
+                writeZarrSpectralComplex64InterleavedFloat32
+                    output
+                    "fft_real_xy"
+                    shape.Width
+                    shape.Height
+                    shape.Depth
+                    chunkSize
+                    chunkSize
+                    chunkSize
+                    1.0
+                    1.0
+                    1.0
+                    0
+
+            stopwatch.Start()
+            writer.Build().Apply false (AsyncSeq.ofSeq spectral)
+            |> AsyncSeq.toListAsync
+            |> Async.RunSynchronously
+            |> ignore
+            stopwatch.Stop()
+        | ChunkFft3DSpectralZarrRead ->
+            stopwatch.Start()
+            benchmarkSource availableMemory
+            |> readZarrSpectralComplex64InterleavedFloat32Range 0u 1 (shape.Depth - 1u) output 0 0 0 0 0
+            >=> releaseSpectral
+            |> sink
+            stopwatch.Stop()
+        | ChunkFft3DSpectralZarrRoundTrip ->
+            stopwatch.Start()
+            benchmarkSource availableMemory
+            |> readZarrSpectralComplex64InterleavedFloat32Range 0u 1 (shape.Depth - 1u) output 0 0 0 0 0
+            >=> invFft3DRealXY depth
+            >=> releaseFloat32
+            |> sink
+            stopwatch.Stop()
+
+    printfn
+        "variant=%s shape=%ux%ux%u iterations=%d totalSeconds=%s perIterationSeconds=%s chunkStats=%s"
+        (chunkFft3DSpectralZarrVariantName variant)
+        shape.Width
+        shape.Height
+        shape.Depth
+        iterations
+        (stopwatch.Elapsed.TotalSeconds.ToString("F9", invariant))
+        ((stopwatch.Elapsed.TotalSeconds / float iterations).ToString("F9", invariant))
+        (StackCore.Chunk.stats() |> StackCore.Chunk.formatStats)
+
+    writeInternalSeconds stopwatch.Elapsed
+    0
+
+let private runChunkFft3DZarrRoundtripIo opts =
+    let shape = require "shape" opts |> parseShape
+    let input = require "input" opts
+    let output = require "output" opts
+    let chunkSize = optional "chunk-size" "64" opts |> UInt32.Parse
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+    let tempBase =
+        optional
+            "temp-zarr"
+            (output.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + ".spectral.tmp.zarr")
+            opts
+    let tempXY = tempBase.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + ".xy"
+    let tempZ = tempBase.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + ".z"
+    let tempInvZ = tempBase.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + ".invz"
+
+    let depth = int shape.Depth
+    let packedComplexWidth = shape.Width / 2u + 1u
+    let setSpectralDepth =
+        SlimPipeline.Stage.map
+            "setSpectralLogicalDepth"
+            (fun _debug (spectral: StackCore.SpectralChunk) ->
+                { spectral with LogicalSize = (shape.Width |> uint64, shape.Height |> uint64, shape.Depth |> uint64) })
+            id
+            id
+    let setSpectralSliceDepth =
+        SlimPipeline.Stage.map
+            "setSpectralLogicalSliceDepth"
+            (fun _debug (spectral: StackCore.SpectralChunk) ->
+                { spectral with LogicalSize = (shape.Width |> uint64, shape.Height |> uint64, 1UL) })
+            id
+            id
+
+    ensureCleanDirectory output
+    ensureCleanDirectory tempXY
+    ensureCleanDirectory tempZ
+    ensureCleanDirectory tempInvZ
+
+    StackCore.Chunk.resetStats()
+    let stopwatch = Stopwatch.StartNew()
+    try
+        benchmarkSource availableMemory
+        |> read<float32> input ".tiff"
+        >=> fftRealXY
+        >=> setSpectralDepth
+        >=> writeZarrSpectralComplex64InterleavedFloat32
+                tempXY
+                "fft_real_xy"
+                shape.Width
+                shape.Height
+                shape.Depth
+                chunkSize
+                chunkSize
+                chunkSize
+                1.0
+                1.0
+                1.0
+                0
+        |> sink
+
+        fftZComplex64InterleavedZarrRawChunks
+            tempXY
+            tempZ
+            "fft_z"
+            packedComplexWidth
+            shape.Height
+            shape.Depth
+            chunkSize
+            1.0
+            1.0
+            1.0
+            0
+
+        invFftZComplex64InterleavedZarrRawChunks
+            tempZ
+            tempInvZ
+            "inv_fft_z"
+            packedComplexWidth
+            shape.Height
+            shape.Depth
+            chunkSize
+            1.0
+            1.0
+            1.0
+            0
+
+        benchmarkSource availableMemory
+        |> readZarrSpectralComplex64InterleavedFloat32Range 0u 1 (shape.Depth - 1u) tempInvZ 0 0 0 0 0
+        >=> setSpectralSliceDepth
+        >=> invFftRealXY
+        >=> write<float32> output ".tiff"
+        |> sink
+
+        stopwatch.Stop()
+        printfn
+            "variant=chunk-fft3d-zarr-roundtrip-io shape=%ux%ux%u totalSeconds=%s chunkStats=%s"
+            shape.Width
+            shape.Height
+            shape.Depth
+            (stopwatch.Elapsed.TotalSeconds.ToString("F9", invariant))
+            (StackCore.Chunk.stats() |> StackCore.Chunk.formatStats)
+
+        writeInternalSeconds stopwatch.Elapsed
+        0
+    finally
+        if stopwatch.IsRunning then
+            stopwatch.Stop()
+        for tempPath in [ tempXY; tempZ; tempInvZ ] do
+            if Directory.Exists tempPath then
+                Directory.Delete(tempPath, true)
+
+let private runChunkFft3DZarrSubchunkedRoundtripIo opts =
+    let shape = require "shape" opts |> parseShape
+    let input = require "input" opts
+    let output = require "output" opts
+    let chunkSize = optional "chunk-size" "64" opts |> UInt32.Parse
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+    let tempBase =
+        optional
+            "temp-zarr"
+            (output.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + ".spectral-subchunked.tmp.zarr")
+            opts
+    let tempXY = tempBase.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + ".xy"
+    let tempInvZ = tempBase.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + ".invz"
+
+    let packedComplexWidth = shape.Width / 2u + 1u
+    let setSpectralDepth =
+        SlimPipeline.Stage.map
+            "setSpectralLogicalDepth"
+            (fun _debug (spectral: StackCore.SpectralChunk) ->
+                { spectral with LogicalSize = (shape.Width |> uint64, shape.Height |> uint64, shape.Depth |> uint64) })
+            id
+            id
+    let setSpectralSliceDepth =
+        SlimPipeline.Stage.map
+            "setSpectralLogicalSliceDepth"
+            (fun _debug (spectral: StackCore.SpectralChunk) ->
+                { spectral with LogicalSize = (shape.Width |> uint64, shape.Height |> uint64, 1UL) })
+            id
+            id
+
+    ensureCleanDirectory output
+    ensureCleanDirectory tempXY
+    ensureCleanDirectory tempInvZ
+
+    StackCore.Chunk.resetStats()
+    let stopwatch = Stopwatch.StartNew()
+    try
+        benchmarkSource availableMemory
+        |> read<float32> input ".tiff"
+        >=> fftRealXY
+        >=> setSpectralDepth
+        >=> writeZarrSpectralComplex64InterleavedFloat32Tiled
+                tempXY
+                "fft_real_xy_tiled"
+                shape.Width
+                shape.Height
+                shape.Depth
+                chunkSize
+                chunkSize
+                chunkSize
+                1.0
+                1.0
+                1.0
+                0
+        |> sink
+
+        fftRoundtripZComplex64InterleavedZarrSubchunks
+            tempXY
+            tempInvZ
+            "fft_z_roundtrip_subchunked"
+            packedComplexWidth
+            shape.Height
+            shape.Depth
+            chunkSize
+            chunkSize
+            chunkSize
+            1.0
+            1.0
+            1.0
+            0
+
+        benchmarkSource availableMemory
+        |> readZarrSpectralComplex64InterleavedFloat32TiledRange 0u 1 (shape.Depth - 1u) tempInvZ 0 0 0 0 0
+        >=> setSpectralSliceDepth
+        >=> invFftRealXY
+        >=> write<float32> output ".tiff"
+        |> sink
+
+        stopwatch.Stop()
+        printfn
+            "variant=chunk-fft3d-zarr-subchunked-roundtrip-io shape=%ux%ux%u chunkSize=%u totalSeconds=%s chunkStats=%s"
+            shape.Width
+            shape.Height
+            shape.Depth
+            chunkSize
+            (stopwatch.Elapsed.TotalSeconds.ToString("F9", invariant))
+            (StackCore.Chunk.stats() |> StackCore.Chunk.formatStats)
+
+        writeInternalSeconds stopwatch.Elapsed
+        0
+    finally
+        if stopwatch.IsRunning then
+            stopwatch.Stop()
+        for tempPath in [ tempXY; tempInvZ ] do
+            if Directory.Exists tempPath then
+                Directory.Delete(tempPath, true)
+
 let private runConnectedComponents input output windowSize availableMemory =
     let window = max 1u windowSize
     runChunkConnectedComponents input (Some output) 128.0 (Some (int window)) 3 availableMemory
@@ -2765,6 +3697,7 @@ let private run opts =
     let kernelSize = optional "kernel-size" "3" opts |> UInt32.Parse
     let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
     let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+    precleanDirectoryForTimedRun output
     let stopwatch = Stopwatch.StartNew()
     let exitCode =
         match operation, pixelType with
@@ -3004,6 +3937,7 @@ let private runArrayPool opts =
     let input = require "input" opts
     let output = require "output" opts
     let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+    precleanDirectoryForTimedRun output
     let stopwatch = Stopwatch.StartNew()
     let exitCode =
         match operation, pixelType with
@@ -3046,6 +3980,7 @@ let private runArrayPoolSlice opts =
     let input = require "input" opts
     let output = require "output" opts
     let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+    precleanDirectoryForTimedRun output
     let stopwatch = Stopwatch.StartNew()
     let exitCode =
         match operation, pixelType with
@@ -3125,6 +4060,7 @@ let private runArrayPoolSliceReuse opts =
     let input = require "input" opts
     let output = require "output" opts
     let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+    precleanDirectoryForTimedRun output
     let stopwatch = Stopwatch.StartNew()
     let exitCode =
         match operation, pixelType with
@@ -3147,7 +4083,6 @@ let private runByteSliceReuse opts =
     if pixelType <> UInt8 then
         failwith "Byte-slice reuse backend is only defined for UInt8."
 
-    let stopwatch = Stopwatch.StartNew()
     let files = stackTiffFiles input
     if files.Length = 0 then
         invalidOp $"No TIFF files found in input stack directory: {input}"
@@ -3162,6 +4097,7 @@ let private runByteSliceReuse opts =
             None
 
     ensureCleanDirectory output
+    let stopwatch = Stopwatch.StartNew()
     try
         for i in 0 .. files.Length - 1 do
             readByteTiffSliceInto files[i] width height rowBytes inputPage
@@ -3192,7 +4128,6 @@ let private runByteFloat32SliceReuse opts =
     if pixelType <> Float32 then
         failwith "Byte-float32 slice reuse backend is only defined for Float32."
 
-    let stopwatch = Stopwatch.StartNew()
     let files = stackTiffFiles input
     if files.Length = 0 then
         invalidOp $"No TIFF files found in input stack directory: {input}"
@@ -3207,6 +4142,7 @@ let private runByteFloat32SliceReuse opts =
             None
 
     ensureCleanDirectory output
+    let stopwatch = Stopwatch.StartNew()
     try
         for i in 0 .. files.Length - 1 do
             readByteTiffSliceInto files[i] width height rowBytes inputPage
@@ -3237,7 +4173,6 @@ let private runLibTiffDirectCopy opts =
     if operation <> "copy" then
         failwith $"Direct LibTiff backend is intentionally copy-only; got '{operation}'."
 
-    let stopwatch = Stopwatch.StartNew()
     let files = stackTiffFiles input
     if files.Length = 0 then
         invalidOp $"No TIFF files found in input stack directory: {input}"
@@ -3248,6 +4183,7 @@ let private runLibTiffDirectCopy opts =
     let scratch = ArrayPool<byte>.Shared.Rent(scanlineSize)
 
     ensureCleanDirectory output
+    let stopwatch = Stopwatch.StartNew()
     try
         for i in 0 .. files.Length - 1 do
             readDirectByteTiffSliceInto pixelType files[i] width height rowBytes page scratch
@@ -3270,7 +4206,6 @@ let private runLibTiffDirectThreshold opts =
     if operation <> "threshold" then
         failwith $"Direct LibTiff threshold backend is intentionally threshold-only; got '{operation}'."
 
-    let stopwatch = Stopwatch.StartNew()
     let files = stackTiffFiles input
     if files.Length = 0 then
         invalidOp $"No TIFF files found in input stack directory: {input}"
@@ -3283,6 +4218,7 @@ let private runLibTiffDirectThreshold opts =
     let mask = ArrayPool<byte>.Shared.Rent(maskBytes)
 
     ensureCleanDirectory output
+    let stopwatch = Stopwatch.StartNew()
     try
         for i in 0 .. files.Length - 1 do
             readDirectByteTiffSliceInto pixelType files[i] width height rowBytes page scratch
@@ -3307,7 +4243,6 @@ let private runLibTiffDirectThresholdInType opts =
     if operation <> "threshold" then
         failwith $"Direct LibTiff in-type threshold backend is intentionally threshold-only; got '{operation}'."
 
-    let stopwatch = Stopwatch.StartNew()
     let files = stackTiffFiles input
     if files.Length = 0 then
         invalidOp $"No TIFF files found in input stack directory: {input}"
@@ -3319,6 +4254,7 @@ let private runLibTiffDirectThresholdInType opts =
     let scratch = ArrayPool<byte>.Shared.Rent(scanlineSize)
 
     ensureCleanDirectory output
+    let stopwatch = Stopwatch.StartNew()
     try
         for i in 0 .. files.Length - 1 do
             readDirectByteTiffSliceInto pixelType files[i] width height rowBytes page scratch
@@ -3937,7 +4873,6 @@ let private runLibTiffStripCopy opts =
     if operation <> "copy" then
         failwith $"Direct LibTiff strip backend is intentionally copy-only; got '{operation}'."
 
-    let stopwatch = Stopwatch.StartNew()
     let files = stackTiffFiles input
     if files.Length = 0 then
         invalidOp $"No TIFF files found in input stack directory: {input}"
@@ -3950,6 +4885,7 @@ let private runLibTiffStripCopy opts =
     let page = ArrayPool<byte>.Shared.Rent(pageBytes)
 
     ensureCleanDirectory output
+    let stopwatch = Stopwatch.StartNew()
     try
         for i in 0 .. files.Length - 1 do
             readEncodedStripTiffSliceInto pixelType files[i] width height rowBytes pageBytes strips page
@@ -3970,7 +4906,6 @@ let private runLibTiffRawStripCopy opts =
     if operation <> "copy" then
         failwith $"Raw-strip LibTiff backend is intentionally copy-only; got '{operation}'."
 
-    let stopwatch = Stopwatch.StartNew()
     let files = stackTiffFiles input
     if files.Length = 0 then
         invalidOp $"No TIFF files found in input stack directory: {input}"
@@ -3983,6 +4918,7 @@ let private runLibTiffRawStripCopy opts =
     let page = ArrayPool<byte>.Shared.Rent(pageBytes)
 
     ensureCleanDirectory output
+    let stopwatch = Stopwatch.StartNew()
     try
         for i in 0 .. files.Length - 1 do
             readRawStripTiffSliceInto pixelType files[i] width height rowBytes pageBytes strips rawStripSizes page
@@ -4004,6 +4940,7 @@ let private runNativeLibTiffRawStripCopy opts =
         failwith $"Native raw-strip LibTiff backend is intentionally copy-only; got '{operation}'."
 
     try
+        ensureCleanDirectory output
         let stopwatch = Stopwatch.StartNew()
         let files = stackTiffFiles input
         if files.Length = 0 then
@@ -4013,11 +4950,305 @@ let private runNativeLibTiffRawStripCopy opts =
         let pageBytes = int info.PageBytes
         let page = ArrayPool<byte>.Shared.Rent(pageBytes)
 
-        ensureCleanDirectory output
         try
             for i in 0 .. files.Length - 1 do
                 readNativeRawTiffSliceInto pixelType files[i] info.Width info.Height rowBytes pageBytes page
                 writeNativeRawTiffPage pixelType (outputFile output i) info.Width info.Height pageBytes page
+
+            stopwatch.Stop()
+            writeInternalSeconds stopwatch.Elapsed
+            0
+        finally
+            ArrayPool<byte>.Shared.Return(page)
+    with
+    | :? DllNotFoundException as ex ->
+        invalidOp $"Could not load native libtiff shim 'sp_libtiff_shim'. Build it first, for example: bash benchmarks/native-libtiff-shim/build-unix.sh. Loader detail: {ex.Message}"
+    | :? EntryPointNotFoundException as ex ->
+        invalidOp $"Native libtiff shim is missing an expected entry point. Rebuild benchmarks/native-libtiff-shim. Loader detail: {ex.Message}"
+
+let private runNativeLibTiffRawStripChunkCopy opts =
+    let operation = require "operation" opts
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+
+    if operation <> "copy" then
+        failwith $"Native raw-strip Chunk LibTiff backend is intentionally copy-only; got '{operation}'."
+    if pixelType <> UInt8 then
+        failwith $"Native raw-strip Chunk LibTiff backend is intentionally UInt8-only for now; got {pixelType}."
+
+    try
+        ensureCleanDirectory output
+        let stopwatch = Stopwatch.StartNew()
+        let files = stackTiffFiles input
+        if files.Length = 0 then
+            invalidOp $"No TIFF files found in input stack directory: {input}"
+
+        let info, rowBytes, _bytesPerSample = readNativeTiffInfo pixelType files[0]
+        let pageBytes = int info.PageBytes
+        if uint64 pageBytes <> uint64 info.Width * uint64 info.Height then
+            invalidOp $"Native raw-strip Chunk benchmark expected UInt8 scalar pages, got {pageBytes} bytes for {info.Width}x{info.Height}."
+
+        let chunk = StackCore.Chunk.create<uint8> (uint64 info.Width, uint64 info.Height, 1UL)
+        if chunk.ByteLength <> pageBytes then
+            StackCore.Chunk.decRef chunk
+            invalidOp $"Chunk byte length {chunk.ByteLength} differs from TIFF page bytes {pageBytes}."
+
+        try
+            for i in 0 .. files.Length - 1 do
+                readNativeRawTiffSliceInto pixelType files[i] info.Width info.Height rowBytes pageBytes chunk.Bytes
+                writeNativeRawTiffPage pixelType (outputFile output i) info.Width info.Height pageBytes chunk.Bytes
+
+            stopwatch.Stop()
+            writeInternalSeconds stopwatch.Elapsed
+            0
+        finally
+            StackCore.Chunk.decRef chunk
+    with
+    | :? DllNotFoundException as ex ->
+        invalidOp $"Could not load native libtiff shim 'sp_libtiff_shim'. Build it first, for example: bash benchmarks/native-libtiff-shim/build-unix.sh. Loader detail: {ex.Message}"
+    | :? EntryPointNotFoundException as ex ->
+        invalidOp $"Native libtiff shim is missing an expected entry point. Rebuild benchmarks/native-libtiff-shim. Loader detail: {ex.Message}"
+
+let private runNativeLibTiffRawStripVolumeChunkCopy opts =
+    let operation = require "operation" opts
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+
+    if operation <> "copy" then
+        failwith $"Native raw-strip volume Chunk LibTiff backend is intentionally copy-only; got '{operation}'."
+    if pixelType <> UInt8 then
+        failwith $"Native raw-strip volume Chunk LibTiff backend is intentionally UInt8-only for now; got {pixelType}."
+
+    try
+        ensureCleanDirectory output
+        let stopwatch = Stopwatch.StartNew()
+        let files = stackTiffFiles input
+        if files.Length = 0 then
+            invalidOp $"No TIFF files found in input stack directory: {input}"
+
+        let info, rowBytes, _bytesPerSample = readNativeTiffInfo pixelType files[0]
+        let pageBytes = int info.PageBytes
+        if uint64 pageBytes <> uint64 info.Width * uint64 info.Height then
+            invalidOp $"Native raw-strip volume Chunk benchmark expected UInt8 scalar pages, got {pageBytes} bytes for {info.Width}x{info.Height}."
+
+        let chunk = StackCore.Chunk.create<uint8> (uint64 info.Width, uint64 info.Height, uint64 files.Length)
+        if chunk.ByteLength <> pageBytes * files.Length then
+            StackCore.Chunk.decRef chunk
+            invalidOp $"Chunk byte length {chunk.ByteLength} differs from expected volume bytes {pageBytes * files.Length}."
+
+        try
+            for i in 0 .. files.Length - 1 do
+                readNativeRawTiffSliceIntoOffset pixelType files[i] info.Width info.Height rowBytes pageBytes (i * pageBytes) chunk.Bytes
+
+            for i in 0 .. files.Length - 1 do
+                writeNativeRawTiffPageFromOffset pixelType (outputFile output i) info.Width info.Height pageBytes (i * pageBytes) chunk.Bytes
+
+            stopwatch.Stop()
+            writeInternalSeconds stopwatch.Elapsed
+            0
+        finally
+            StackCore.Chunk.decRef chunk
+    with
+    | :? DllNotFoundException as ex ->
+        invalidOp $"Could not load native libtiff shim 'sp_libtiff_shim'. Build it first, for example: bash benchmarks/native-libtiff-shim/build-unix.sh. Loader detail: {ex.Message}"
+    | :? EntryPointNotFoundException as ex ->
+        invalidOp $"Native libtiff shim is missing an expected entry point. Rebuild benchmarks/native-libtiff-shim. Loader detail: {ex.Message}"
+
+let private runStackReadWrite opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+    let debugLevel = optional "debug-level" "0" opts |> UInt32.Parse
+
+    ensureCleanDirectory output
+    let stopwatch = Stopwatch.StartNew()
+    let exitCode =
+        match pixelType with
+        | UInt8 -> runChunkReadWriteTyped<uint8> input output availableMemory debugLevel
+        | UInt16 -> runChunkReadWriteTyped<uint16> input output availableMemory debugLevel
+        | Float32 -> runChunkReadWriteTyped<float32> input output availableMemory debugLevel
+        | UInt32
+        | Int32 -> failwith $"Stack read/write benchmark currently supports UInt8, UInt16, and Float32; got {pixelType}."
+
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    exitCode
+
+let private runNativeLibTiffRawStripReadOnly opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+
+    try
+        let stopwatch = Stopwatch.StartNew()
+        let files = stackTiffFiles input
+        if files.Length = 0 then
+            invalidOp $"No TIFF files found in input stack directory: {input}"
+
+        let info, rowBytes, _bytesPerSample = readNativeTiffInfo pixelType files[0]
+        let pageBytes = int info.PageBytes
+        let page = ArrayPool<byte>.Shared.Rent(pageBytes)
+        let mutable checksum = 0
+
+        try
+            for i in 0 .. files.Length - 1 do
+                readNativeRawTiffSliceInto pixelType files[i] info.Width info.Height rowBytes pageBytes page
+                checksum <- checksum ^^^ int page[0] ^^^ int page[pageBytes - 1] ^^^ i
+
+            if checksum = Int32.MinValue then
+                eprintfn "impossible checksum: %d" checksum
+
+            stopwatch.Stop()
+            writeInternalSeconds stopwatch.Elapsed
+            0
+        finally
+            ArrayPool<byte>.Shared.Return(page)
+    with
+    | :? DllNotFoundException as ex ->
+        invalidOp $"Could not load native libtiff shim 'sp_libtiff_shim'. Build it first, for example: bash benchmarks/native-libtiff-shim/build-unix.sh. Loader detail: {ex.Message}"
+    | :? EntryPointNotFoundException as ex ->
+        invalidOp $"Native libtiff shim is missing an expected entry point. Rebuild benchmarks/native-libtiff-shim. Loader detail: {ex.Message}"
+
+let private runNativeLibTiffRawStripChunkReadOnly opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+
+    if pixelType <> UInt8 then
+        failwith $"Native raw-strip Chunk read-only backend is intentionally UInt8-only for now; got {pixelType}."
+
+    try
+        let stopwatch = Stopwatch.StartNew()
+        let files = stackTiffFiles input
+        if files.Length = 0 then
+            invalidOp $"No TIFF files found in input stack directory: {input}"
+
+        let info, rowBytes, _bytesPerSample = readNativeTiffInfo pixelType files[0]
+        let pageBytes = int info.PageBytes
+        let chunk = StackCore.Chunk.create<uint8> (uint64 info.Width, uint64 info.Height, 1UL)
+        let mutable checksum = 0
+
+        try
+            if chunk.ByteLength <> pageBytes then
+                invalidOp $"Chunk byte length {chunk.ByteLength} differs from TIFF page bytes {pageBytes}."
+
+            for i in 0 .. files.Length - 1 do
+                readNativeRawTiffSliceInto pixelType files[i] info.Width info.Height rowBytes pageBytes chunk.Bytes
+                checksum <- checksum ^^^ int chunk.Bytes[0] ^^^ int chunk.Bytes[pageBytes - 1] ^^^ i
+
+            if checksum = Int32.MinValue then
+                eprintfn "impossible checksum: %d" checksum
+
+            stopwatch.Stop()
+            writeInternalSeconds stopwatch.Elapsed
+            0
+        finally
+            StackCore.Chunk.decRef chunk
+    with
+    | :? DllNotFoundException as ex ->
+        invalidOp $"Could not load native libtiff shim 'sp_libtiff_shim'. Build it first, for example: bash benchmarks/native-libtiff-shim/build-unix.sh. Loader detail: {ex.Message}"
+    | :? EntryPointNotFoundException as ex ->
+        invalidOp $"Native libtiff shim is missing an expected entry point. Rebuild benchmarks/native-libtiff-shim. Loader detail: {ex.Message}"
+
+let private fillPage (page: byte[]) pageBytes =
+    for i in 0 .. pageBytes - 1 do
+        page[i] <- byte (i &&& 0xFF)
+
+let private runNativeLibTiffRawStripWriteOnly opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+
+    try
+        let files = stackTiffFiles input
+        if files.Length = 0 then
+            invalidOp $"No TIFF files found in input stack directory: {input}"
+
+        let info, _rowBytes, _bytesPerSample = readNativeTiffInfo pixelType files[0]
+        let pageBytes = int info.PageBytes
+        let page = ArrayPool<byte>.Shared.Rent(pageBytes)
+        fillPage page pageBytes
+
+        ensureCleanDirectory output
+        let stopwatch = Stopwatch.StartNew()
+        try
+            for i in 0 .. files.Length - 1 do
+                writeNativeRawTiffPage pixelType (outputFile output i) info.Width info.Height pageBytes page
+
+            stopwatch.Stop()
+            writeInternalSeconds stopwatch.Elapsed
+            0
+        finally
+            ArrayPool<byte>.Shared.Return(page)
+    with
+    | :? DllNotFoundException as ex ->
+        invalidOp $"Could not load native libtiff shim 'sp_libtiff_shim'. Build it first, for example: bash benchmarks/native-libtiff-shim/build-unix.sh. Loader detail: {ex.Message}"
+    | :? EntryPointNotFoundException as ex ->
+        invalidOp $"Native libtiff shim is missing an expected entry point. Rebuild benchmarks/native-libtiff-shim. Loader detail: {ex.Message}"
+
+let private runNativeLibTiffRawStripChunkWriteOnly opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+
+    if pixelType <> UInt8 then
+        failwith $"Native raw-strip Chunk write-only backend is intentionally UInt8-only for now; got {pixelType}."
+
+    try
+        let files = stackTiffFiles input
+        if files.Length = 0 then
+            invalidOp $"No TIFF files found in input stack directory: {input}"
+
+        let info, _rowBytes, _bytesPerSample = readNativeTiffInfo pixelType files[0]
+        let pageBytes = int info.PageBytes
+        let chunk = StackCore.Chunk.create<uint8> (uint64 info.Width, uint64 info.Height, 1UL)
+        if chunk.ByteLength <> pageBytes then
+            StackCore.Chunk.decRef chunk
+            invalidOp $"Chunk byte length {chunk.ByteLength} differs from TIFF page bytes {pageBytes}."
+        fillPage chunk.Bytes pageBytes
+
+        ensureCleanDirectory output
+        let stopwatch = Stopwatch.StartNew()
+        try
+            for i in 0 .. files.Length - 1 do
+                writeNativeRawTiffPage pixelType (outputFile output i) info.Width info.Height pageBytes chunk.Bytes
+
+            stopwatch.Stop()
+            writeInternalSeconds stopwatch.Elapsed
+            0
+        finally
+            StackCore.Chunk.decRef chunk
+    with
+    | :? DllNotFoundException as ex ->
+        invalidOp $"Could not load native libtiff shim 'sp_libtiff_shim'. Build it first, for example: bash benchmarks/native-libtiff-shim/build-unix.sh. Loader detail: {ex.Message}"
+    | :? EntryPointNotFoundException as ex ->
+        invalidOp $"Native libtiff shim is missing an expected entry point. Rebuild benchmarks/native-libtiff-shim. Loader detail: {ex.Message}"
+
+let private runNativeLibTiffScanlineCopy opts =
+    let operation = require "operation" opts
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+
+    if operation <> "copy" then
+        failwith $"Native scanline LibTiff backend is intentionally copy-only; got '{operation}'."
+
+    try
+        ensureCleanDirectory output
+        let stopwatch = Stopwatch.StartNew()
+        let files = stackTiffFiles input
+        if files.Length = 0 then
+            invalidOp $"No TIFF files found in input stack directory: {input}"
+
+        let info, rowBytes, _bytesPerSample = readNativeTiffInfo pixelType files[0]
+        let pageBytes = int info.PageBytes
+        let page = ArrayPool<byte>.Shared.Rent(pageBytes)
+
+        try
+            for i in 0 .. files.Length - 1 do
+                readNativeScanlineTiffSliceInto pixelType files[i] info.Width info.Height rowBytes pageBytes page
+                writeNativeScanlineTiffPage pixelType (outputFile output i) info.Width info.Height pageBytes page
 
             stopwatch.Stop()
             writeInternalSeconds stopwatch.Elapsed
@@ -4039,7 +5270,6 @@ let private runTiffLibraryRawStripCopy opts =
     if operation <> "copy" then
         failwith $"TiffLibrary raw-strip backend is intentionally copy-only; got '{operation}'."
 
-    let stopwatch = Stopwatch.StartNew()
     let files = stackTiffFiles input
     if files.Length = 0 then
         invalidOp $"No TIFF files found in input stack directory: {input}"
@@ -4048,6 +5278,7 @@ let private runTiffLibraryRawStripCopy opts =
     let page = ArrayPool<byte>.Shared.Rent(pageBytes)
 
     ensureCleanDirectory output
+    let stopwatch = Stopwatch.StartNew()
     try
         for i in 0 .. files.Length - 1 do
             readTiffLibraryRawSliceInto pixelType files[i] width height rowBytes pageBytes stripByteCounts.Count page
@@ -4185,6 +5416,13 @@ let main args =
         | _ when args[0] = "run-chunk-fft-z-complex64-zarr" -> args[1..] |> parseArgs |> runChunkFftZComplex64Zarr
         | _ when args[0] = "run-chunk-fft-native-float32-zarr" -> args[1..] |> parseArgs |> runChunkFftNativeFloat32Zarr
         | _ when args[0] = "run-fft3d-kernel" -> args[1..] |> parseArgs |> runFft3DKernel
+        | _ when args[0] = "run-chunk-fft3d-stage" -> args[1..] |> parseArgs |> runChunkFft3DKernel
+        | _ when args[0] = "run-chunk-fft3d-stage-io" -> args[1..] |> parseArgs |> runChunkFft3DStageIo
+        | _ when args[0] = "run-chunk-fft3d-stage-overhead" -> args[1..] |> parseArgs |> runChunkFft3DStageOverhead
+        | _ when args[0] = "run-chunk-fft3d-kernel" -> args[1..] |> parseArgs |> runChunkFft3DKernel
+        | _ when args[0] = "run-chunk-fft3d-spectral-zarr" -> args[1..] |> parseArgs |> runChunkFft3DSpectralZarr
+        | _ when args[0] = "run-chunk-fft3d-zarr-roundtrip-io" -> args[1..] |> parseArgs |> runChunkFft3DZarrRoundtripIo
+        | _ when args[0] = "run-chunk-fft3d-zarr-subchunked-roundtrip-io" -> args[1..] |> parseArgs |> runChunkFft3DZarrSubchunkedRoundtripIo
         | _ when args[0] = "run-arraypool" -> args[1..] |> parseArgs |> runArrayPool
         | _ when args[0] = "run-arraypool-slice" -> args[1..] |> parseArgs |> runArrayPoolSlice
         | _ when args[0] = "run-arraypool-slice-reuse" -> args[1..] |> parseArgs |> runArrayPoolSliceReuse
@@ -4204,6 +5442,14 @@ let main args =
         | _ when args[0] = "run-libtiff-strip-copy" -> args[1..] |> parseArgs |> runLibTiffStripCopy
         | _ when args[0] = "run-libtiff-raw-strip-copy" -> args[1..] |> parseArgs |> runLibTiffRawStripCopy
         | _ when args[0] = "run-native-libtiff-raw-strip-copy" -> args[1..] |> parseArgs |> runNativeLibTiffRawStripCopy
+        | _ when args[0] = "run-native-libtiff-raw-strip-chunk-copy" -> args[1..] |> parseArgs |> runNativeLibTiffRawStripChunkCopy
+        | _ when args[0] = "run-native-libtiff-raw-strip-volume-chunk-copy" -> args[1..] |> parseArgs |> runNativeLibTiffRawStripVolumeChunkCopy
+        | _ when args[0] = "run-stack-read-write" -> args[1..] |> parseArgs |> runStackReadWrite
+        | _ when args[0] = "run-native-libtiff-raw-strip-readonly" -> args[1..] |> parseArgs |> runNativeLibTiffRawStripReadOnly
+        | _ when args[0] = "run-native-libtiff-raw-strip-chunk-readonly" -> args[1..] |> parseArgs |> runNativeLibTiffRawStripChunkReadOnly
+        | _ when args[0] = "run-native-libtiff-raw-strip-writeonly" -> args[1..] |> parseArgs |> runNativeLibTiffRawStripWriteOnly
+        | _ when args[0] = "run-native-libtiff-raw-strip-chunk-writeonly" -> args[1..] |> parseArgs |> runNativeLibTiffRawStripChunkWriteOnly
+        | _ when args[0] = "run-native-libtiff-scanline-copy" -> args[1..] |> parseArgs |> runNativeLibTiffScanlineCopy
         | _ when args[0] = "run-tifflibrary-raw-strip-copy" -> args[1..] |> parseArgs |> runTiffLibraryRawStripCopy
         | _ when args[0] = "run-imagesharp-copy" -> args[1..] |> parseArgs |> runImageSharpCopy
         | _ when args[0] = "run-libtiff-direct-readonly" -> args[1..] |> parseArgs |> runLibTiffDirectReadOnly

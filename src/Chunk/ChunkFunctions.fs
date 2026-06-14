@@ -1,6 +1,7 @@
 namespace ChunkCore
 
 open System
+open System.Buffers
 open System.Collections.Generic
 open System.Numerics
 open System.Runtime.InteropServices
@@ -722,6 +723,507 @@ module ChunkFunctions =
                 reraise()
         finally
             decRef scratch
+
+    let fftRealXYFloat32ToHermitianPackedComplex64InterleavedChunk (input: Chunk<float32>) =
+        let width64, height64, depth64 = input.Size
+        if depth64 <> 1UL then
+            invalidArg "input" $"Chunk real FFT XY expects 2D slice chunks with depth 1, got {input.Size}."
+        if width64 > uint64 Int32.MaxValue || height64 > uint64 Int32.MaxValue then
+            invalidArg "input" $"Chunk real FFT XY slice dimensions must fit Int32, got {input.Size}."
+
+        let width = int width64
+        let height = int height64
+        let packedComplexWidth64 = width64 / 2UL + 1UL
+        let output = create<float32> (2UL * packedComplexWidth64, height64, 1UL)
+        try
+            NativeSp.ensureAvailable ()
+            let mutable inputHandle = Unchecked.defaultof<GCHandle>
+            let mutable outputHandle = Unchecked.defaultof<GCHandle>
+            try
+                inputHandle <- GCHandle.Alloc(input.Bytes, GCHandleType.Pinned)
+                outputHandle <- GCHandle.Alloc(output.Bytes, GCHandleType.Pinned)
+                NativeSp.fftwfRealXYToComplex(inputHandle.AddrOfPinnedObject(), outputHandle.AddrOfPinnedObject(), width, height)
+                |> NativeSp.checkStatus "fftwf real xy to compact complex"
+            finally
+                if outputHandle.IsAllocated then
+                    outputHandle.Free()
+                if inputHandle.IsAllocated then
+                    inputHandle.Free()
+
+            { LogicalSize = (width64, height64, 1UL)
+              Layout = HermitianPackedComplex64Interleaved(0, width64)
+              Chunk = output }
+        with
+        | _ ->
+            decRef output
+            reraise()
+
+    let invFftXYHermitianPackedComplex64InterleavedToFloat32Chunk (input: SpectralChunk) =
+        let width64, height64, depth64 = input.LogicalSize
+        if depth64 <> 1UL then
+            invalidArg "input" $"Chunk inverse real FFT XY expects per-slice spectral chunks with logical depth 1, got {input.LogicalSize}."
+        if width64 > uint64 Int32.MaxValue || height64 > uint64 Int32.MaxValue then
+            invalidArg "input" $"Chunk inverse real FFT XY slice dimensions must fit Int32, got {input.LogicalSize}."
+        match input.Layout with
+        | HermitianPackedComplex64Interleaved(0, realSize) when realSize = width64 -> ()
+        | layout -> invalidArg "input" $"Chunk inverse real FFT XY expects HermitianPackedComplex64Interleaved(0, {width64}), got {layout}."
+
+        let width = int width64
+        let height = int height64
+        let packedComplexWidth64 = width64 / 2UL + 1UL
+        let expectedPackedSize = (2UL * packedComplexWidth64, height64, 1UL)
+        if input.Chunk.Size <> expectedPackedSize then
+            invalidArg "input" $"Chunk inverse real FFT XY expects packed chunk size {expectedPackedSize}, got {input.Chunk.Size}."
+
+        let output = create<float32> (width64, height64, 1UL)
+        try
+            NativeSp.ensureAvailable ()
+            let mutable inputHandle = Unchecked.defaultof<GCHandle>
+            let mutable outputHandle = Unchecked.defaultof<GCHandle>
+            let mutable plan = nativeint 0
+            try
+                inputHandle <- GCHandle.Alloc(input.Chunk.Bytes, GCHandleType.Pinned)
+                outputHandle <- GCHandle.Alloc(output.Bytes, GCHandleType.Pinned)
+                plan <- NativeSp.fftwfComplexXYToRealPlanCreate(inputHandle.AddrOfPinnedObject(), outputHandle.AddrOfPinnedObject(), width, height)
+                if plan = nativeint 0 then
+                    invalidOp "fftwf compact complex xy to real plan creation failed in native helper."
+                NativeSp.fftwfComplexXYToRealPlanExecute(plan, inputHandle.AddrOfPinnedObject(), outputHandle.AddrOfPinnedObject())
+                |> NativeSp.checkStatus "inverse fftwf compact complex xy to real"
+            finally
+                if plan <> nativeint 0 then
+                    NativeSp.fftwfComplexXYToRealPlanDestroy(plan)
+                if outputHandle.IsAllocated then
+                    outputHandle.Free()
+                if inputHandle.IsAllocated then
+                    inputHandle.Free()
+
+            output
+        with
+        | _ ->
+            decRef output
+            reraise()
+
+    type FftXYAndZPlanCache() =
+        let mutable xyPlan = nativeint 0
+        let mutable zPlan = nativeint 0
+        let mutable width = 0
+        let mutable height = 0
+        let mutable depth = 0
+        let mutable buffer: float32[] = Array.empty
+        let mutable bufferLength = 0
+        let mutable handle = Unchecked.defaultof<GCHandle>
+        let mutable disposed = false
+
+        let destroyPlans () =
+            if zPlan <> nativeint 0 then
+                NativeSp.fftwfComplexZPlanDestroy(zPlan)
+                zPlan <- nativeint 0
+            if xyPlan <> nativeint 0 then
+                NativeSp.fftwfComplexXYPlanDestroy(xyPlan)
+                xyPlan <- nativeint 0
+
+        let releaseBuffer () =
+            if handle.IsAllocated then
+                handle.Free()
+            if bufferLength > 0 then
+                ArrayPool<float32>.Shared.Return(buffer)
+            buffer <- Array.empty
+            bufferLength <- 0
+
+        let ensureNotDisposed () =
+            if disposed then
+                invalidOp "FFT XY+Z plan cache has been disposed."
+
+        member private _.Ensure(logicalWidth: int, logicalHeight: int, logicalDepth: int) =
+            ensureNotDisposed()
+            if logicalWidth <= 0 || logicalHeight <= 0 || logicalDepth <= 0 then
+                invalidArg "size" $"FFT XY+Z plan cache expects positive dimensions, got {logicalWidth}x{logicalHeight}x{logicalDepth}."
+
+            let required = 2 * logicalWidth * logicalHeight * logicalDepth
+            if logicalWidth <> width || logicalHeight <> height || logicalDepth <> depth || required > bufferLength then
+                destroyPlans()
+                releaseBuffer()
+
+                buffer <- ArrayPool<float32>.Shared.Rent(required)
+                bufferLength <- required
+                handle <- GCHandle.Alloc(buffer, GCHandleType.Pinned)
+                let basePointer = handle.AddrOfPinnedObject()
+
+                NativeSp.ensureAvailable()
+                xyPlan <- NativeSp.fftwfComplexXYPlanCreate(basePointer, logicalWidth, logicalHeight, 0)
+                if xyPlan = nativeint 0 then
+                    releaseBuffer()
+                    invalidOp "fftwf xy complex plan creation failed in native helper."
+
+                zPlan <- NativeSp.fftwfComplexZPlanCreate(basePointer, logicalWidth, logicalHeight, logicalDepth, 0)
+                if zPlan = nativeint 0 then
+                    destroyPlans()
+                    releaseBuffer()
+                    invalidOp "fftwf z complex plan creation failed in native helper."
+
+                width <- logicalWidth
+                height <- logicalHeight
+                depth <- logicalDepth
+
+        member this.ForwardFloat32SlicesToComplex64Interleaved(input: IReadOnlyList<Chunk<float32>>) =
+            ensureNotDisposed()
+            if isNull input then
+                nullArg "input"
+            if input.Count = 0 then
+                [||]
+            else
+                let width64, height64, depth64 = input[0].Size
+                if depth64 <> 1UL then
+                    invalidArg "input" $"FFT XY+Z expects 2D slice chunks with depth 1, got {input[0].Size}."
+                if width64 > uint64 Int32.MaxValue || height64 > uint64 Int32.MaxValue || input.Count > Int32.MaxValue then
+                    invalidArg "input" $"FFT XY+Z dimensions must fit Int32, got {width64}x{height64}x{input.Count}."
+
+                let logicalWidth = int width64
+                let logicalHeight = int height64
+                let logicalDepth = input.Count
+                let planeValues = 2 * logicalWidth * logicalHeight
+                let outputs = Array.zeroCreate<Chunk<float32>> logicalDepth
+
+                try
+                    for z in 0 .. logicalDepth - 1 do
+                        let chunk = input[z]
+                        if chunk.Size <> (width64, height64, 1UL) then
+                            invalidArg "input" $"FFT XY+Z expects all slices to have size {(width64, height64, 1UL)}, got {chunk.Size} at z={z}."
+
+                    this.Ensure(logicalWidth, logicalHeight, logicalDepth)
+
+                    for z in 0 .. logicalDepth - 1 do
+                        let inputPixels = span<float32> input[z]
+                        let baseOffset = z * planeValues
+                        let mutable src = 0
+                        let mutable dst = baseOffset
+                        while src < inputPixels.Length do
+                            buffer[dst] <- inputPixels[src]
+                            buffer[dst + 1] <- 0.0f
+                            src <- src + 1
+                            dst <- dst + 2
+
+                    let basePointer = handle.AddrOfPinnedObject()
+                    for z in 0 .. logicalDepth - 1 do
+                        let planePointer = IntPtr.Add(basePointer, z * planeValues * sizeof<float32>)
+                        NativeSp.fftwfComplexXYPlanExecute(xyPlan, planePointer)
+                        |> NativeSp.checkStatus "fftwf xy complex planned"
+
+                    NativeSp.fftwfComplexZPlanExecute(zPlan, basePointer)
+                    |> NativeSp.checkStatus "fftwf z complex planned"
+
+                    for z in 0 .. logicalDepth - 1 do
+                        let output = create<float32> (2UL * width64, height64, 1UL)
+                        outputs[z] <- output
+                        buffer.AsSpan(z * planeValues, planeValues).CopyTo(span<float32> output)
+
+                    outputs
+                with
+                | _ ->
+                    for output in outputs do
+                        if not (isNull (box output)) then
+                            decRef output
+                    reraise()
+
+        interface IDisposable with
+            member _.Dispose() =
+                if not disposed then
+                    disposed <- true
+                    destroyPlans()
+                    releaseBuffer()
+
+    type FftRealXYAndZPlanCache() =
+        let mutable realXYPlan = nativeint 0
+        let mutable zPlan = nativeint 0
+        let mutable width = 0
+        let mutable height = 0
+        let mutable depth = 0
+        let mutable complexWidth = 0
+        let mutable buffer: float32[] = Array.empty
+        let mutable bufferLength = 0
+        let mutable handle = Unchecked.defaultof<GCHandle>
+        let mutable disposed = false
+
+        let destroyPlans () =
+            if zPlan <> nativeint 0 then
+                NativeSp.fftwfComplexZPlanDestroy(zPlan)
+                zPlan <- nativeint 0
+            if realXYPlan <> nativeint 0 then
+                NativeSp.fftwfRealXYPlanDestroy(realXYPlan)
+                realXYPlan <- nativeint 0
+
+        let releaseBuffer () =
+            if handle.IsAllocated then
+                handle.Free()
+            if bufferLength > 0 then
+                ArrayPool<float32>.Shared.Return(buffer)
+            buffer <- Array.empty
+            bufferLength <- 0
+
+        let ensureNotDisposed () =
+            if disposed then
+                invalidOp "FFT real-XY+Z plan cache has been disposed."
+
+        member private _.Ensure(logicalWidth: int, logicalHeight: int, logicalDepth: int, sampleRealPointer: nativeint) =
+            ensureNotDisposed()
+            if logicalWidth <= 0 || logicalHeight <= 0 || logicalDepth <= 0 then
+                invalidArg "size" $"FFT real-XY+Z plan cache expects positive dimensions, got {logicalWidth}x{logicalHeight}x{logicalDepth}."
+            if sampleRealPointer = nativeint 0 then
+                invalidArg "sampleRealPointer" "FFT real-XY+Z plan cache expects a non-null sample real pointer."
+
+            let logicalComplexWidth = logicalWidth / 2 + 1
+            let required = 2 * logicalComplexWidth * logicalHeight * logicalDepth
+            if logicalWidth <> width || logicalHeight <> height || logicalDepth <> depth || required > bufferLength then
+                destroyPlans()
+                releaseBuffer()
+
+                buffer <- ArrayPool<float32>.Shared.Rent(required)
+                bufferLength <- required
+                handle <- GCHandle.Alloc(buffer, GCHandleType.Pinned)
+                let basePointer = handle.AddrOfPinnedObject()
+
+                NativeSp.ensureAvailable()
+                realXYPlan <- NativeSp.fftwfRealXYPlanCreate(sampleRealPointer, basePointer, logicalWidth, logicalHeight)
+                if realXYPlan = nativeint 0 then
+                    releaseBuffer()
+                    invalidOp "fftwf real xy plan creation failed in native helper."
+
+                zPlan <- NativeSp.fftwfComplexZPlanCreate(basePointer, logicalComplexWidth, logicalHeight, logicalDepth, 0)
+                if zPlan = nativeint 0 then
+                    destroyPlans()
+                    releaseBuffer()
+                    invalidOp "fftwf z complex plan creation failed in native helper."
+
+                width <- logicalWidth
+                height <- logicalHeight
+                depth <- logicalDepth
+                complexWidth <- logicalComplexWidth
+
+        member this.ForwardFloat32SlicesToComplex64Interleaved(input: IReadOnlyList<Chunk<float32>>) =
+            ensureNotDisposed()
+            if isNull input then
+                nullArg "input"
+            if input.Count = 0 then
+                [||]
+            else
+                let width64, height64, depth64 = input[0].Size
+                if depth64 <> 1UL then
+                    invalidArg "input" $"FFT real-XY+Z expects 2D slice chunks with depth 1, got {input[0].Size}."
+                if width64 > uint64 Int32.MaxValue || height64 > uint64 Int32.MaxValue || input.Count > Int32.MaxValue then
+                    invalidArg "input" $"FFT real-XY+Z dimensions must fit Int32, got {width64}x{height64}x{input.Count}."
+
+                let logicalWidth = int width64
+                let logicalHeight = int height64
+                let logicalDepth = input.Count
+                let logicalComplexWidth = logicalWidth / 2 + 1
+                let planeValues = 2 * logicalComplexWidth * logicalHeight
+                let outputs = Array.zeroCreate<SpectralChunk> logicalDepth
+                let mutable firstHandle = Unchecked.defaultof<GCHandle>
+
+                try
+                    for z in 0 .. logicalDepth - 1 do
+                        let chunk = input[z]
+                        if chunk.Size <> (width64, height64, 1UL) then
+                            invalidArg "input" $"FFT real-XY+Z expects all slices to have size {(width64, height64, 1UL)}, got {chunk.Size} at z={z}."
+
+                    firstHandle <- GCHandle.Alloc(input[0].Bytes, GCHandleType.Pinned)
+                    this.Ensure(logicalWidth, logicalHeight, logicalDepth, firstHandle.AddrOfPinnedObject())
+
+                    let basePointer = handle.AddrOfPinnedObject()
+                    for z in 0 .. logicalDepth - 1 do
+                        let mutable inputHandle = Unchecked.defaultof<GCHandle>
+                        try
+                            inputHandle <- if z = 0 then firstHandle else GCHandle.Alloc(input[z].Bytes, GCHandleType.Pinned)
+                            let outputPointer = IntPtr.Add(basePointer, z * planeValues * sizeof<float32>)
+                            NativeSp.fftwfRealXYPlanExecute(realXYPlan, inputHandle.AddrOfPinnedObject(), outputPointer)
+                            |> NativeSp.checkStatus "fftwf real xy planned"
+                        finally
+                            if z <> 0 && inputHandle.IsAllocated then
+                                inputHandle.Free()
+
+                    if firstHandle.IsAllocated then
+                        firstHandle.Free()
+
+                    NativeSp.fftwfComplexZPlanExecute(zPlan, basePointer)
+                    |> NativeSp.checkStatus "fftwf z complex planned after real xy"
+
+                    for z in 0 .. logicalDepth - 1 do
+                        let output = create<float32> (uint64 (2 * logicalComplexWidth), height64, 1UL)
+                        outputs[z] <-
+                            { LogicalSize = (width64, height64, uint64 logicalDepth)
+                              Layout = HermitianPackedComplex64Interleaved(0, width64)
+                              Chunk = output }
+                        buffer.AsSpan(z * planeValues, planeValues).CopyTo(span<float32> output)
+
+                    outputs
+                with
+                | _ ->
+                    if firstHandle.IsAllocated then
+                        firstHandle.Free()
+                    for output in outputs do
+                        if not (isNull (box output)) then
+                            decRef output.Chunk
+                    reraise()
+
+        interface IDisposable with
+            member _.Dispose() =
+                if not disposed then
+                    disposed <- true
+                    destroyPlans()
+                    releaseBuffer()
+
+    type InvFftRealXYAndZPlanCache() =
+        let mutable c2rXYPlan = nativeint 0
+        let mutable zPlan = nativeint 0
+        let mutable width = 0
+        let mutable height = 0
+        let mutable depth = 0
+        let mutable complexWidth = 0
+        let mutable buffer: float32[] = Array.empty
+        let mutable bufferLength = 0
+        let mutable sampleReal: float32[] = Array.empty
+        let mutable sampleRealLength = 0
+        let mutable handle = Unchecked.defaultof<GCHandle>
+        let mutable sampleRealHandle = Unchecked.defaultof<GCHandle>
+        let mutable disposed = false
+
+        let destroyPlans () =
+            if zPlan <> nativeint 0 then
+                NativeSp.fftwfComplexZPlanDestroy(zPlan)
+                zPlan <- nativeint 0
+            if c2rXYPlan <> nativeint 0 then
+                NativeSp.fftwfComplexXYToRealPlanDestroy(c2rXYPlan)
+                c2rXYPlan <- nativeint 0
+
+        let releaseBuffers () =
+            if handle.IsAllocated then
+                handle.Free()
+            if sampleRealHandle.IsAllocated then
+                sampleRealHandle.Free()
+            if bufferLength > 0 then
+                ArrayPool<float32>.Shared.Return(buffer)
+            if sampleRealLength > 0 then
+                ArrayPool<float32>.Shared.Return(sampleReal)
+            buffer <- Array.empty
+            sampleReal <- Array.empty
+            bufferLength <- 0
+            sampleRealLength <- 0
+
+        let ensureNotDisposed () =
+            if disposed then
+                invalidOp "Inverse FFT real-XY+Z plan cache has been disposed."
+
+        member private _.Ensure(logicalWidth: int, logicalHeight: int, logicalDepth: int) =
+            ensureNotDisposed()
+            if logicalWidth <= 0 || logicalHeight <= 0 || logicalDepth <= 0 then
+                invalidArg "size" $"Inverse FFT real-XY+Z plan cache expects positive dimensions, got {logicalWidth}x{logicalHeight}x{logicalDepth}."
+
+            let logicalComplexWidth = logicalWidth / 2 + 1
+            let required = 2 * logicalComplexWidth * logicalHeight * logicalDepth
+            let requiredReal = logicalWidth * logicalHeight
+            if logicalWidth <> width || logicalHeight <> height || logicalDepth <> depth || required > bufferLength || requiredReal > sampleRealLength then
+                destroyPlans()
+                releaseBuffers()
+
+                buffer <- ArrayPool<float32>.Shared.Rent(required)
+                bufferLength <- required
+                handle <- GCHandle.Alloc(buffer, GCHandleType.Pinned)
+
+                sampleReal <- ArrayPool<float32>.Shared.Rent(requiredReal)
+                sampleRealLength <- requiredReal
+                sampleRealHandle <- GCHandle.Alloc(sampleReal, GCHandleType.Pinned)
+
+                let basePointer = handle.AddrOfPinnedObject()
+                NativeSp.ensureAvailable()
+                zPlan <- NativeSp.fftwfComplexZPlanCreate(basePointer, logicalComplexWidth, logicalHeight, logicalDepth, 1)
+                if zPlan = nativeint 0 then
+                    releaseBuffers()
+                    invalidOp "inverse fftwf z complex plan creation failed in native helper."
+
+                c2rXYPlan <- NativeSp.fftwfComplexXYToRealPlanCreate(basePointer, sampleRealHandle.AddrOfPinnedObject(), logicalWidth, logicalHeight)
+                if c2rXYPlan = nativeint 0 then
+                    destroyPlans()
+                    releaseBuffers()
+                    invalidOp "inverse fftwf xy complex-to-real plan creation failed in native helper."
+
+                width <- logicalWidth
+                height <- logicalHeight
+                depth <- logicalDepth
+                complexWidth <- logicalComplexWidth
+
+        member this.InverseHermitianPackedToFloat32Slices(input: IReadOnlyList<SpectralChunk>) =
+            ensureNotDisposed()
+            if isNull input then
+                nullArg "input"
+            if input.Count = 0 then
+                [||]
+            else
+                let first = input[0]
+                let width64, height64, logicalDepth64 = first.LogicalSize
+                if logicalDepth64 <> uint64 input.Count then
+                    invalidArg "input" $"Inverse FFT real-XY+Z expects LogicalSize depth to match window length, got {logicalDepth64} and {input.Count}."
+                if width64 > uint64 Int32.MaxValue || height64 > uint64 Int32.MaxValue || input.Count > Int32.MaxValue then
+                    invalidArg "input" $"Inverse FFT real-XY+Z dimensions must fit Int32, got {width64}x{height64}x{input.Count}."
+                match first.Layout with
+                | HermitianPackedComplex64Interleaved(0, realSize) when realSize = width64 -> ()
+                | layout -> invalidArg "input" $"Inverse FFT real-XY+Z expects HermitianPackedComplex64Interleaved(0, {width64}), got {layout}."
+
+                let logicalWidth = int width64
+                let logicalHeight = int height64
+                let logicalDepth = input.Count
+                let logicalComplexWidth = logicalWidth / 2 + 1
+                let packedSize = (uint64 (2 * logicalComplexWidth), height64, 1UL)
+                let planeValues = 2 * logicalComplexWidth * logicalHeight
+                let outputs = Array.zeroCreate<Chunk<float32>> logicalDepth
+
+                try
+                    for z in 0 .. logicalDepth - 1 do
+                        let spectral = input[z]
+                        if spectral.LogicalSize <> (width64, height64, uint64 logicalDepth) then
+                            invalidArg "input" $"Inverse FFT real-XY+Z expects matching logical sizes, got {spectral.LogicalSize} at z={z}."
+                        if spectral.Layout <> first.Layout then
+                            invalidArg "input" $"Inverse FFT real-XY+Z expects matching spectral layouts, got {spectral.Layout} at z={z}."
+                        if spectral.Chunk.Size <> packedSize then
+                            invalidArg "input" $"Inverse FFT real-XY+Z expects packed chunk size {packedSize}, got {spectral.Chunk.Size} at z={z}."
+
+                    this.Ensure(logicalWidth, logicalHeight, logicalDepth)
+
+                    for z in 0 .. logicalDepth - 1 do
+                        let source = span<float32> input[z].Chunk
+                        let target = buffer.AsSpan(z * planeValues, planeValues)
+                        source.CopyTo(target)
+
+                    let basePointer = handle.AddrOfPinnedObject()
+                    NativeSp.fftwfComplexZPlanExecute(zPlan, basePointer)
+                    |> NativeSp.checkStatus "inverse fftwf z complex planned before real xy"
+
+                    for z in 0 .. logicalDepth - 1 do
+                        let output = create<float32> (width64, height64, 1UL)
+                        outputs[z] <- output
+                        let planePointer = IntPtr.Add(basePointer, z * planeValues * sizeof<float32>)
+                        let mutable outputHandle = Unchecked.defaultof<GCHandle>
+                        try
+                            outputHandle <- GCHandle.Alloc(output.Bytes, GCHandleType.Pinned)
+                            NativeSp.fftwfComplexXYToRealPlanExecute(c2rXYPlan, planePointer, outputHandle.AddrOfPinnedObject())
+                            |> NativeSp.checkStatus "inverse fftwf xy complex-to-real planned"
+                        finally
+                            if outputHandle.IsAllocated then
+                                outputHandle.Free()
+
+                    outputs
+                with
+                | _ ->
+                    for output in outputs do
+                        if not (isNull (box output)) then
+                            decRef output
+                    reraise()
+
+        interface IDisposable with
+            member _.Dispose() =
+                if not disposed then
+                    disposed <- true
+                    destroyPlans()
+                    releaseBuffers()
 
     let fftShiftXYComplex64InterleavedChunk (input: Chunk<float32>) =
         let interleavedWidth64, height64, depth64 = input.Size

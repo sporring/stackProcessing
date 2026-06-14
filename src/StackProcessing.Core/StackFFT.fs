@@ -260,6 +260,32 @@ let invFftXYComplex64InterleavedToFloat32 : Stage<Chunk<float32>, Chunk<float32>
         mapper
         (fun nPixels -> nPixels * uint64 (2 * sizeof<float32> + sizeof<float32>))
 
+let fftRealXYFloat32ToHermitianPackedComplex64Interleaved : Stage<Chunk<float32>, SpectralChunk> =
+    let mapper _debug (input: Chunk<float32>) =
+        try
+            ChunkKernel.fftRealXYFloat32ToHermitianPackedComplex64InterleavedChunk input
+        finally
+            Chunk.decRef input
+
+    Stage.map
+        "chunkFftRealXYFloat32ToHermitianPackedComplex64Interleaved"
+        mapper
+        (fun nPixels -> nPixels * uint64 (sizeof<float32> + 2 * sizeof<float32>))
+        id
+
+let invFftXYHermitianPackedComplex64InterleavedToFloat32 : Stage<SpectralChunk, Chunk<float32>> =
+    let mapper _debug (input: SpectralChunk) =
+        try
+            ChunkKernel.invFftXYHermitianPackedComplex64InterleavedToFloat32Chunk input
+        finally
+            Chunk.decRef input.Chunk
+
+    Stage.map
+        "chunkInvFftXYHermitianPackedComplex64InterleavedToFloat32"
+        mapper
+        (fun nPixels -> nPixels * uint64 (2 * sizeof<float32> + sizeof<float32>))
+        id
+
 let fftXYFloat32ToComplex64InterleavedParallelCollect (workers: int) : Stage<Chunk<float32>, Chunk<float32>> =
     if workers < 1 then
         invalidArg "workers" $"Chunk FFT XY parallelCollect expects at least one worker, got {workers}."
@@ -317,3 +343,141 @@ let invFftXYComplex64InterleavedToFloat32ParallelCollect (workers: int) : Stage<
             mapper
             (fun nPixels -> nPixels * uint64 (2 * sizeof<float32> + sizeof<float32>))
             id
+
+let fftXYThenZFloat32ToComplex64InterleavedPlanned (windowLength: int) : Stage<Chunk<float32>, Chunk<float32>> =
+    if windowLength < 1 then
+        invalidArg "windowLength" $"Chunk FFT XY+Z planned expects a positive window length, got {windowLength}."
+
+    let name = $"chunkFftXYThenZFloat32ToComplex64Interleaved.planned.window{windowLength}"
+    let transition = ProfileTransition.create Streaming Streaming
+    let memoryModel =
+        StageMemoryModel.fromSinglePeak
+            (Custom name)
+            (fun nPixels -> nPixels * uint64 windowLength * uint64 (sizeof<float32> + 2 * sizeof<float32> + 2 * sizeof<float32>))
+
+    let apply _debug (input: AsyncSeq<Chunk<float32>>) =
+        asyncSeq {
+            use plans = new ChunkKernel.FftXYAndZPlanCache()
+            let batch = ResizeArray<Chunk<float32>>(windowLength)
+
+            let releaseBatch () =
+                for chunk in batch do
+                    Chunk.decRef chunk
+                batch.Clear()
+
+            let processBatch () =
+                try
+                    let outputs = plans.ForwardFloat32SlicesToComplex64Interleaved(batch)
+                    releaseBatch()
+                    outputs
+                with
+                | ex ->
+                    releaseBatch()
+                    raise ex
+
+            try
+                for chunk in input do
+                    batch.Add(chunk)
+                    if batch.Count = windowLength then
+                        yield! processBatch() |> AsyncSeq.ofSeq
+
+                if batch.Count > 0 then
+                    yield! processBatch() |> AsyncSeq.ofSeq
+            finally
+                releaseBatch()
+        }
+
+    Stage.fromAsyncSeq name apply transition memoryModel id
+
+let fft3DFloat32ToComplex64Interleaved (windowLength: int) : Stage<Chunk<float32>, Chunk<float32>> =
+    fftXYThenZFloat32ToComplex64InterleavedPlanned windowLength
+
+let fft3DRealXYFloat32ToComplex64Interleaved (windowLength: int) : Stage<Chunk<float32>, SpectralChunk> =
+    if windowLength < 1 then
+        invalidArg "windowLength" $"Chunk FFT real-XY+Z expects a positive window length, got {windowLength}."
+
+    let name = $"chunkFft3DRealXYFloat32ToComplex64Interleaved.window{windowLength}"
+    let transition = ProfileTransition.create Streaming Streaming
+    let memoryModel =
+        StageMemoryModel.fromSinglePeak
+            (Custom name)
+            (fun nPixels -> nPixels * uint64 windowLength * uint64 (sizeof<float32> + 2 * sizeof<float32> + 2 * sizeof<float32>))
+
+    let apply _debug (input: AsyncSeq<Chunk<float32>>) =
+        asyncSeq {
+            use plans = new ChunkKernel.FftRealXYAndZPlanCache()
+            let batch = ResizeArray<Chunk<float32>>(windowLength)
+
+            let releaseBatch () =
+                for chunk in batch do
+                    Chunk.decRef chunk
+                batch.Clear()
+
+            let processBatch () =
+                try
+                    let outputs = plans.ForwardFloat32SlicesToComplex64Interleaved(batch)
+                    releaseBatch()
+                    outputs
+                with
+                | ex ->
+                    releaseBatch()
+                    raise ex
+
+            try
+                for chunk in input do
+                    batch.Add(chunk)
+                    if batch.Count = windowLength then
+                        yield! processBatch() |> AsyncSeq.ofSeq
+
+                if batch.Count > 0 then
+                    yield! processBatch() |> AsyncSeq.ofSeq
+            finally
+                releaseBatch()
+        }
+
+    Stage.fromAsyncSeq name apply transition memoryModel id
+
+let invFft3DRealXYComplex64InterleavedToFloat32 (windowLength: int) : Stage<SpectralChunk, Chunk<float32>> =
+    if windowLength < 1 then
+        invalidArg "windowLength" $"Chunk inverse FFT real-XY+Z expects a positive window length, got {windowLength}."
+
+    let name = $"chunkInvFft3DRealXYComplex64InterleavedToFloat32.window{windowLength}"
+    let transition = ProfileTransition.create Streaming Streaming
+    let memoryModel =
+        StageMemoryModel.fromSinglePeak
+            (Custom name)
+            (fun nPixels -> nPixels * uint64 windowLength * uint64 (2 * sizeof<float32> + sizeof<float32>))
+
+    let apply _debug (input: AsyncSeq<SpectralChunk>) =
+        asyncSeq {
+            use plans = new ChunkKernel.InvFftRealXYAndZPlanCache()
+            let batch = ResizeArray<SpectralChunk>(windowLength)
+
+            let releaseBatch () =
+                for spectral in batch do
+                    Chunk.decRef spectral.Chunk
+                batch.Clear()
+
+            let processBatch () =
+                try
+                    let outputs = plans.InverseHermitianPackedToFloat32Slices(batch)
+                    releaseBatch()
+                    outputs
+                with
+                | ex ->
+                    releaseBatch()
+                    raise ex
+
+            try
+                for spectral in input do
+                    batch.Add(spectral)
+                    if batch.Count = windowLength then
+                        yield! processBatch() |> AsyncSeq.ofSeq
+
+                if batch.Count > 0 then
+                    yield! processBatch() |> AsyncSeq.ofSeq
+            finally
+                releaseBatch()
+        }
+
+    Stage.fromAsyncSeq name apply transition memoryModel id

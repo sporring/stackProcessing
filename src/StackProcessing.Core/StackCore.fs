@@ -16,6 +16,8 @@ type ChunkLayout = ChunkPrimitive.ChunkLayout
 type ChunkIndex = ChunkPrimitive.ChunkIndex
 type Chunk<'T when 'T: equality> = ChunkPrimitive.Chunk<'T>
 type VectorChunk<'T when 'T: equality> = ChunkPrimitive.VectorChunk<'T>
+type SpectralLayout = ChunkPrimitive.SpectralLayout
+type SpectralChunk = ChunkPrimitive.SpectralChunk
 type DenseUInt32UnionFind = ChunkPrimitive.DenseUInt32UnionFind
 type ChunkStats = ChunkPrimitive.ChunkStats
 

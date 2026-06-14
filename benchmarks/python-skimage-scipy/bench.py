@@ -78,11 +78,23 @@ def read_stack(input_dir):
 
 def write_stack(paths, output_dir, stack):
     output = Path(output_dir)
+    for z, source_path in enumerate(paths):
+        tifffile.imwrite(output / source_path.name, stack[z], compression=None)
+
+
+def prepare_output(output_dir):
+    output = Path(output_dir)
+    precleaned = {
+        Path(path).resolve()
+        for path in os.environ.get("BENCHMARK_PRECLEANED_OUTPUTS", "").split(os.pathsep)
+        if path
+    }
+    if output.resolve() in precleaned:
+        output.mkdir(parents=True, exist_ok=True)
+        return
     output.mkdir(parents=True, exist_ok=True)
     for old in output.glob("*.tif*"):
         old.unlink()
-    for z, source_path in enumerate(paths):
-        tifffile.imwrite(output / source_path.name, stack[z], compression=None)
 
 
 def per_slice(stack, func):
@@ -137,6 +149,7 @@ def main():
     if not args.input or not args.output:
         raise ValueError("--input and --output are required unless using a kernel-only operation")
 
+    prepare_output(args.output)
     start = time.perf_counter()
     paths, stack = read_stack(args.input)
     out = process(stack, args)

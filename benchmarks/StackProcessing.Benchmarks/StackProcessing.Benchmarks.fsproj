@@ -13,6 +13,7 @@
     </Reference>
     <ProjectReference Include="../../src/Image/Image.fsproj" />
     <ProjectReference Include="../../src/StackProcessing/StackProcessing.fsproj" />
+    <ProjectReference Include="../../../SharpFFTW/SharpFFTW/SharpFFTW.csproj" />
   </ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
     <None Include="../../lib/SimpleITKCSharpNative.dll">

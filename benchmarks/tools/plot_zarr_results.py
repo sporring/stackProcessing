@@ -10,11 +10,17 @@ import shutil
 from pathlib import Path
 
 
-BACKENDS = ["stackprocessing-zarr", "stackprocessing-zarr-direct", "python-dask-omezarr"]
+BACKENDS = [
+    "stackprocessing-zarr",
+    "stackprocessing-zarr-direct",
+    "python-dask-omezarr",
+    "python-dask-omezarr-slow",
+]
 BACKEND_LABELS = {
     "stackprocessing-zarr": "StackProcessing-Zarr",
     "stackprocessing-zarr-direct": "StackProcessing-Zarr",
-    "python-dask-omezarr": "Python/Dask-Zarr",
+    "python-dask-omezarr": "Python/Dask-Zarr fast fs",
+    "python-dask-omezarr-slow": "Python/Dask-Zarr slow fs",
 }
 PIXEL_TYPES = ["UInt8", "UInt16", "Float32"]
 PIXEL_LABELS = {"UInt8": "uint8", "UInt16": "uint16", "Float32": "float32"}
@@ -28,6 +34,9 @@ COLORS = {
     ("python-dask-omezarr", "UInt8"): "#e15759",
     ("python-dask-omezarr", "UInt16"): "#b22222",
     ("python-dask-omezarr", "Float32"): "#7f1d1d",
+    ("python-dask-omezarr-slow", "UInt8"): "#9467bd",
+    ("python-dask-omezarr-slow", "UInt16"): "#6a3d9a",
+    ("python-dask-omezarr-slow", "Float32"): "#4b2673",
 }
 MARKERS = {
     "UInt8": "o",
@@ -41,6 +50,7 @@ def parse_args():
     parser.add_argument("--summary", default="benchmarks/results/summary.csv")
     parser.add_argument("--output-dir", default="benchmarks/results/figures")
     parser.add_argument("--latex-dir", default="")
+    parser.add_argument("--filename-prefix", default="")
     return parser.parse_args()
 
 
@@ -142,15 +152,15 @@ def metric_label(metric: str) -> str:
     raise ValueError(metric)
 
 
-def figure_name(metric: str) -> str:
+def figure_name(metric: str, prefix: str = "") -> str:
     if metric == "internal":
-        return "zarr-runtime-by-size-and-parameter.pdf"
+        return f"{prefix}zarr-runtime-by-size-and-parameter.pdf"
     if metric == "peak_gib":
-        return "zarr-memory-by-size-and-parameter.pdf"
+        return f"{prefix}zarr-memory-by-size-and-parameter.pdf"
     raise ValueError(metric)
 
 
-def plot_metric(rows: list[dict[str, object]], output_dir: Path, metric: str) -> Path:
+def plot_metric(rows: list[dict[str, object]], output_dir: Path, metric: str, filename_prefix: str) -> Path:
     plt = setup_matplotlib()
     fig, axes = plt.subplots(2, 3, figsize=(10.2, 5.8), sharex=True)
     axes_flat = list(axes.flat)
@@ -221,7 +231,7 @@ def plot_metric(rows: list[dict[str, object]], output_dir: Path, metric: str) ->
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.86))
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    output = output_dir / figure_name(metric)
+    output = output_dir / figure_name(metric, filename_prefix)
     fig.savefig(output, bbox_inches="tight")
     plt.close(fig)
     return output
@@ -235,8 +245,8 @@ def main() -> int:
 
     output_dir = Path(args.output_dir)
     outputs = [
-        plot_metric(rows, output_dir, "internal"),
-        plot_metric(rows, output_dir, "peak_gib"),
+        plot_metric(rows, output_dir, "internal", args.filename_prefix),
+        plot_metric(rows, output_dir, "peak_gib", args.filename_prefix),
     ]
 
     if args.latex_dir:
