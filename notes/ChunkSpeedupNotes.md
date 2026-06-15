@@ -97,10 +97,11 @@ Float32 Chunk slices
   -> complex64-interleaved output
 ```
 
-The current public stage is XY-only and is marked as such. A full 3D FFT needs
-the z-axis pass wired without whole-volume materialization. The intended design
-is a two-pass chunked transform with explicit temporary chunk storage, not a
-read-full-volume shortcut.
+The public surface keeps XY-only stages explicit and also exposes separable 3D
+stages for complex-XY and real-XY paths. The real-XY path uses Hermitian-packed
+complex64 chunks and has a paired inverse that returns real `float32` slices.
+Larger-than-memory FFT work uses explicit temporary Chunk or Zarr storage; it
+is a two-pass chunked transform, not a read-full-volume shortcut.
 
 ## Measurement Rules
 

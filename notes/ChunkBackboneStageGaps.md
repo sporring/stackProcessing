@@ -196,12 +196,17 @@ Studio JSON graphs using the corresponding boxes lower through Chunk stages.
 The box IDs are mostly stable; the compiler selects Chunk-backed sources,
 stages, reducers, and sinks.
 
-## Known Error
+## Active FFT Notes
 
-- `FFT`/`InvFFT` are currently XY-only stages. The Chunk plumbing,
-  complex64-interleaved representation, inverse stage, 3D `fftshift`, and
-  sample graph are wired, but the transform is not a full 3D FFT until the
-  z-axis pass is added.
+- Slice-local `fft`/`invFftXY` stages remain available for explicit XY work.
+- `fft3D`, `fft3DComplexXY`, `fft3DRealXY`, and `invFft3DRealXY` are the
+  current Chunk-level separable 3D FFT stages. They reuse native FFTW plan
+  caches over batches, use complex64-interleaved `float32` storage, and expose
+  the real-XY/Hermitian-packed path needed by convolution-style round trips.
+- Zarr-backed z-axis passes and subchunked spectral round trips are available
+  for the larger-than-memory FFT workspace experiments. These are benchmarked
+  separately from local-window image filters because the transform is a
+  layout-changing global operation.
 
 ## Shelved
 

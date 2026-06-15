@@ -34,27 +34,30 @@ Complex helpers use the same convention:
 - argument
 - conjugate
 
-## Current Public Stage
+## Current Public Shape
 
-`FFT` and `InvFFT` are currently XY-only. This is intentional while the z-axis
-optimization experiment is open. The surrounding pieces are wired:
+The public FFT surface separates slice-local XY transforms from separable 3D
+transforms:
 
-- native XY FFT
-- inverse XY FFT
-- complex64-interleaved storage
-- 3D `fftshift`
-- temporary chunk-file round trips
-- sample graph validation on small examples
+- `fft` is the explicit XY-only stage.
+- `fftRealXY` is the real-to-Hermitian-packed XY stage.
+- `fft3DComplexXY` performs complex XY followed by complex Z over a batch.
+- `fft3DRealXY` performs real XY followed by complex Z and emits spectral
+  chunks with compact/Hermitian metadata.
+- `invFft3DRealXY` performs inverse complex Z followed by complex-to-real XY
+  and emits real `float32` chunks.
 
-The stage should be treated as an error for full 3D FFT semantics until the
-z-axis pass is added.
+The separable 3D stages reuse native FFTW plan caches inside the batch. The
+Zarr-backed Z passes and subchunked round trips are explicit workspace stages
+for larger-than-memory experiments, not hidden behaviour inside a local image
+filter.
 
-## Intended Full Pipeline
+## Full Pipeline Shape
 
 ```text
 TIFF Float32 slices
   -> read
-  -> fft
+  -> real-to-complex FFT over XY slices
   -> temporary complex64 chunk storage
   -> z-axis FFT over chunk columns or reorganized tiles
   -> final complex64-interleaved chunks
@@ -90,20 +93,20 @@ XY pass
   -> Z pass over bounded columns/tiles
 ```
 
-## Current Performance Questions
+## Performance Questions
 
 The remaining optimization work is mostly constant-factor and layout work:
 
 1. reduce temporary chunk IO overhead
 2. reduce managed allocation around encoded chunk reads/writes
-3. reuse FFTW plans and buffers where that is measurable
+3. keep FFTW plan and buffer reuse on the hot paths
 4. tune chunk/tile sizes for the Z pass
 5. keep XY parallelism from overwhelming temporary storage bandwidth
 
 ## Measurement Rules
 
 - Validate correctness on small examples first.
-- Keep full 3D FFT benchmarks separate from the current XY-only public stage.
+- Keep full 3D FFT benchmarks separate from local-window image filters.
 - Compare chunk sizes explicitly; too-small chunks can make temporary storage
   overhead dominate.
 - Measure raw temporary chunk copy costs separately from FFT execution.

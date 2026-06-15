@@ -233,10 +233,18 @@ and does not require a whole labelled volume to be resident.
 ## FFT
 
 The Chunk FFT path uses complex64-interleaved `float32` chunks. The current
-`FFT` and `InvFFT` stages are intentionally flagged as XY-only while the
-z-axis FFT optimization experiment is open. The surrounding representation,
-inverse stage, complex helpers, 3D `fftshift`, and sample graph are wired, but
-calling the current stage a full 3D FFT is an error until the z pass is added.
+slice-local `fft` stage is an XY transform. Full-volume Chunk FFT work uses
+the separable 3D stages:
+
+- `fft3DComplexXY`
+- `fft3DRealXY`
+- `invFft3DRealXY`
+
+The real-XY path stores Hermitian-packed complex64 spectra and is the preferred
+route for real-valued convolution-style round trips. Zarr-backed z-axis passes,
+subchunked spectral workspaces, 3D `fftshift`, and complex helpers are exposed
+as explicit layout-changing stages because FFT is a global transform rather
+than a local Chunk-window operator.
 
 ## Cost And Memory Binding
 

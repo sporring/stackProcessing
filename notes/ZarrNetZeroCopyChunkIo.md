@@ -69,14 +69,14 @@ the full packed XY plane and a configurable number of Z slices:
 chunk_shape = [1, 1, chunkZ, height, realWidth / 2 + 1]
 ```
 
-It writes those slabs with `WriteChunkDecodedAsync(..., allowBorrowedBuffer =
+It writes those full Zarr chunks with `WriteChunkDecodedAsync(..., allowBorrowedBuffer =
 true)`.
 
 The compact spectral reader uses `ReadChunkDecodedAsync` into an ArrayPool
 buffer, then splits the full Zarr chunk into per-slice `SpectralChunk` values
 for the current stream contract.
 
-## Scope
+## Practical Rule
 
 Use whole decoded chunks, not arbitrary regions.
 
