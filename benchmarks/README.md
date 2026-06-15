@@ -124,11 +124,16 @@ bash benchmarks/run_lmip_pdf_benchmarks.sh
 Use `--dry-run` to inspect the full command sequence without starting the long
 measurements.
 
-The wrapper also runs a filesystem-sensitivity OME-Zarr benchmark. It repeats
-the Dask/OME-Zarr copy, threshold, and median cases with both inputs and outputs
-below `slow/benchmarks/...`, so `slow/` can be mounted on a slower filesystem.
-Override that location with `SLOW_ROOT=/path/to/slow`. The generated comparison
-figures are:
+The slow-filesystem OME-Zarr comparison is intentionally not part of the PDF
+wrapper. Run it separately, while supervising the mounted filesystem:
+
+```bash
+SLOW_ROOT=/path/to/slow bash benchmarks/run_zarr_filesystem_benchmark.sh
+```
+
+It repeats the Dask/OME-Zarr copy, threshold, and median cases with both inputs
+and outputs below `SLOW_ROOT/benchmarks/...`, combines them with the current
+fast-filesystem Zarr rows, and writes:
 
 ```text
 filesystem-zarr-runtime-by-size-and-parameter.pdf
@@ -415,8 +420,8 @@ python3 benchmarks/tools/plot_zarr_halo_comparison.py \
   --latex-dir notes/LMIP_Optimiser_and_Studio/figures
 ```
 
-The report-facing wrapper reruns the OME-Zarr storage-layout figures, the
-filesystem-sensitivity comparison, and the StackProcessing Chunk worker sweeps.
+The report-facing wrapper reruns the OME-Zarr storage-layout figures and the
+StackProcessing Chunk worker sweeps.
 It also regenerates summaries and copies all report PDFs into
 `notes/LMIP_Optimiser_and_Studio/figures`. Prefer the wrapper over manual CSV
 replacement or dated refresh recipes:
@@ -430,7 +435,6 @@ Useful options:
 ```bash
 bash benchmarks/run_lmip_pdf_benchmarks.sh --dry-run
 bash benchmarks/run_lmip_pdf_benchmarks.sh --repeat 1 --parallel-repeat 2 --convolve-repeat 1
-SLOW_ROOT=/Volumes/slow bash benchmarks/run_lmip_pdf_benchmarks.sh
 ```
 
 The wrapper removes and recreates the active report result files before the run.

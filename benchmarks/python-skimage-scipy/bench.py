@@ -78,7 +78,9 @@ def read_stack(input_dir):
 
 def write_stack(paths, output_dir, stack):
     output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
     for z, source_path in enumerate(paths):
+        output.mkdir(parents=True, exist_ok=True)
         tifffile.imwrite(output / source_path.name, stack[z], compression=None)
 
 

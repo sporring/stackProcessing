@@ -267,7 +267,7 @@ done
 
 if [[ "$skip_builds" -eq 0 ]]; then
   if [[ "$skip_inputs" -eq 0 ]] || has_backend stackprocessing || has_backend stackprocessing-zarr || has_backend stackprocessing-arraypool || has_backend stackprocessing-arraypool-slice || has_backend stackprocessing-arraypool-slice-reuse || has_backend stackprocessing-byte-slice-reuse || has_backend stackprocessing-byte-float32-slice-reuse || has_backend stackprocessing-libtiff-direct-copy || has_backend stackprocessing-libtiff-direct-threshold || has_backend stackprocessing-libtiff-direct-threshold-intype || has_backend stackprocessing-libtiff-strip-copy || has_backend stackprocessing-libtiff-raw-strip-copy || has_backend stackprocessing-native-libtiff-raw-strip-copy || has_backend stackprocessing-tifflibrary-raw-strip-copy || has_backend stackprocessing-imagesharp-copy; then
-    run_cmd dotnet build benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj --nologo
+    run_cmd dotnet build benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj -c Release --nologo --disable-build-servers -p:UseSharedCompilation=false
   fi
   if has_backend stackprocessing-native-libtiff-raw-strip-copy; then
     case "$(uname -s)" in

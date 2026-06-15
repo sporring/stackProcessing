@@ -23,7 +23,6 @@ Environment overrides:
   MATLAB_EXE              MATLAB executable. Default: matlab.
   MAIN_BACKENDS           Default: stackprocessing,python-skimage-scipy,cpp-itk,matlab.
   DATE_STAMP              Output suffix. Default: current date as YYYYMMDD.
-  SLOW_ROOT               Root for the slow-filesystem Zarr benchmark. Default: slow.
 EOF
 }
 
@@ -76,7 +75,6 @@ fi
 date_stamp="${DATE_STAMP:-$(date +%Y%m%d)}"
 matlab_exe="${MATLAB_EXE:-matlab}"
 main_backends="${MAIN_BACKENDS:-stackprocessing,python-skimage-scipy,cpp-itk,matlab}"
-slow_root="${SLOW_ROOT:-slow}"
 
 stackprocessing_dll="benchmarks/StackProcessing.Benchmarks/bin/Release/net10.0/StackProcessing.Benchmarks.dll"
 itk_exe="benchmarks/cpp-itk/build/benchmark_itk"
@@ -88,13 +86,8 @@ main_raw="benchmarks/results/raw.csv"
 main_summary="benchmarks/results/summary.csv"
 zarr_raw="benchmarks/results/raw.zarr-none.csv"
 zarr_summary="benchmarks/results/summary.zarr-none.csv"
-zarr_slow_raw="benchmarks/results/raw.zarr-slow.csv"
-zarr_filesystem_raw="benchmarks/results/raw.zarr-filesystems.csv"
-zarr_filesystem_summary="benchmarks/results/summary.zarr-filesystems.csv"
 figure_dir="benchmarks/results/figures"
 tex_figure_dir="notes/LMIP_Optimiser_and_Studio/figures"
-slow_omezarr_root="${slow_root}/benchmarks/input-omezarr-lmip-${date_stamp}"
-slow_zarr_output_root="${slow_root}/benchmarks/output-lmip-zarr-${date_stamp}"
 halo_input_root="tmp/benchmarks/input-omezarr-halo-lmip-${date_stamp}"
 halo_output_root="tmp/benchmarks/output-zarr-halo-lmip-${date_stamp}"
 
@@ -144,16 +137,14 @@ copy_main_figures_to_tex() {
 
 echo "Using Python: $PYTHON"
 echo "Date stamp:   $date_stamp"
-echo "Slow root:    $slow_root"
 echo "Dry run:      $dry_run"
 
-run mkdir -p "benchmarks/results" "$figure_dir" "$tex_figure_dir" "$output_root" "$zarr_output_root" "$slow_root"
+run mkdir -p "benchmarks/results" "$figure_dir" "$tex_figure_dir" "$output_root" "$zarr_output_root"
 
 echo
 echo "== Build native and managed benchmark binaries =="
 run bash native/StackProcessing.NativeMedian/build.sh
-run dotnet build benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj --nologo
-run dotnet build benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj -c Release --nologo
+run dotnet build benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj -c Release --nologo --disable-build-servers -p:UseSharedCompilation=false
 run bash benchmarks/native-libtiff-shim/build-unix.sh "$(dirname "$stackprocessing_dll")"
 run cmake -S benchmarks/cpp-itk -B benchmarks/cpp-itk/build -DCMAKE_BUILD_TYPE=Release
 run cmake --build benchmarks/cpp-itk/build --config Release
@@ -235,98 +226,6 @@ run "$PYTHON" benchmarks/tools/plot_zarr_results.py \
   --summary "$zarr_summary" \
   --output-dir "$figure_dir" \
   --latex-dir "$tex_figure_dir"
-
-echo
-echo "== Dask/OME-Zarr slow-filesystem benchmark matrix =="
-run rm -f "$zarr_slow_raw" "$zarr_filesystem_raw" "$zarr_filesystem_summary"
-
-if [[ "$dry_run" -eq 0 ]]; then
-  "$PYTHON" - "$input_root" "$slow_omezarr_root" <<'PY'
-import csv
-import subprocess
-import sys
-from pathlib import Path
-
-input_root = Path(sys.argv[1])
-omezarr_root = Path(sys.argv[2])
-cases = Path("benchmarks/config/special-cases.csv")
-seen = sorted({(row["pixelType"], row["shape"]) for row in csv.DictReader(cases.open(newline=""))})
-for pixel_type, shape in seen:
-    command = [
-        sys.executable,
-        "benchmarks/tools/tiff_stack_to_omezarr.py",
-        "--input",
-        str(input_root / f"{pixel_type}_{shape}"),
-        "--output",
-        str(omezarr_root / f"{pixel_type}_{shape}"),
-        "--shape",
-        shape,
-        "--pixel-type",
-        pixel_type,
-    ]
-    print("+ " + " ".join(command), flush=True)
-    subprocess.run(command, check=True)
-PY
-else
-  echo "+ convert special-case TIFF inputs to OME-Zarr stores under $slow_omezarr_root"
-fi
-
-run "$PYTHON" benchmarks/tools/run_manifest.py \
-  --cases benchmarks/config/special-cases.csv \
-  --backend python-dask-omezarr \
-  --results "$zarr_slow_raw" \
-  --input-root "$slow_omezarr_root" \
-  --output-root "$slow_zarr_output_root" \
-  --repeat "$repeat" \
-  --operations copy,threshold,median
-
-if [[ "$dry_run" -eq 0 ]]; then
-  "$PYTHON" - "$zarr_raw" "$zarr_slow_raw" "$zarr_filesystem_raw" <<'PY'
-import csv
-import sys
-from pathlib import Path
-
-fast = Path(sys.argv[1])
-slow = Path(sys.argv[2])
-output = Path(sys.argv[3])
-
-fast_rows = list(csv.DictReader(fast.open(newline="")))
-slow_rows = list(csv.DictReader(slow.open(newline="")))
-if not fast_rows:
-    raise SystemExit(f"no rows in {fast}")
-if not slow_rows:
-    raise SystemExit(f"no rows in {slow}")
-
-fields = fast_rows[0].keys()
-rows = []
-for row in fast_rows:
-    if row["backend"] == "python-dask-omezarr" and row["operation"] in {"copy", "threshold", "median"}:
-        rows.append(row)
-for row in slow_rows:
-    copied = dict(row)
-    if copied["backend"] == "python-dask-omezarr":
-        copied["backend"] = "python-dask-omezarr-slow"
-    rows.append(copied)
-
-with output.open("w", newline="") as handle:
-    writer = csv.DictWriter(handle, fieldnames=fields)
-    writer.writeheader()
-    writer.writerows(rows)
-print(f"+ wrote {len(rows)} fast/slow Zarr rows -> {output}")
-PY
-else
-  echo "+ combine $zarr_raw and $zarr_slow_raw into $zarr_filesystem_raw with slow rows relabelled"
-fi
-
-run "$PYTHON" benchmarks/tools/summarize_results.py \
-  --input "$zarr_filesystem_raw" \
-  --output "$zarr_filesystem_summary"
-
-run "$PYTHON" benchmarks/tools/plot_zarr_results.py \
-  --summary "$zarr_filesystem_summary" \
-  --output-dir "$figure_dir" \
-  --latex-dir "$tex_figure_dir" \
-  --filename-prefix "filesystem-"
 
 echo
 echo "== Zarr halo-layout benchmark =="
