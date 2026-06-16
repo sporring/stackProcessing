@@ -7,18 +7,21 @@ import time
 from pathlib import Path
 
 import dask.array as da
+import dask.delayed
 import numpy as np
+import tifffile
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Dask/OME-Zarr chunk-native benchmark backend.")
-    parser.add_argument("--operation", required=True, choices=["copy", "threshold", "convolve", "median", "dilate"])
+    parser.add_argument("--operation", required=True, choices=["copy", "zarrToTiff", "tiffToZarr", "threshold", "convolve", "median", "dilate"])
     parser.add_argument("--pixel-type", required=True, choices=["UInt8", "UInt16", "Float32"])
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--radius", type=int, default=1)
     parser.add_argument("--kernel-size", type=int, default=3)
     parser.add_argument("--threshold", type=float, default=128.0)
+    parser.add_argument("--chunk-size", type=int, default=128)
     return parser.parse_args()
 
 
@@ -117,11 +120,59 @@ def write_ome_metadata(root):
     group.attrs["omero"] = {"channels": [{"label": "0"}]}
 
 
+def dtype_for_pixel_type(pixel_type):
+    if pixel_type == "UInt8":
+        return np.uint8
+    if pixel_type == "UInt16":
+        return np.uint16
+    if pixel_type == "Float32":
+        return np.float32
+    raise ValueError(pixel_type)
+
+
+def write_zarr_to_tiff_slices(arr, output_root, thick_depth):
+    thick_depth = max(1, int(thick_depth))
+    depth = int(arr.shape[0])
+    for z0 in range(0, depth, thick_depth):
+        thick = arr[z0 : min(depth, z0 + thick_depth), :, :].compute()
+        for local_z in range(thick.shape[0]):
+            z = z0 + local_z
+            tifffile.imwrite(output_root / f"image_{z:03d}.tiff", thick[local_z, :, :], compression=None)
+
+
+def read_tiff_slices_as_dask(input_root, pixel_type, thick_depth):
+    paths = sorted(Path(input_root).glob("*.tif*"))
+    if not paths:
+        raise FileNotFoundError(f"no TIFF files found in {input_root}")
+
+    first = tifffile.imread(paths[0])
+    if first.ndim == 3:
+        first_shape = first.shape
+    elif first.ndim == 2:
+        first_shape = (1, first.shape[0], first.shape[1])
+    else:
+        raise RuntimeError(f"expected 2D or 3D TIFF payloads, got shape {first.shape}")
+
+    dtype = dtype_for_pixel_type(pixel_type)
+
+    def read_thick(group):
+        arrays = [tifffile.imread(path) for path in group]
+        normalized = [array if array.ndim == 3 else array[None, :, :] for array in arrays]
+        return np.concatenate(normalized, axis=0)
+
+    thick_depth = max(1, int(thick_depth))
+    groups = [paths[i : i + thick_depth] for i in range(0, len(paths), thick_depth)]
+    thick_chunks = []
+    for group in groups:
+        delayed = dask.delayed(read_thick)(group)
+        shape = (len(group) * first_shape[0], first_shape[1], first_shape[2])
+        thick_chunks.append(da.from_delayed(delayed, shape=shape, dtype=dtype))
+    return da.concatenate(thick_chunks, axis=0)
+
+
 def main():
     args = parse_args()
-    input_array = array_path(args.input)
     output_root = Path(args.output)
-    output_array = array_path(output_root)
 
     precleaned = {
         Path(path).resolve()
@@ -130,13 +181,25 @@ def main():
     }
     if output_root.exists() and output_root.resolve() not in precleaned:
         shutil.rmtree(output_root)
-    output_array.parent.mkdir(parents=True, exist_ok=True)
+    output_root.mkdir(parents=True, exist_ok=True)
 
     start = time.perf_counter()
-    arr = da.from_zarr(str(input_array))
-    out = process(image_volume(arr), args)
+    if args.operation == "tiffToZarr":
+        out = read_tiff_slices_as_dask(args.input, args.pixel_type, args.chunk_size)
+    else:
+        arr = da.from_zarr(str(array_path(args.input)))
+        volume = image_volume(arr)
+        if args.operation == "zarrToTiff":
+            write_zarr_to_tiff_slices(volume, output_root, args.chunk_size)
+            write_internal_seconds(time.perf_counter() - start)
+            return
+        out = process(volume, args)
+
+    output_array = array_path(output_root)
     out5 = out[None, None, :, :, :]
-    zarr_kwargs = {"compressors": []} if input_is_uncompressed(args.input) else {}
+    chunk_size = max(1, args.chunk_size)
+    out5 = out5.rechunk((1, 1, chunk_size, chunk_size, chunk_size))
+    zarr_kwargs = {"compressors": []} if args.operation == "tiffToZarr" or input_is_uncompressed(args.input) else {}
     out5.to_zarr(str(output_array), overwrite=True, **zarr_kwargs)
     write_ome_metadata(output_root)
     write_internal_seconds(time.perf_counter() - start)

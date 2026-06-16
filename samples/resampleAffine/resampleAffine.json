@@ -12,7 +12,7 @@
         { "key": "format", "value": "Image stack", "useInput": false },
         { "key": "input", "value": "../data/volume", "useInput": false },
         { "key": "suffix", "value": ".tiff", "useInput": false },
-        { "key": "slabDepth", "value": "8", "useInput": false },
+        { "key": "thickDepth", "value": "8", "useInput": false },
         { "key": "multiscaleIndex", "value": "0", "useInput": false },
         { "key": "datasetIndex", "value": "0", "useInput": false },
         { "key": "timepoint", "value": "0", "useInput": false },

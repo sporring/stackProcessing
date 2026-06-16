@@ -113,9 +113,8 @@ source .venv-benchmarks/bin/activate
 
 For the LMIP note PDFs, use the report wrapper. It rebuilds the native and
 managed benchmark binaries, reruns the main TIFF matrix, reruns the
-Dask/OME-Zarr storage figures, reruns the StackProcessing-only Chunk worker
-sweeps, regenerates summaries and figures, and copies the generated PDFs into
-`notes/LMIP_Optimiser_and_Studio/figures`:
+StackProcessing-only Chunk worker sweeps, regenerates summaries and figures,
+and copies the generated PDFs into `notes/LMIP_Optimiser_and_Studio/figures`:
 
 ```bash
 bash benchmarks/run_lmip_pdf_benchmarks.sh
@@ -124,21 +123,43 @@ bash benchmarks/run_lmip_pdf_benchmarks.sh
 Use `--dry-run` to inspect the full command sequence without starting the long
 measurements.
 
-The slow-filesystem OME-Zarr comparison is intentionally not part of the PDF
-wrapper. Run it separately, while supervising the mounted filesystem:
+The focused Zarr chunk-size comparison is split from the main wrapper. Run the
+fast-filesystem version locally:
 
 ```bash
-SLOW_ROOT=/path/to/slow bash benchmarks/run_zarr_filesystem_benchmark.sh
+bash benchmarks/run_zarr_chunk_comparison_fast.sh
 ```
 
-It repeats the Dask/OME-Zarr copy, threshold, and median cases with both inputs
-and outputs below `SLOW_ROOT/benchmarks/...`, combines them with the current
-fast-filesystem Zarr rows, and writes:
+It compares StackProcessing and Python/Dask/scikit-image on a fixed
+`1024x1024x1024` `UInt8` uncompressed Zarr input with chunk sizes `64^3`,
+`128^3`, and `256^3`. The operation grid is copy, one-way Zarr-to-TIFF
+conversion, one-way TIFF-to-Zarr conversion, threshold, and convolution with
+kernel sizes 3, 5, and 7. The TIFF conversion interface is an ordinary
+full-width/full-height thin slice stack; internally, both implementations group
+slices in depth-`n` thick chunks so that Zarr sub-volumes are not repeatedly accessed.
+The script writes:
 
 ```text
-filesystem-zarr-runtime-by-size-and-parameter.pdf
-filesystem-zarr-memory-by-size-and-parameter.pdf
+benchmarks/results/raw.zarr-chunk-fast.csv
+benchmarks/results/summary.zarr-chunk-fast.csv
+benchmarks/results/figures/zarr-chunk-fast-internal.pdf
+benchmarks/results/figures/zarr-chunk-fast-peak.pdf
 ```
+
+and copies the figures into `notes/LMIP_Optimiser_and_Studio/figures`.
+
+The slow-filesystem Zarr comparison is intentionally not part of the PDF
+wrapper. Mount the slow filesystem yourself and run it separately while
+supervising the mount:
+
+```bash
+SLOW_ROOT=/path/to/slow bash benchmarks/run_zarr_chunk_comparison_slow.sh
+```
+
+It uses the same operation grid, places both input and output data below
+`$SLOW_ROOT`, writes `benchmarks/results/raw.zarr-chunk-slow.csv` and
+`benchmarks/results/summary.zarr-chunk-slow.csv`, and copies
+`zarr-chunk-slow-internal.pdf` into the LMIP figure directory.
 
 `run_all.sh` prebuilds compiled benchmark backends before generating inputs or measuring cases. It builds the F# benchmark project when StackProcessing is selected, or when TIFF inputs need to be generated, and it configures/builds `cpp-itk` when that backend is selected. These build steps are outside the measured commands. StackProcessing benchmark commands then execute the already-built benchmark DLL with `dotnet`, avoiding the SDK/project-runner overhead from `dotnet run`. Use `--skip-builds` only when you intentionally want to trust existing binaries.
 
@@ -374,19 +395,12 @@ python3 benchmarks/tools/run_manifest.py \
 
 Use `--dry-run` to print the exact commands without executing them.
 
-Run the Dask/OME-Zarr special cases by converting the TIFF inputs to OME-Zarr stores, then using `config/special-cases.csv`:
+Run the focused StackProcessing-vs-Dask Zarr comparison with the dedicated
+chunk-size scripts:
 
 ```bash
-python3 benchmarks/tools/tiff_stack_to_omezarr.py \
-  --input tmp/benchmarks/input/UInt8_512x512x64 \
-  --output tmp/benchmarks/input-omezarr/UInt8_512x512x64 \
-  --shape 512x512x64 --pixel-type UInt8
-
-python3 benchmarks/tools/run_manifest.py \
-  --cases benchmarks/config/special-cases.csv \
-  --backend python-dask-omezarr \
-  --input-root tmp/benchmarks/input-omezarr \
-  --repeat 3
+bash benchmarks/run_zarr_chunk_comparison_fast.sh
+SLOW_ROOT=/path/to/slow bash benchmarks/run_zarr_chunk_comparison_slow.sh
 ```
 
 The C++/ITK backend is built separately:
@@ -396,35 +410,31 @@ cmake -S benchmarks/cpp-itk -B benchmarks/cpp-itk/build
 cmake --build benchmarks/cpp-itk/build --config Release
 ```
 
-For the report-facing OME-Zarr figures, the current Zarr special case uses
-uncompressed Zarr v3 chunks (`bytes` codec only) to stress raw chunk IO and halo
-layout rather than compression. The combined raw and summary files are:
+The report-facing Zarr figures use uncompressed Zarr v3 chunks (`bytes` codec
+only) to stress raw chunk IO, task overhead, file-system behaviour, and stencil
+work rather than compression. The fast-filesystem raw and summary files are:
 
 ```text
-benchmarks/results/raw.zarr-none.csv
-benchmarks/results/summary.zarr-none.csv
+benchmarks/results/raw.zarr-chunk-fast.csv
+benchmarks/results/summary.zarr-chunk-fast.csv
 ```
 
-The corresponding figures are generated with:
+The corresponding figures are generated by the fast script. To regenerate only
+the figures from an existing summary:
 
 ```bash
-python3 benchmarks/tools/plot_zarr_results.py \
-  --summary benchmarks/results/summary.zarr-none.csv \
+python3 benchmarks/tools/plot_zarr_chunk_comparison.py \
+  --summary benchmarks/results/summary.zarr-chunk-fast.csv \
   --output-dir benchmarks/results/figures \
-  --latex-dir notes/LMIP_Optimiser_and_Studio/figures
-
-python3 benchmarks/tools/run_zarr_halo_comparison.py --codec none
-python3 benchmarks/tools/plot_zarr_halo_comparison.py \
-  --input tmp/zarr-halo-comparison-none.csv \
-  --output-dir benchmarks/results/figures \
-  --latex-dir notes/LMIP_Optimiser_and_Studio/figures
+  --latex-dir notes/LMIP_Optimiser_and_Studio/figures \
+  --prefix zarr-chunk-fast \
+  --metrics internal,peak
 ```
 
-The report-facing wrapper reruns the OME-Zarr storage-layout figures and the
-StackProcessing Chunk worker sweeps.
-It also regenerates summaries and copies all report PDFs into
-`notes/LMIP_Optimiser_and_Studio/figures`. Prefer the wrapper over manual CSV
-replacement or dated refresh recipes:
+The report-facing wrapper reruns the StackProcessing Chunk worker sweeps after
+the main TIFF matrix. It also regenerates summaries and copies the main report
+PDFs into `notes/LMIP_Optimiser_and_Studio/figures`. Prefer the wrapper over
+manual CSV replacement or dated refresh recipes for the non-Zarr figures:
 
 ```bash
 bash benchmarks/run_lmip_pdf_benchmarks.sh

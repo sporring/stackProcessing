@@ -515,10 +515,10 @@ module private SourceImageNode =
         let common = Set.ofList [ "availableMemory"; "type"; "format"; "input" ]
 
         let zarr =
-            Set.ofList [ "slabDepth"; "multiscaleIndex"; "datasetIndex"; "timepoint"; "channel"; "maxParallelChunks" ]
+            Set.ofList [ "thickDepth"; "multiscaleIndex"; "datasetIndex"; "timepoint"; "channel"; "maxParallelChunks" ]
 
         let nexus =
-            Set.ofList [ "datasetPath"; "slabDepth"; "frameAxis"; "yAxis"; "xAxis" ]
+            Set.ofList [ "datasetPath"; "frameAxis"; "yAxis"; "xAxis" ]
 
         match state.Definition.Id, selectedFormat state with
         | "ReadRandom", "Image stack" ->
@@ -533,17 +533,17 @@ module private SourceImageNode =
         | "Read", "Volume file" ->
             common |> Set.add "suffix"
         | "ReadRandom", "OME-Zarr" ->
-            Set.union common zarr |> Set.add "depth" |> Set.remove "slabDepth"
+            Set.union common zarr |> Set.add "depth" |> Set.remove "thickDepth"
         | "ReadRandom", "NeXus/HDF5" ->
-            Set.union common nexus |> Set.add "depth" |> Set.remove "slabDepth"
+            Set.union common nexus |> Set.add "depth"
         | "ReadRange", "OME-Zarr" ->
-            Set.union common zarr |> Set.add "first" |> Set.add "step" |> Set.add "last" |> Set.remove "slabDepth"
+            Set.union common zarr |> Set.add "first" |> Set.add "step" |> Set.add "last" |> Set.remove "thickDepth"
         | "ReadRange", "NeXus/HDF5" ->
-            Set.union common nexus |> Set.add "first" |> Set.add "step" |> Set.add "last" |> Set.remove "slabDepth"
+            Set.union common nexus |> Set.add "first" |> Set.add "step" |> Set.add "last"
         | "Read", "OME-Zarr" ->
             Set.union common zarr
         | "Read", "NeXus/HDF5" ->
-            Set.union common nexus |> Set.remove "slabDepth"
+            Set.union common nexus
         | _ ->
             state.Parameters
             |> Seq.map _.Key
@@ -1387,6 +1387,8 @@ type PipelineNodeViewModel(
         | "Expand"
         | "Write"
         | "GetChunkInfo"
+        | "GetZarrInfo"
+        | "GetNexusInfo"
         | "SerialEstBoundingBox"
         | "ImHistogramData"
         | "Histogram"
@@ -1398,7 +1400,7 @@ type PipelineNodeViewModel(
     let outputKindForPort functionId portIndex (port: Port) =
         match functionId, portIndex, port.Type with
         | ("Read" | "ReadRandom" | "ReadRange"), _, Custom _
-        | "Write", _, Custom "StackInfo" -> ReducerOutput
+        | "Write", _, Custom "ImageInfo" -> ReducerOutput
         | "WriteChunks", _, Custom "ChunkInfo" -> ReducerOutput
         | _ -> outputKindFor functionId
 
@@ -1411,14 +1413,7 @@ type PipelineNodeViewModel(
         | "Read"
         | "ReadRandom"
         | "ReadRange" ->
-            let infoType =
-                match SourceImageNode.selectedFormat state with
-                | "OME-Zarr"
-                | "NeXus/HDF5" -> BuiltInCatalog.chunkInfo
-                | _ -> BuiltInCatalog.stackInfo
-            let infoName = if infoType = BuiltInCatalog.chunkInfo then "ChunkInfo" else "StackInfo"
-
-            state.Definition.Inputs, SourceImageNode.outputPort state :: [ { Name = infoName; Type = infoType } ]
+            state.Definition.Inputs, SourceImageNode.outputPort state :: [ { Name = "ImageInfo"; Type = BuiltInCatalog.imageInfo } ]
         | "PolygonMask" -> state.Definition.Inputs, state.Definition.Outputs
         | "Zero"
         | "NormalNoise"
@@ -1427,14 +1422,7 @@ type PipelineNodeViewModel(
         | "SpeckleNoise"
         | "CreateByEuler2DTransform" -> state.Definition.Inputs, [ SourceImageNode.outputPort state ]
         | "Write" ->
-            let infoType =
-                match SourceImageNode.selectedFormat state with
-                | "OME-Zarr"
-                | "NeXus/HDF5" -> BuiltInCatalog.chunkInfo
-                | _ -> BuiltInCatalog.stackInfo
-            let infoName = if infoType = BuiltInCatalog.chunkInfo then "ChunkInfo" else "StackInfo"
-
-            [ SourceImageNode.writeInputPort state ], [ { Name = infoName; Type = infoType } ]
+            [ SourceImageNode.writeInputPort state ], [ { Name = "ImageInfo"; Type = BuiltInCatalog.imageInfo } ]
         | "WriteChunks" ->
             [ SourceImageNode.writeInputPort state ], state.Definition.Outputs
         | "ImageOpImage" -> PairOperationNode.ports state

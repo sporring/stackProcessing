@@ -138,6 +138,14 @@ type MainView() as this =
         builder.AppendLine($"Components per pixel: {info.topLeftInfo.numberOfComponents}") |> ignore
         builder.AppendLine($"Top-left chunk size: {formatList info.topLeftInfo.size}") |> ignore
 
+    let appendImageInfo (builder: StringBuilder) (info: StackIO.ImageInfo) =
+        builder.AppendLine($"Format: {info.format}") |> ignore
+        builder.AppendLine($"Dimensions: {info.dimensions}") |> ignore
+        builder.AppendLine($"Size: {formatList info.size}") |> ignore
+        builder.AppendLine($"Chunk shape: {formatList info.chunks}") |> ignore
+        builder.AppendLine($"Component type: {info.componentType}") |> ignore
+        builder.AppendLine($"Components per pixel: {info.numberOfComponents}") |> ignore
+
     let inferStackSuffix (directory: string) =
         if Directory.Exists directory then
             let files = Directory.EnumerateFiles(directory) |> Seq.toArray
@@ -185,7 +193,7 @@ type MainView() as this =
             if directoryLooksLikeZarr path then
                 let info = StackIO.getZarrInfo path 0 0
                 appendHeader "OME-Zarr directory" "getZarrInfo path 0 0"
-                appendChunkInfo builder info
+                appendImageInfo builder info
                 builder.AppendLine("Multiscale index: 0") |> ignore
                 builder.AppendLine("Dataset index: 0") |> ignore
             elif directoryLooksLikeChunks path then
@@ -202,9 +210,9 @@ type MainView() as this =
             else
                 match inferStackSuffix path with
                 | Some(suffix, fileCount) ->
-                    let info = StackIO.getStackInfo path suffix
-                    appendHeader $"stack of {suffix} files" $"getStackInfo path {suffix}"
-                    appendFileInfo builder info
+                    let info = StackIO.getImageInfo path suffix
+                    appendHeader $"stack of {suffix} files" $"getImageInfo path {suffix}"
+                    appendImageInfo builder info
                     builder.AppendLine($"Matching files: {fileCount}") |> ignore
                     builder.AppendLine($"Suffix: {suffix}") |> ignore
                 | None ->
@@ -218,7 +226,7 @@ type MainView() as this =
                     let datasetPath = "/entry/data/data"
                     let info = StackIO.getNexusInfo path datasetPath 0 1 2
                     appendHeader "NeXus/HDF5 detector stack file" $"getNexusInfo path {datasetPath} 0 1 2"
-                    appendChunkInfo builder info
+                    appendImageInfo builder info
                     builder.AppendLine($"Dataset path: {datasetPath}") |> ignore
                     builder.AppendLine("Axes: frame=0, y=1, x=2") |> ignore
                 with ex ->

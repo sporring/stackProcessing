@@ -20,6 +20,7 @@ open ZarrNET.Core
 open ZarrNET.Core.Nodes
 open ZarrNET.Core.OmeZarr.Coordinates
 open ZarrNET.Core.Zarr
+open ZarrNET.Core.Zarr.Store
 
 type FileInfo =
     { dimensions: uint
@@ -28,6 +29,14 @@ type FileInfo =
       numberOfComponents: uint }
 
 type ChunkInfo = { chunks: int list; size: uint64 list; topLeftInfo: FileInfo}
+
+type ImageInfo =
+    { format: string
+      dimensions: uint
+      size: uint64 list
+      componentType: string
+      numberOfComponents: uint
+      chunks: int list }
 
 let private fromVectorUInt64 (v: itk.simple.VectorUInt64) : uint64 list =
     v |> Seq.map uint64 |> Seq.toList
@@ -985,6 +994,24 @@ let private zarrPlaneChunkAs<'T when 'T: equality and 'T: (new: unit -> 'T) and 
     Buffer.BlockCopy(bytes, 0, chunk.Bytes, 0, expectedBytes)
     chunk
 
+let private zarrThickChunkAs<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (dataType: string)
+    width
+    height
+    depth
+    (bytes: byte[])
+    =
+
+    validateZarrScalarChunkType<'T> dataType
+    let elementBytes = zarrScalarElementBytes<'T> ()
+    let expectedBytes = width * height * depth * elementBytes
+    if bytes.Length < expectedBytes then
+        invalidArg "bytes" $"Zarr byte payload is too short for a {width}x{height}x{depth} {typeof<'T>.Name} thick chunk: expected {expectedBytes}, got {bytes.Length}."
+
+    let chunk = Chunk.create<'T> (uint64 width, uint64 height, uint64 depth)
+    Buffer.BlockCopy(bytes, 0, chunk.Bytes, 0, expectedBytes)
+    chunk
+
 let private hdfDataType<'T> () =
     let t = typeof<'T>
 
@@ -1226,6 +1253,31 @@ let getStackInfo (inputDir: string) (suffix: string) : FileInfo =
         stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
     let fi = getFileInfo(files[0])
     {fi with dimensions = fi.dimensions+1u; size = fi.size @ [depth]}
+
+let private imageInfoOfFileInfo format chunks (info: FileInfo) : ImageInfo =
+    { format = format
+      dimensions = info.dimensions
+      size = info.size
+      componentType = info.componentType
+      numberOfComponents = info.numberOfComponents
+      chunks = chunks }
+
+let getImageInfo (inputDir: string) (suffix: string) : ImageInfo =
+    let info = getStackInfo inputDir suffix
+    let chunks =
+        match info.size with
+        | width :: height :: _ -> [ int width; int height; 1 ]
+        | _ -> [ 1; 1; 1 ]
+    imageInfoOfFileInfo "Image stack" chunks info
+
+let getImageFileInfo (input: string) (suffix: string) : ImageInfo =
+    let info = getFileInfo (volumeFilePath input suffix)
+    let chunks =
+        match info.size with
+        | width :: height :: depth :: _ -> [ int width; int height; int depth ]
+        | width :: height :: _ -> [ int width; int height; 1 ]
+        | _ -> [ 1; 1; 1 ]
+    imageInfoOfFileInfo "Volume file" chunks info
 
 let getStackSize (inputDir: string) (suffix: string) : uint*uint*uint =
     let fi = getStackInfo inputDir suffix 
@@ -2452,7 +2504,7 @@ let getChunkInfo (inputDir: string) (suffix: string) : ChunkInfo =
         ]
     { chunks = [maxI+1;maxJ+1;maxK+1]; topLeftInfo = topLeftFi; size = stackSize }
 
-let getZarrInfo (path: string) (multiscaleIndex: int) (datasetIndex: int) : ChunkInfo =
+let getZarrInfo (path: string) (multiscaleIndex: int) (datasetIndex: int) : ImageInfo =
     suppressZarrNetDebugLogging ()
 
     let reader: OmeZarrReader =
@@ -2464,31 +2516,32 @@ let getZarrInfo (path: string) (multiscaleIndex: int) (datasetIndex: int) : Chun
         |> runTask
 
     let _sizeT, _sizeC, sizeZ, sizeY, sizeX = zarrShapeTCZYX level.Shape
-    let chunks =
+    let rawChunks =
         reader.RootGroup.OpenArrayAsync(level.Dataset.Path, CancellationToken.None)
         |> runTask
         |> fun zarrArray -> zarrArray.Metadata.ChunkShape
         |> Array.toList
+    let chunks =
+        match rawChunks with
+        | _t :: _c :: z :: y :: x :: _ -> [ x; y; z ]
+        | z :: y :: x :: _ -> [ x; y; z ]
+        | _ -> rawChunks
 
     deleteZarrNetDebugLogs ()
 
-    let fileInfo: FileInfo =
-        { dimensions = 3u
-          size = [ uint64 sizeX; uint64 sizeY; uint64 sizeZ ]
-          componentType = level.DataType
-          numberOfComponents = 1u }
+    { format = "OME-Zarr"
+      dimensions = 3u
+      size = [ uint64 sizeX; uint64 sizeY; uint64 sizeZ ]
+      componentType = level.DataType
+      numberOfComponents = 1u
+      chunks = chunks }
 
-    { chunks = chunks
-      size = fileInfo.size
-      topLeftInfo = fileInfo }
-
-let private zarrChunkDepthFromInfo (chunkInfo: ChunkInfo) =
+let private zarrChunkDepthFromInfo (chunkInfo: ImageInfo) =
     match chunkInfo.chunks with
-    | _t :: _c :: z :: _y :: _x :: _ -> max 1u (uint z)
-    | z :: _y :: _x :: _ -> max 1u (uint z)
+    | _x :: _y :: z :: _ -> max 1u (uint z)
     | _ -> 1u
 
-let getNexusInfo (path: string) (datasetPath: string) (frameAxis: int) (yAxis: int) (xAxis: int) : ChunkInfo =
+let getNexusInfo (path: string) (datasetPath: string) (frameAxis: int) (yAxis: int) (xAxis: int) : ImageInfo =
     use file = H5File.OpenRead(path)
     let dataset = file.Dataset(datasetPath)
     let rank = int dataset.Space.Rank
@@ -2498,20 +2551,22 @@ let getNexusInfo (path: string) (datasetPath: string) (frameAxis: int) (yAxis: i
         failwith $"getNexusInfo currently expects a rank-3 detector stack dataset, but {datasetPath} has rank {rank}."
 
     let dimensions = dataset.Space.Dimensions
-    let chunks = hdfDatasetChunks dataset
-    let fileInfo: FileInfo =
-        { dimensions = 3u
-          size = [ uint64 dimensions[xAxis]; uint64 dimensions[yAxis]; uint64 dimensions[frameAxis] ]
-          componentType = dataset.Type.ToString()
-          numberOfComponents = 1u }
+    let rawChunks = hdfDatasetChunks dataset
+    let chunkAt axis =
+        rawChunks
+        |> List.tryItem axis
+        |> Option.defaultValue 1
 
-    { chunks = chunks
-      size = fileInfo.size
-      topLeftInfo = fileInfo }
+    { format = "NeXus/HDF5"
+      dimensions = 3u
+      size = [ uint64 dimensions[xAxis]; uint64 dimensions[yAxis]; uint64 dimensions[frameAxis] ]
+      componentType = dataset.Type.ToString()
+      numberOfComponents = 1u
+      chunks = [ chunkAt xAxis; chunkAt yAxis; chunkAt frameAxis ] }
 
-let private nexusFrameChunkDepth (info: ChunkInfo) (frameAxis: int) =
+let private nexusFrameChunkDepth (info: ImageInfo) (_frameAxis: int) =
     info.chunks
-    |> List.tryItem frameAxis
+    |> List.tryItem 2
     |> Option.map (fun z -> max 1u (uint z))
     |> Option.defaultValue 1u
 
@@ -2632,7 +2687,7 @@ let readSlab<'T when 'T: equality> (inputDir: string) (suffix: string) (pl: Plan
 
 let private readZarrSlabStackedWithDepth<'T when 'T: equality>
     (path: string)
-    (slabDepth: uint)
+    (thickDepth: uint)
     (multiscaleIndex: int)
     (datasetIndex: int)
     (timepoint: int)
@@ -3325,6 +3380,841 @@ let readZarrChunkSlicesRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 
     |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
+let readZarrChunkThickRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (first: uint)
+    (last: uint)
+    (thickDepth: uint)
+    (path: string)
+    (multiscaleIndex: int)
+    (datasetIndex: int)
+    (timepoint: int)
+    (channel: int)
+    (maxParallelChunks: int)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+
+    suppressZarrNetDebugLogging ()
+
+    let name = "readZarrChunkThickRange"
+    let level = openZarrResolutionLevel path multiscaleIndex datasetIndex
+    let sizeT, sizeC, sizeZ, sizeY, sizeX = zarrShapeTCZYX level.Shape
+    validateZarrScalarChunkType<'T> level.DataType
+
+    if timepoint < 0 || timepoint >= sizeT then
+        invalidArg "timepoint" $"Timepoint {timepoint} is outside the Zarr time range 0..{sizeT - 1}."
+    if channel < 0 || channel >= sizeC then
+        invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
+
+    let first = int first
+    let last =
+        if last = UInt32.MaxValue then
+            sizeZ - 1
+        else
+            min (int last) (sizeZ - 1)
+    if first < 0 || first >= sizeZ || last < first then
+        invalidArg "first" $"Invalid Zarr z range {first}..{last} for source depth {sizeZ}."
+
+    let thickDepth = max 1u thickDepth |> int
+    let groupCount = (last - first + 1 + thickDepth - 1) / thickDepth
+    let elementBytes = uint64 sizeX * uint64 sizeY * uint64 thickDepth * uint64 (zarrScalarElementBytes<'T> ())
+    let parallelChunks = nullableParallelChunks maxParallelChunks
+    let sourcePeek =
+        SourcePeek.create
+            name
+            elementBytes
+            (Some (uint64 groupCount))
+            (Map.ofList
+                [ "kind", "zarr-chunk-thick"
+                  "path", path
+                  "width", string sizeX
+                  "height", string sizeY
+                  "depth", string (last - first + 1)
+                  "sourceDepth", string sizeZ
+                  "thickDepth", string thickDepth
+                  "pixelType", typeof<'T>.Name
+                  "multiscaleIndex", string multiscaleIndex
+                  "datasetIndex", string datasetIndex
+                  "timepoint", string timepoint
+                  "channel", string channel
+                  "first", string first
+                  "last", string last ])
+
+    let mapper (outputIndex: int) : Chunk<'T> =
+        let zStart = first + outputIndex * thickDepth
+        let zStop = min (last + 1) (zStart + thickDepth)
+        let zCount = zStop - zStart
+        if pl.debug then
+            printfn $"[readZarrChunkThickRange] Reading z {zStart}..{zStop - 1} from {path} as {typeof<'T>.Name}"
+
+        let region =
+            PixelRegion(
+                [| int64 timepoint; int64 channel; int64 zStart; 0L; 0L |],
+                [| int64 (timepoint + 1); int64 (channel + 1); int64 zStop; int64 sizeY; int64 sizeX |])
+        let result =
+            level.ReadPixelRegionAsync(region, parallelChunks, CancellationToken.None)
+            |> runTask
+        deleteZarrNetDebugLogs ()
+        zarrThickChunkAs<'T> level.DataType sizeX sizeY zCount result.Data
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memPeak = 256UL
+    let memoryNeed = fun _ -> memPeak
+    let elementTransformation n = n * uint64 thickDepth
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        StageTimeCostModel.ioRead Source (Some $"readZarrChunkThickRange.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> uint64 thickDepth)
+    let stage =
+        Stage.init name (uint groupCount) mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    Plan.createWithOptimizer stage pl.memAvail memPeak memPeak (uint64 groupCount) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
+    |> Plan.withSourcePeek sourcePeek
+
+let readZarrChunkSlicesAlignedRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (first: uint)
+    (last: uint)
+    (path: string)
+    (multiscaleIndex: int)
+    (datasetIndex: int)
+    (timepoint: int)
+    (channel: int)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+
+    suppressZarrNetDebugLogging ()
+
+    let name = "readZarrChunkSlicesAlignedRange"
+    let level = openZarrResolutionLevel path multiscaleIndex datasetIndex
+    let sizeT, sizeC, sizeZ, sizeY, sizeX = zarrShapeTCZYX level.Shape
+    validateZarrScalarChunkType<'T> level.DataType
+
+    if timepoint < 0 || timepoint >= sizeT then
+        invalidArg "timepoint" $"Timepoint {timepoint} is outside the Zarr time range 0..{sizeT - 1}."
+    if channel < 0 || channel >= sizeC then
+        invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
+
+    let first = int first
+    let last =
+        if last = UInt32.MaxValue then
+            sizeZ - 1
+        else
+            min (int last) (sizeZ - 1)
+    if first < 0 || first >= sizeZ || last < first then
+        invalidArg "first" $"Invalid Zarr z range {first}..{last} for source depth {sizeZ}."
+
+    let store = new LocalFileSystemStore(path)
+    let rootGroup =
+        ZarrGroup.OpenRootAsync(store, CancellationToken.None)
+        |> runTask
+    let array =
+        rootGroup.OpenArrayAsync(level.Dataset.Path, CancellationToken.None)
+        |> runTask
+
+    let rawChunkShape = array.Metadata.ChunkShape
+    let chunkZ = rawChunkShape[2]
+    let chunkY = rawChunkShape[3]
+    let chunkX = rawChunkShape[4]
+    let chunks =
+        collectZarrChunks array
+        |> Array.filter (fun chunkRef ->
+            chunkRef.Origin[0] = int64 timepoint
+            && chunkRef.Origin[1] = int64 channel)
+
+    let chunksByZ =
+        chunks
+        |> Array.groupBy (fun chunkRef -> int chunkRef.ChunkCoord[2])
+        |> Map.ofArray
+
+    let elementBytes = zarrScalarElementBytes<'T> ()
+    let sliceBytes = sizeX * sizeY * elementBytes
+    let fullZarrChunkBytes = chunkX * chunkY * chunkZ * elementBytes
+    let mutable cachedZChunk = -1
+    let mutable cachedSlices: Chunk<'T>[] = Array.empty
+
+    let loadZChunk zChunk =
+        let zStart = zChunk * chunkZ
+        let zStop = min (last + 1) (zStart + chunkZ)
+        let zCount = zStop - zStart
+        let outputSlices =
+            Array.init zCount (fun _ -> Chunk.create<'T> (uint64 sizeX, uint64 sizeY, 1UL))
+
+        try
+            match chunksByZ.TryFind zChunk with
+            | Some zChunks ->
+                let parallelOptions = ParallelOptions(MaxDegreeOfParallelism = Environment.ProcessorCount)
+                let readChunk =
+                    Action<ZarrChunkRef>(fun (chunkRef: ZarrChunkRef) ->
+                        let scratch = ArrayPool<byte>.Shared.Rent(fullZarrChunkBytes)
+                        try
+                            array.ReadChunkDecodedAsync(
+                                chunkRef,
+                                Memory<byte>(scratch, 0, fullZarrChunkBytes),
+                                true,
+                                CancellationToken.None)
+                            |> runUnitTask
+
+                            let originZ = int chunkRef.Origin[2]
+                            let originY = int chunkRef.Origin[3]
+                            let originX = int chunkRef.Origin[4]
+                            let actualZ = int chunkRef.Shape[2]
+                            let actualY = int chunkRef.Shape[3]
+                            let actualX = int chunkRef.Shape[4]
+                            let rowBytes = actualX * elementBytes
+
+                            for localChunkZ in 0 .. actualZ - 1 do
+                                let globalZ = originZ + localChunkZ
+                                if globalZ >= first && globalZ <= last then
+                                    let output = outputSlices[globalZ - zStart]
+                                    for localY in 0 .. actualY - 1 do
+                                        let sourceOffset =
+                                            ((localChunkZ * chunkY + localY) * chunkX) * elementBytes
+                                        let destinationOffset =
+                                            ((originY + localY) * sizeX + originX) * elementBytes
+                                        Buffer.BlockCopy(scratch, sourceOffset, output.Bytes, destinationOffset, rowBytes)
+                        finally
+                            ArrayPool<byte>.Shared.Return(scratch))
+                Parallel.ForEach<ZarrChunkRef>(zChunks, parallelOptions, readChunk) |> ignore
+            | None -> ()
+
+            deleteZarrNetDebugLogs ()
+            outputSlices
+        with
+        | ex ->
+            for output in outputSlices do
+                Chunk.decRef output
+            raise ex
+
+    let mapper (outputIndex: int) : Chunk<'T> =
+        let globalZ = first + outputIndex
+        let zChunk = globalZ / chunkZ
+        if zChunk <> cachedZChunk then
+            cachedSlices <- loadZChunk zChunk
+            cachedZChunk <- zChunk
+
+        let localZ = globalZ - zChunk * chunkZ
+        if pl.debug then
+            printfn $"[readZarrChunkSlicesAlignedRange] Reading z {globalZ} from {path} as {typeof<'T>.Name}"
+        cachedSlices[localZ]
+
+    let depth = last - first + 1
+    let sourcePeek =
+        SourcePeek.create
+            name
+            (uint64 sliceBytes)
+            (Some (uint64 depth))
+            (Map.ofList
+                [ "kind", "zarr-chunk-slices-aligned"
+                  "path", path
+                  "width", string sizeX
+                  "height", string sizeY
+                  "depth", string depth
+                  "sourceDepth", string sizeZ
+                  "chunkX", string chunkX
+                  "chunkY", string chunkY
+                  "chunkZ", string chunkZ
+                  "pixelType", typeof<'T>.Name ])
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memPeak = uint64 sliceBytes
+    let memoryNeed = fun _ -> memPeak
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        StageTimeCostModel.ioRead Source (Some $"readZarrChunkSlicesAlignedRange.{typeof<'T>.Name}") (fun _ -> uint64 fullZarrChunkBytes) (fun _ -> 1UL)
+    let stage =
+        Stage.init name (uint depth) mapper transition memoryNeed id
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    Plan.createWithOptimizer stage pl.memAvail memPeak memPeak (uint64 depth) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
+    |> Plan.withSourcePeek sourcePeek
+
+let private spatialZarrLayout pixelType sizeX sizeY sizeZ chunkX chunkY chunkZ : ChunkLayout =
+    let chunkCounts =
+        ((sizeX + chunkX - 1) / chunkX,
+         (sizeY + chunkY - 1) / chunkY,
+         (sizeZ + chunkZ - 1) / chunkZ)
+
+    { VolumeSize = (uint64 sizeX, uint64 sizeY, uint64 sizeZ)
+      ChunkSize = (uint64 chunkX, uint64 chunkY, uint64 chunkZ)
+      ChunkCounts = chunkCounts
+      PixelType = pixelType
+      Components = 1u }
+
+let private copyDecodedZarrChunkToChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (decoded: byte[])
+    fullX
+    fullY
+    actualX
+    actualY
+    actualZ
+    =
+
+    let output = Chunk.create<'T> (uint64 actualX, uint64 actualY, uint64 actualZ)
+    let elementBytes = zarrScalarElementBytes<'T> ()
+    let rowBytes = actualX * elementBytes
+
+    for z in 0 .. actualZ - 1 do
+        for y in 0 .. actualY - 1 do
+            let sourceOffset = ((z * fullY + y) * fullX) * elementBytes
+            let destinationOffset = ((z * actualY + y) * actualX) * elementBytes
+            Buffer.BlockCopy(decoded, sourceOffset, output.Bytes, destinationOffset, rowBytes)
+
+    output
+
+let private readDecodedZarrChunkToLocatedChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (array: ZarrArray)
+    (layout: ChunkLayout)
+    fullX
+    fullY
+    fullZ
+    (chunkRef: ZarrChunkRef)
+    : LocatedChunk<'T> =
+
+    let actualZ = int chunkRef.Shape[2]
+    let actualY = int chunkRef.Shape[3]
+    let actualX = int chunkRef.Shape[4]
+
+    let chunk =
+        if actualX = fullX && actualY = fullY && actualZ = fullZ then
+            let output = Chunk.create<'T> (uint64 actualX, uint64 actualY, uint64 actualZ)
+            try
+                array.ReadChunkDecodedAsync(
+                    chunkRef,
+                    Memory<byte>(output.Bytes, 0, output.ByteLength),
+                    true,
+                    CancellationToken.None)
+                |> runUnitTask
+                output
+            with
+            | ex ->
+                Chunk.decRef output
+                raise ex
+        else
+            let decoded =
+                array.ReadChunkDecodedAsync(chunkRef, CancellationToken.None)
+                |> runTask
+            copyDecodedZarrChunkToChunk<'T> decoded fullX fullY actualX actualY actualZ
+
+    { Index = (int chunkRef.ChunkCoord[4], int chunkRef.ChunkCoord[3], int chunkRef.ChunkCoord[2])
+      Layout = layout
+      Chunk = chunk }
+
+let private zarrChunkCoordKey (chunkRef: ZarrChunkRef) =
+    String.Join("/", chunkRef.ChunkCoord)
+
+let readZarrLocatedChunks<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (path: string)
+    (multiscaleIndex: int)
+    (datasetIndex: int)
+    (timepoint: int)
+    (channel: int)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, LocatedChunk<'T>> =
+
+    suppressZarrNetDebugLogging ()
+
+    let name = "readZarrLocatedChunks"
+    let level = openZarrResolutionLevel path multiscaleIndex datasetIndex
+    let sizeT, sizeC, sizeZ, sizeY, sizeX = zarrShapeTCZYX level.Shape
+    validateZarrScalarChunkType<'T> level.DataType
+
+    if timepoint < 0 || timepoint >= sizeT then
+        invalidArg "timepoint" $"Timepoint {timepoint} is outside the Zarr time range 0..{sizeT - 1}."
+    if channel < 0 || channel >= sizeC then
+        invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
+
+    let store = new LocalFileSystemStore(path)
+    let rootGroup =
+        ZarrGroup.OpenRootAsync(store, CancellationToken.None)
+        |> runTask
+    let array =
+        rootGroup.OpenArrayAsync(level.Dataset.Path, CancellationToken.None)
+        |> runTask
+    let chunks =
+        collectZarrChunks array
+        |> Array.filter (fun chunkRef ->
+            chunkRef.Origin[0] = int64 timepoint
+            && chunkRef.Origin[1] = int64 channel)
+
+    let rawChunkShape = array.Metadata.ChunkShape
+    let chunkZ = rawChunkShape[2]
+    let chunkY = rawChunkShape[3]
+    let chunkX = rawChunkShape[4]
+    let dataType = zarrDataType<'T> ()
+    let layout = spatialZarrLayout dataType sizeX sizeY sizeZ chunkX chunkY chunkZ
+    let elementBytes = uint64 (zarrScalarElementBytes<'T> ())
+    let elementCount = uint64 chunkX * uint64 chunkY * uint64 chunkZ
+    let sourcePeek =
+        SourcePeek.create
+            name
+            (elementCount * elementBytes)
+            (Some (uint64 chunks.Length))
+            (Map.ofList
+                [ "kind", "zarr-located-chunks"
+                  "path", path
+                  "width", string sizeX
+                  "height", string sizeY
+                  "depth", string sizeZ
+                  "chunkX", string chunkX
+                  "chunkY", string chunkY
+                  "chunkZ", string chunkZ
+                  "pixelType", typeof<'T>.Name ])
+
+    let mapper (outputIndex: int) : LocatedChunk<'T> =
+        let chunkRef = chunks[outputIndex]
+        if pl.debug then
+            printfn $"[readZarrLocatedChunks] Reading chunk index ({chunkRef.ChunkCoord[4]}, {chunkRef.ChunkCoord[3]}, {chunkRef.ChunkCoord[2]}) from {path} as {typeof<'T>.Name}"
+
+        let located = readDecodedZarrChunkToLocatedChunk<'T> array layout chunkX chunkY chunkZ chunkRef
+        deleteZarrNetDebugLogs ()
+        located
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memPeak = elementCount * elementBytes
+    let memoryNeed = fun _ -> memPeak
+    let elementTransformation n = n * uint64 chunkZ
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        StageTimeCostModel.ioRead Source (Some $"readZarrLocatedChunks.{typeof<'T>.Name}") (fun _ -> memPeak) (fun _ -> uint64 chunkZ)
+    let stage =
+        Stage.init name (uint chunks.Length) mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    Plan.createWithOptimizer stage pl.memAvail memPeak memPeak (uint64 chunks.Length) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
+    |> Plan.withSourcePeek sourcePeek
+
+let readZarrEncodedChunks
+    (path: string)
+    (multiscaleIndex: int)
+    (datasetIndex: int)
+    (timepoint: int)
+    (channel: int)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, EncodedLocatedChunk> =
+
+    suppressZarrNetDebugLogging ()
+
+    let name = "readZarrEncodedChunks"
+    let level = openZarrResolutionLevel path multiscaleIndex datasetIndex
+    let sizeT, sizeC, sizeZ, sizeY, sizeX = zarrShapeTCZYX level.Shape
+
+    if timepoint < 0 || timepoint >= sizeT then
+        invalidArg "timepoint" $"Timepoint {timepoint} is outside the Zarr time range 0..{sizeT - 1}."
+    if channel < 0 || channel >= sizeC then
+        invalidArg "channel" $"Channel {channel} is outside the Zarr channel range 0..{sizeC - 1}."
+
+    let store = new LocalFileSystemStore(path)
+    let rootGroup =
+        ZarrGroup.OpenRootAsync(store, CancellationToken.None)
+        |> runTask
+    let array =
+        rootGroup.OpenArrayAsync(level.Dataset.Path, CancellationToken.None)
+        |> runTask
+    let chunks =
+        collectZarrChunks array
+        |> Array.filter (fun chunkRef ->
+            chunkRef.Origin[0] = int64 timepoint
+            && chunkRef.Origin[1] = int64 channel)
+
+    let rawChunkShape = array.Metadata.ChunkShape
+    let chunkZ = rawChunkShape[2]
+    let chunkY = rawChunkShape[3]
+    let chunkX = rawChunkShape[4]
+    let layout = spatialZarrLayout level.DataType sizeX sizeY sizeZ chunkX chunkY chunkZ
+    let elementBytes =
+        match level.DataType.ToLowerInvariant() with
+        | "uint8" -> 1UL
+        | "uint16" -> 2UL
+        | "float32" -> 4UL
+        | "float64" -> 8UL
+        | other -> failwith $"readZarrEncodedChunks currently supports scalar numeric chunks, got {other}."
+    let chunkBytes = uint64 chunkX * uint64 chunkY * uint64 chunkZ * elementBytes
+    let sourcePeek =
+        SourcePeek.create
+            name
+            chunkBytes
+            (Some (uint64 chunks.Length))
+            (Map.ofList
+                [ "kind", "zarr-encoded-chunks"
+                  "path", path
+                  "width", string sizeX
+                  "height", string sizeY
+                  "depth", string sizeZ
+                  "chunkX", string chunkX
+                  "chunkY", string chunkY
+                  "chunkZ", string chunkZ
+                  "pixelType", level.DataType ])
+
+    let mapper (outputIndex: int) : EncodedLocatedChunk =
+        let chunkRef = chunks[outputIndex]
+        if pl.debug then
+            printfn $"[readZarrEncodedChunks] Reading encoded chunk index ({chunkRef.ChunkCoord[4]}, {chunkRef.ChunkCoord[3]}, {chunkRef.ChunkCoord[2]}) from {path}"
+
+        let payload =
+            array.ReadChunkEncodedAsync(chunkRef, CancellationToken.None)
+            |> runTask
+            |> Option.ofObj
+        deleteZarrNetDebugLogs ()
+
+        { Index = (int chunkRef.ChunkCoord[4], int chunkRef.ChunkCoord[3], int chunkRef.ChunkCoord[2])
+          Layout = layout
+          Payload = payload }
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memoryNeed = fun _ -> chunkBytes
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        StageTimeCostModel.ioRead Source (Some "readZarrEncodedChunks") (fun _ -> chunkBytes) (fun _ -> uint64 chunkZ)
+    let stage =
+        Stage.init name (uint chunks.Length) mapper transition memoryNeed id
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    Plan.createWithOptimizer stage pl.memAvail chunkBytes chunkBytes (uint64 chunks.Length) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
+    |> Plan.withSourcePeek sourcePeek
+
+let writeZarrEncodedChunksWithCompression
+    (compression: ZarrCompression)
+    (outputPath: string)
+    (name: string)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<EncodedLocatedChunk, unit> =
+
+    suppressZarrNetDebugLogging ()
+
+    let mutable writer: OmeZarrWriter option = None
+    let mutable zarrStore: LocalFileSystemStore option = None
+    let mutable zarrArray: ZarrArray option = None
+    let mutable outputChunkLookup: Map<string, ZarrChunkRef> = Map.empty
+    let mutable layout: ChunkLayout option = None
+    let mutable written = 0
+
+    let createWriter (chunkLayout: ChunkLayout) =
+        let sizeX64, sizeY64, sizeZ64 = chunkLayout.VolumeSize
+        let chunkX64, chunkY64, chunkZ64 = chunkLayout.ChunkSize
+        let descriptor =
+            BioImageDescriptor(
+                int sizeX64,
+                int sizeY64,
+                ZCT(int sizeZ64, 1, 1),
+                Name = name,
+                DataType = chunkLayout.PixelType,
+                ChunkX = int chunkX64,
+                ChunkY = int chunkY64,
+                ChunkZ = int chunkZ64,
+                ChunkC = 1,
+                ChunkT = 1,
+                PhysicalSizeX = physicalSizeX,
+                PhysicalSizeY = physicalSizeY,
+                PhysicalSizeZ = physicalSizeZ,
+                Compression = compression)
+
+        let created =
+            OmeZarrWriter.CreateAsync(outputPath, descriptor, CancellationToken.None)
+            |> runTask
+        deleteZarrNetDebugLogs ()
+
+        if maxConcurrentWrites > 0 then
+            OmeZarrWriter.MaxConcurrentWrites <- maxConcurrentWrites
+
+        let store = new LocalFileSystemStore(outputPath)
+        let rootGroup =
+            ZarrGroup.OpenRootAsync(store, CancellationToken.None)
+            |> runTask
+        let array =
+            rootGroup.OpenArrayAsync("0", CancellationToken.None)
+            |> runTask
+
+        writer <- Some created
+        zarrStore <- Some store
+        zarrArray <- Some array
+        outputChunkLookup <-
+            collectZarrChunks array
+            |> Array.map (fun chunkRef -> zarrChunkCoordKey chunkRef, chunkRef)
+            |> Map.ofArray
+        layout <- Some chunkLayout
+        array
+
+    let finishWriter () =
+        match writer with
+        | Some zarrWriter ->
+            zarrWriter.DisposeAsync().AsTask()
+            |> runUnitTask
+        | None -> ()
+
+        match zarrStore with
+        | Some store ->
+            store.DisposeAsync().AsTask()
+            |> runUnitTask
+        | None -> ()
+
+        writer <- None
+        zarrStore <- None
+        zarrArray <- None
+        outputChunkLookup <- Map.empty
+        deleteZarrNetDebugLogs ()
+
+    let mapper (debug: bool) (_idx: int64) (located: EncodedLocatedChunk) =
+        let array =
+            match layout, zarrArray with
+            | Some expected, Some array ->
+                if expected <> located.Layout then
+                    failwith $"writeZarrEncodedChunks expected layout {expected}, got {located.Layout}."
+                array
+            | None, None ->
+                createWriter located.Layout
+            | _ ->
+                failwith "writeZarrEncodedChunks has inconsistent writer state."
+
+        try
+            let ix, iy, iz = located.Index
+            let key = String.Join("/", [| 0L; 0L; int64 iz; int64 iy; int64 ix |])
+            match located.Payload with
+            | Some payload ->
+                let outputChunk =
+                    match outputChunkLookup.TryFind key with
+                    | Some chunk -> chunk
+                    | None -> failwith $"writeZarrEncodedChunks could not find output chunk for coordinate {key}."
+                if debug then
+                    printfn $"[writeZarrEncodedChunks] Saved encoded chunk index {located.Index} to {outputPath}"
+                array.WriteChunkEncodedAsync(outputChunk, payload, CancellationToken.None)
+                |> runUnitTask
+            | None ->
+                if debug then
+                    printfn $"[writeZarrEncodedChunks] Skipped missing encoded chunk index {located.Index} in {outputPath}"
+
+            written <- written + 1
+            let countX, countY, countZ = located.Layout.ChunkCounts
+            if written = countX * countY * countZ then
+                finishWriter ()
+        with
+        | ex ->
+            finishWriter ()
+            raise ex
+
+    let memoryNeed (nBytes: uint64) = nBytes
+    Stage.mapi $"writeZarrEncodedChunks \"{outputPath}\"" mapper memoryNeed id
+
+let writeZarrEncodedChunks
+    (outputPath: string)
+    (name: string)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<EncodedLocatedChunk, unit> =
+
+    writeZarrEncodedChunksWithCompression
+        ZarrCompression.BloscLz4
+        outputPath
+        name
+        physicalSizeX
+        physicalSizeY
+        physicalSizeZ
+        maxConcurrentWrites
+
+let writeZarrLocatedChunksWithCompression<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (compression: ZarrCompression)
+    (outputPath: string)
+    (name: string)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<LocatedChunk<'T>, unit> =
+
+    suppressZarrNetDebugLogging ()
+
+    let dataType = zarrDataType<'T> ()
+    let elementBytes = zarrScalarElementBytes<'T> ()
+    let mutable writer: OmeZarrWriter option = None
+    let mutable zarrStore: LocalFileSystemStore option = None
+    let mutable zarrArray: ZarrArray option = None
+    let mutable layout: ChunkLayout option = None
+    let mutable written = 0
+
+    let createWriter (chunkLayout: ChunkLayout) =
+        let sizeX64, sizeY64, sizeZ64 = chunkLayout.VolumeSize
+        let chunkX64, chunkY64, chunkZ64 = chunkLayout.ChunkSize
+        let sizeX = int sizeX64
+        let sizeY = int sizeY64
+        let sizeZ = int sizeZ64
+        let chunkX = int chunkX64
+        let chunkY = int chunkY64
+        let chunkZ = int chunkZ64
+
+        if sizeX <= 0 || sizeY <= 0 || sizeZ <= 0 then
+            invalidArg "layout" $"writeZarrLocatedChunks expects positive volume size, got {chunkLayout.VolumeSize}."
+        if chunkX <= 0 || chunkY <= 0 || chunkZ <= 0 then
+            invalidArg "layout" $"writeZarrLocatedChunks expects positive chunk size, got {chunkLayout.ChunkSize}."
+
+        let descriptor =
+            BioImageDescriptor(
+                sizeX,
+                sizeY,
+                ZCT(sizeZ, 1, 1),
+                Name = name,
+                DataType = dataType,
+                ChunkX = chunkX,
+                ChunkY = chunkY,
+                ChunkZ = chunkZ,
+                ChunkC = 1,
+                ChunkT = 1,
+                PhysicalSizeX = physicalSizeX,
+                PhysicalSizeY = physicalSizeY,
+                PhysicalSizeZ = physicalSizeZ,
+                Compression = compression)
+
+        let created =
+            OmeZarrWriter.CreateAsync(outputPath, descriptor, CancellationToken.None)
+            |> runTask
+        deleteZarrNetDebugLogs ()
+
+        if maxConcurrentWrites > 0 then
+            OmeZarrWriter.MaxConcurrentWrites <- maxConcurrentWrites
+
+        let store = new LocalFileSystemStore(outputPath)
+        let rootGroup =
+            ZarrGroup.OpenRootAsync(store, CancellationToken.None)
+            |> runTask
+        let array =
+            rootGroup.OpenArrayAsync("0", CancellationToken.None)
+            |> runTask
+
+        writer <- Some created
+        zarrStore <- Some store
+        zarrArray <- Some array
+        layout <- Some chunkLayout
+        array
+
+    let finishWriter () =
+        match writer with
+        | Some zarrWriter ->
+            zarrWriter.DisposeAsync().AsTask()
+            |> runUnitTask
+        | None -> ()
+
+        match zarrStore with
+        | Some store ->
+            store.DisposeAsync().AsTask()
+            |> runUnitTask
+        | None -> ()
+
+        writer <- None
+        zarrStore <- None
+        zarrArray <- None
+        deleteZarrNetDebugLogs ()
+
+    let writeLocatedChunk (array: ZarrArray) (located: LocatedChunk<'T>) =
+        let chunkX64, chunkY64, chunkZ64 = located.Layout.ChunkSize
+        let volumeX64, volumeY64, volumeZ64 = located.Layout.VolumeSize
+        let chunkX = int chunkX64
+        let chunkY = int chunkY64
+        let chunkZ = int chunkZ64
+        let ix, iy, iz = located.Index
+        let actualX64, actualY64, actualZ64 = located.Chunk.Size
+        let actualX = int actualX64
+        let actualY = int actualY64
+        let actualZ = int actualZ64
+        let originX = uint64 ix * chunkX64
+        let originY = uint64 iy * chunkY64
+        let originZ = uint64 iz * chunkZ64
+
+        if originX >= volumeX64 || originY >= volumeY64 || originZ >= volumeZ64 then
+            invalidArg "located" $"writeZarrLocatedChunks chunk index {located.Index} is outside volume {located.Layout.VolumeSize}."
+        if originX + actualX64 > volumeX64 || originY + actualY64 > volumeY64 || originZ + actualZ64 > volumeZ64 then
+            invalidArg "located" $"writeZarrLocatedChunks chunk index {located.Index} with size {located.Chunk.Size} exceeds volume {located.Layout.VolumeSize}."
+
+        let expectedBytes = actualX * actualY * actualZ * elementBytes
+        if located.Chunk.ByteLength <> expectedBytes then
+            failwith $"writeZarrLocatedChunks expected {expectedBytes} bytes, got {located.Chunk.ByteLength}."
+
+        if actualX = chunkX && actualY = chunkY && actualZ = chunkZ then
+            let coord = [| 0L; 0L; int64 iz; int64 iy; int64 ix |]
+            array.WriteChunkDecodedAsync(
+                coord,
+                ReadOnlyMemory<byte>(located.Chunk.Bytes, 0, located.Chunk.ByteLength),
+                true,
+                CancellationToken.None)
+            |> runUnitTask
+        else
+            let regionStart =
+                [| 0L
+                   0L
+                   int64 originZ
+                   int64 originY
+                   int64 originX |]
+            let regionEnd =
+                [| 1L
+                   1L
+                   int64 (originZ + actualZ64)
+                   int64 (originY + actualY64)
+                   int64 (originX + actualX64) |]
+            array.WriteRegionAsync(regionStart, regionEnd, located.Chunk.Bytes[0 .. located.Chunk.ByteLength - 1], CancellationToken.None)
+            |> runUnitTask
+
+    let mapper (debug: bool) (_idx: int64) (located: LocatedChunk<'T>) =
+        try
+            if located.Layout.PixelType <> dataType then
+                invalidArg "located" $"writeZarrLocatedChunks expected {dataType} chunks, got {located.Layout.PixelType}."
+            if located.Layout.Components <> 1u then
+                invalidArg "located" $"writeZarrLocatedChunks supports scalar chunks only, got {located.Layout.Components} components."
+
+            let array =
+                match layout, zarrArray with
+                | Some expected, Some array ->
+                    if expected <> located.Layout then
+                        failwith $"writeZarrLocatedChunks expected layout {expected}, got {located.Layout}."
+                    array
+                | None, None ->
+                    createWriter located.Layout
+                | _ ->
+                    failwith "writeZarrLocatedChunks has inconsistent writer state."
+
+            if debug then
+                printfn $"[writeZarrLocatedChunks] Saved chunk index {located.Index} to {outputPath} as {dataType}"
+
+            writeLocatedChunk array located
+            written <- written + 1
+
+            let countX, countY, countZ = located.Layout.ChunkCounts
+            if written = countX * countY * countZ then
+                finishWriter ()
+        finally
+            Chunk.decRef located.Chunk
+
+    let memoryNeed nPixels =
+        nPixels * uint64 elementBytes
+
+    Stage.mapi $"writeZarrLocatedChunks \"{outputPath}\"" mapper memoryNeed id
+
+let writeZarrLocatedChunks<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (outputPath: string)
+    (name: string)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<LocatedChunk<'T>, unit> =
+
+    writeZarrLocatedChunksWithCompression
+        ZarrCompression.BloscLz4
+        outputPath
+        name
+        physicalSizeX
+        physicalSizeY
+        physicalSizeZ
+        maxConcurrentWrites
+
 let icompare s1 s2  = 
     System.String.Equals(s1, s2, System.StringComparison.CurrentCultureIgnoreCase)
 
@@ -3867,6 +4757,264 @@ let writeZarrChunkSlicesWithCompression<'T when 'T: equality and 'T: (new: unit 
 
     Stage.mapi $"writeZarrChunkSlices \"{outputPath}\"" mapper memoryNeed id
 
+let writeZarrChunkThickWithCompression<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (compression: ZarrCompression)
+    (outputPath: string)
+    (name: string)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<Chunk<'T>, unit> =
+
+    suppressZarrNetDebugLogging ()
+
+    let dataType = zarrDataType<'T> ()
+    let elementBytes = zarrScalarElementBytes<'T> ()
+    let depth = int depth
+    let chunkX = max 1u chunkX |> int
+    let chunkY = max 1u chunkY |> int
+    let chunkZ = max 1u chunkZ |> int
+    let mutable writer: OmeZarrWriter option = None
+    let mutable zarrStore: LocalFileSystemStore option = None
+    let mutable zarrArray: ZarrArray option = None
+    let mutable width = 0
+    let mutable height = 0
+    let mutable nextZ = 0
+
+    let createWriter chunkWidth chunkHeight =
+        let descriptor =
+            BioImageDescriptor(
+                chunkWidth,
+                chunkHeight,
+                ZCT(depth, 1, 1),
+                Name = name,
+                DataType = dataType,
+                ChunkX = chunkX,
+                ChunkY = chunkY,
+                ChunkZ = chunkZ,
+                ChunkC = 1,
+                ChunkT = 1,
+                PhysicalSizeX = physicalSizeX,
+                PhysicalSizeY = physicalSizeY,
+                PhysicalSizeZ = physicalSizeZ,
+                Compression = compression)
+
+        let created =
+            OmeZarrWriter.CreateAsync(outputPath, descriptor, CancellationToken.None)
+            |> runTask
+        deleteZarrNetDebugLogs ()
+
+        if maxConcurrentWrites > 0 then
+            OmeZarrWriter.MaxConcurrentWrites <- maxConcurrentWrites
+
+        let store = new LocalFileSystemStore(outputPath)
+        let rootGroup =
+            ZarrGroup.OpenRootAsync(store, CancellationToken.None)
+            |> runTask
+        let array =
+            rootGroup.OpenArrayAsync("0", CancellationToken.None)
+            |> runTask
+
+        width <- chunkWidth
+        height <- chunkHeight
+        writer <- Some created
+        zarrStore <- Some store
+        zarrArray <- Some array
+        created, array
+
+    let finishWriter () =
+        match writer with
+        | Some zarrWriter ->
+            zarrWriter.DisposeAsync().AsTask()
+            |> runUnitTask
+        | None -> ()
+
+        match zarrStore with
+        | Some store ->
+            store.DisposeAsync().AsTask()
+            |> runUnitTask
+        | None -> ()
+
+        writer <- None
+        zarrStore <- None
+        zarrArray <- None
+        deleteZarrNetDebugLogs ()
+
+    let copyChunkRegionToBuffer
+        (source: Chunk<'T>)
+        sourceWidth
+        sourceHeight
+        localZStart
+        yStart
+        xStart
+        zCount
+        yCount
+        xCount
+        outputZ
+        outputY
+        outputX
+        (buffer: byte[])
+        =
+
+        let rowBytes = xCount * elementBytes
+        for z in 0 .. zCount - 1 do
+            let sourceZ = localZStart + z
+            for y in 0 .. yCount - 1 do
+                let sourceOffset =
+                    ((sourceZ * sourceHeight + (yStart + y)) * sourceWidth + xStart) * elementBytes
+                let destinationOffset =
+                    ((z * outputY + y) * outputX) * elementBytes
+                Buffer.BlockCopy(source.Bytes, sourceOffset, buffer, destinationOffset, rowBytes)
+
+    let writeChunkRegion
+        (array: ZarrArray)
+        (source: Chunk<'T>)
+        sourceWidth
+        sourceHeight
+        localZStart
+        globalZStart
+        yStart
+        xStart
+        zCount
+        yCount
+        xCount
+        =
+
+        let isFullZarrChunk =
+            zCount = chunkZ
+            && yCount = chunkY
+            && xCount = chunkX
+            && globalZStart % chunkZ = 0
+            && yStart % chunkY = 0
+            && xStart % chunkX = 0
+
+        let outputZ, outputY, outputX =
+            if isFullZarrChunk then
+                chunkZ, chunkY, chunkX
+            else
+                zCount, yCount, xCount
+
+        let bufferBytes = outputZ * outputY * outputX * elementBytes
+        let buffer = ArrayPool<byte>.Shared.Rent(bufferBytes)
+        try
+            copyChunkRegionToBuffer
+                source
+                sourceWidth
+                sourceHeight
+                localZStart
+                yStart
+                xStart
+                zCount
+                yCount
+                xCount
+                outputZ
+                outputY
+                outputX
+                buffer
+
+            let memory = ReadOnlyMemory<byte>(buffer, 0, bufferBytes)
+            if isFullZarrChunk then
+                let coord =
+                    [| 0L
+                       0L
+                       int64 (globalZStart / chunkZ)
+                       int64 (yStart / chunkY)
+                       int64 (xStart / chunkX) |]
+                array.WriteChunkDecodedAsync(coord, memory, true, CancellationToken.None)
+                |> runUnitTask
+            else
+                let regionStart =
+                    [| 0L
+                       0L
+                       int64 globalZStart
+                       int64 yStart
+                       int64 xStart |]
+                let regionEnd =
+                    [| 1L
+                       1L
+                       int64 (globalZStart + zCount)
+                       int64 (yStart + yCount)
+                       int64 (xStart + xCount) |]
+                array.WriteRegionAsync(regionStart, regionEnd, buffer[0 .. bufferBytes - 1], CancellationToken.None)
+                |> runUnitTask
+        finally
+            ArrayPool<byte>.Shared.Return(buffer)
+
+    let mapper (debug: bool) (_idx: int64) (chunk: Chunk<'T>) =
+        try
+            if depth <= 0 then
+                invalidArg "depth" "writeZarrChunkThick expects positive depth."
+
+            let chunkWidth64, chunkHeight64, chunkDepth64 = chunk.Size
+            if chunkDepth64 = 0UL then
+                invalidArg "chunk" $"writeZarrChunkThick cannot write an empty-depth chunk: {chunk.Size}."
+
+            let chunkWidth = int chunkWidth64
+            let chunkHeight = int chunkHeight64
+            let chunkDepth = int chunkDepth64
+            let array =
+                match writer, zarrArray with
+                | Some _writer, Some array ->
+                    if chunkWidth <> width || chunkHeight <> height then
+                        failwith $"writeZarrChunkThick expected all thick chunks to be {width}x{height}, got {chunkWidth}x{chunkHeight}."
+                    array
+                | None, None ->
+                    createWriter chunkWidth chunkHeight |> snd
+                | _ ->
+                    failwith "writeZarrChunkThick has inconsistent writer state."
+
+            let planeBytes = chunkWidth * chunkHeight * elementBytes
+            let expectedBytes = planeBytes * chunkDepth
+            if chunk.ByteLength <> expectedBytes then
+                failwith $"writeZarrChunkThick expected {expectedBytes} bytes, got {chunk.ByteLength}."
+            if nextZ + chunkDepth > depth then
+                failwith $"writeZarrChunkThick received chunk depth {chunkDepth} at z={nextZ}, exceeding declared depth {depth}."
+
+            let mutable localZ = 0
+            while localZ < chunkDepth do
+                let globalZ = nextZ + localZ
+                let zOffset = globalZ % chunkZ
+                let zCount = min (chunkDepth - localZ) (chunkZ - zOffset)
+
+                for yStart in 0 .. chunkY .. chunkHeight - 1 do
+                    let yCount = min chunkY (chunkHeight - yStart)
+                    for xStart in 0 .. chunkX .. chunkWidth - 1 do
+                        let xCount = min chunkX (chunkWidth - xStart)
+
+                        if debug then
+                            printfn $"[writeZarrChunkThick] Saved region z {globalZ}..{globalZ + zCount - 1}, y {yStart}..{yStart + yCount - 1}, x {xStart}..{xStart + xCount - 1} to {outputPath} as {dataType}"
+
+                        writeChunkRegion
+                            array
+                            chunk
+                            chunkWidth
+                            chunkHeight
+                            localZ
+                            globalZ
+                            yStart
+                            xStart
+                            zCount
+                            yCount
+                            xCount
+
+                localZ <- localZ + zCount
+
+            nextZ <- nextZ + chunkDepth
+            if nextZ = depth then
+                finishWriter ()
+        finally
+            Chunk.decRef chunk
+
+    let memoryNeed nPixels =
+        nPixels * uint64 (elementBytes * 2)
+
+    Stage.mapi $"writeZarrChunkThick \"{outputPath}\"" mapper memoryNeed id
+
 let writeZarrChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (outputPath: string)
     (name: string)
@@ -3881,6 +5029,258 @@ let writeZarrChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: 
     : Stage<Chunk<'T>, unit> =
 
     writeZarrChunkSlicesWithCompression
+        ZarrCompression.BloscLz4
+        outputPath
+        name
+        depth
+        chunkX
+        chunkY
+        chunkZ
+        physicalSizeX
+        physicalSizeY
+        physicalSizeZ
+        maxConcurrentWrites
+
+let writeZarrChunkThick<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (outputPath: string)
+    (name: string)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<Chunk<'T>, unit> =
+
+    writeZarrChunkThickWithCompression
+        ZarrCompression.BloscLz4
+        outputPath
+        name
+        depth
+        chunkX
+        chunkY
+        chunkZ
+        physicalSizeX
+        physicalSizeY
+        physicalSizeZ
+        maxConcurrentWrites
+
+let writeZarrChunkSlicesAlignedWithCompression<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (compression: ZarrCompression)
+    (outputPath: string)
+    (name: string)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<Chunk<'T>, unit> =
+
+    suppressZarrNetDebugLogging ()
+
+    let dataType = zarrDataType<'T> ()
+    let elementBytes = zarrScalarElementBytes<'T> ()
+    let depth = int depth
+    let chunkX = max 1u chunkX |> int
+    let chunkY = max 1u chunkY |> int
+    let chunkZ = max 1u chunkZ |> int
+    let mutable writer: OmeZarrWriter option = None
+    let mutable zarrStore: LocalFileSystemStore option = None
+    let mutable zarrArray: ZarrArray option = None
+    let mutable width = 0
+    let mutable height = 0
+    let mutable zIndex = 0
+    let mutable currentZChunk = -1
+    let mutable buffers: byte[][] = Array.empty
+    let mutable xChunkCount = 0
+    let mutable yChunkCount = 0
+
+    let chunkBufferBytes = chunkX * chunkY * chunkZ * elementBytes
+
+    let createWriter chunkWidth chunkHeight =
+        let descriptor =
+            BioImageDescriptor(
+                chunkWidth,
+                chunkHeight,
+                ZCT(depth, 1, 1),
+                Name = name,
+                DataType = dataType,
+                ChunkX = chunkX,
+                ChunkY = chunkY,
+                ChunkZ = chunkZ,
+                ChunkC = 1,
+                ChunkT = 1,
+                PhysicalSizeX = physicalSizeX,
+                PhysicalSizeY = physicalSizeY,
+                PhysicalSizeZ = physicalSizeZ,
+                Compression = compression)
+
+        let created =
+            OmeZarrWriter.CreateAsync(outputPath, descriptor, CancellationToken.None)
+            |> runTask
+        deleteZarrNetDebugLogs ()
+
+        if maxConcurrentWrites > 0 then
+            OmeZarrWriter.MaxConcurrentWrites <- maxConcurrentWrites
+
+        let store = new LocalFileSystemStore(outputPath)
+        let rootGroup =
+            ZarrGroup.OpenRootAsync(store, CancellationToken.None)
+            |> runTask
+        let array =
+            rootGroup.OpenArrayAsync("0", CancellationToken.None)
+            |> runTask
+
+        width <- chunkWidth
+        height <- chunkHeight
+        xChunkCount <- (chunkWidth + chunkX - 1) / chunkX
+        yChunkCount <- (chunkHeight + chunkY - 1) / chunkY
+        writer <- Some created
+        zarrStore <- Some store
+        zarrArray <- Some array
+        array
+
+    let allocateBuffers () =
+        buffers <- Array.init (xChunkCount * yChunkCount) (fun _ -> ArrayPool<byte>.Shared.Rent(chunkBufferBytes))
+        for buffer in buffers do
+            buffer.AsSpan(0, chunkBufferBytes).Clear()
+
+    let returnBuffers () =
+        for buffer in buffers do
+            ArrayPool<byte>.Shared.Return(buffer)
+        buffers <- Array.empty
+
+    let finishWriter () =
+        match writer with
+        | Some zarrWriter ->
+            zarrWriter.DisposeAsync().AsTask()
+            |> runUnitTask
+        | None -> ()
+
+        match zarrStore with
+        | Some store ->
+            store.DisposeAsync().AsTask()
+            |> runUnitTask
+        | None -> ()
+
+        writer <- None
+        zarrStore <- None
+        zarrArray <- None
+        deleteZarrNetDebugLogs ()
+
+    let flushBuffers () =
+        if currentZChunk >= 0 && buffers.Length > 0 then
+            let array =
+                match zarrArray with
+                | Some array -> array
+                | None -> failwith "writeZarrChunkSlicesAligned has no open Zarr array."
+
+            for yChunk in 0 .. yChunkCount - 1 do
+                for xChunk in 0 .. xChunkCount - 1 do
+                    let buffer = buffers[yChunk * xChunkCount + xChunk]
+                    let coord = [| 0L; 0L; int64 currentZChunk; int64 yChunk; int64 xChunk |]
+                    array.WriteChunkDecodedAsync(
+                        coord,
+                        ReadOnlyMemory<byte>(buffer, 0, chunkBufferBytes),
+                        true,
+                        CancellationToken.None)
+                    |> runUnitTask
+            deleteZarrNetDebugLogs ()
+            returnBuffers ()
+
+    let copySliceIntoBuffers (slice: Chunk<'T>) localZ =
+        let sliceWidth64, sliceHeight64, sliceDepth64 = slice.Size
+        if sliceDepth64 <> 1UL then
+            invalidArg "slice" $"writeZarrChunkSlicesAligned expects 2D chunks with depth 1, got {slice.Size}."
+        let sliceWidth = int sliceWidth64
+        let sliceHeight = int sliceHeight64
+
+        let array =
+            match writer, zarrArray with
+            | Some _writer, Some array ->
+                if sliceWidth <> width || sliceHeight <> height then
+                    failwith $"writeZarrChunkSlicesAligned expected all slices to be {width}x{height}, got {sliceWidth}x{sliceHeight}."
+                array
+            | None, None ->
+                createWriter sliceWidth sliceHeight
+            | _ ->
+                failwith "writeZarrChunkSlicesAligned has inconsistent writer state."
+
+        let expectedBytes = sliceWidth * sliceHeight * elementBytes
+        if slice.ByteLength <> expectedBytes then
+            failwith $"writeZarrChunkSlicesAligned expected {expectedBytes} bytes, got {slice.ByteLength}."
+
+        if buffers.Length = 0 then
+            allocateBuffers ()
+
+        for yChunk in 0 .. yChunkCount - 1 do
+            let yStart = yChunk * chunkY
+            let yCount = min chunkY (height - yStart)
+            for xChunk in 0 .. xChunkCount - 1 do
+                let xStart = xChunk * chunkX
+                let xCount = min chunkX (width - xStart)
+                let rowBytes = xCount * elementBytes
+                let buffer = buffers[yChunk * xChunkCount + xChunk]
+
+                for y in 0 .. yCount - 1 do
+                    let sourceOffset =
+                        ((yStart + y) * width + xStart) * elementBytes
+                    let destinationOffset =
+                        ((localZ * chunkY + y) * chunkX) * elementBytes
+                    Buffer.BlockCopy(slice.Bytes, sourceOffset, buffer, destinationOffset, rowBytes)
+
+        array |> ignore
+
+    let mapper (debug: bool) (_idx: int64) (slice: Chunk<'T>) =
+        try
+            if depth <= 0 then
+                invalidArg "depth" "writeZarrChunkSlicesAligned expects positive depth."
+            if zIndex >= depth then
+                failwith $"writeZarrChunkSlicesAligned received slice {zIndex}, but declared depth is {depth}."
+
+            let zChunk = zIndex / chunkZ
+            if currentZChunk = -1 then
+                currentZChunk <- zChunk
+            elif zChunk <> currentZChunk then
+                flushBuffers ()
+                currentZChunk <- zChunk
+
+            if debug then
+                printfn $"[writeZarrChunkSlicesAligned] Buffered slice {zIndex} to {outputPath} as {dataType}"
+
+            copySliceIntoBuffers slice (zIndex - zChunk * chunkZ)
+            zIndex <- zIndex + 1
+
+            if zIndex = depth then
+                flushBuffers ()
+                finishWriter ()
+        finally
+            Chunk.decRef slice
+
+    let memoryNeed nPixels =
+        nPixels * uint64 elementBytes
+
+    Stage.mapi $"writeZarrChunkSlicesAligned \"{outputPath}\"" mapper memoryNeed id
+
+let writeZarrChunkSlicesAligned<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (outputPath: string)
+    (name: string)
+    (depth: uint)
+    (chunkX: uint)
+    (chunkY: uint)
+    (chunkZ: uint)
+    (physicalSizeX: float)
+    (physicalSizeY: float)
+    (physicalSizeZ: float)
+    (maxConcurrentWrites: int)
+    : Stage<Chunk<'T>, unit> =
+
+    writeZarrChunkSlicesAlignedWithCompression
         ZarrCompression.BloscLz4
         outputPath
         name

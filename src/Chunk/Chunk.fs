@@ -130,6 +130,16 @@ type Chunk<'T when 'T: equality> =
     override this.GetHashCode() =
         RuntimeHelpers.GetHashCode(this.RefCount)
 
+type LocatedChunk<'T when 'T: equality> =
+    { Index: ChunkIndex
+      Layout: ChunkLayout
+      Chunk: Chunk<'T> }
+
+type EncodedLocatedChunk =
+    { Index: ChunkIndex
+      Layout: ChunkLayout
+      Payload: byte[] option }
+
 type VectorChunk<'T when 'T: equality> =
     { SpatialSize: uint64 * uint64 * uint64
       Components: uint32

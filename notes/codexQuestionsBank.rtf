@@ -7,9 +7,12 @@
 \pard\pardeftab720\partightenfactor0
 
 \f0\fs28 \cf2 \expnd0\expndtw0\kerning0
-* Please make int8, uint16/int16, int, float 32 with float32 kernels version of the c++-convolve \
-Summary: Not completed. The native convolution work currently has direct UInt8 input/output with Float32 kernel and Float32 input/output with Float32 kernel. Benchmark fallback paths can still widen other integer types through Float32 and cast back, but there are not yet direct native C++ convolve entry points for Int8, UInt16, Int16, or Int32. Native median, separately, was added for UInt8, UInt16, Int32, and Float32.\
- \
+Does there exist a terminal json->dsl version of the compiler?\
+\
+\pard\pardeftab720\partightenfactor0
+\cf2 thresholdZarrChunksUInt8 should be regular threshold. Perhaps Chunks and LocatedChunks should be merged, but we should be careful not to slow everything down, so for now, specialised threshold is ok for the principle.\
+\pard\pardeftab720\partightenfactor0
+\cf2  \
 \'97\'97\'97\'97\'97\'97\'97\'97\'97\'97\'97\'97\'97\'97\'97\'97\'97\'97\
 \
 Ignore anything below here:\

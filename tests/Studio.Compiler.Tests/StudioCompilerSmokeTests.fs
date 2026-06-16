@@ -269,7 +269,7 @@ let rec private sourceFor caseId portType =
                   p "type" "UInt8" false
                   p "format" "OME-Zarr" false
                   p "input" "input.zarr" false
-                  p "slabDepth" "8" false
+                  p "thickDepth" "8" false
                   p "multiscaleIndex" "0" false
                   p "datasetIndex" "0" false
                   p "timepoint" "0" false

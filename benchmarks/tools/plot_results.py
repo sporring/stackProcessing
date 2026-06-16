@@ -285,7 +285,7 @@ def plot_by_size(rows: list[dict[str, object]], output_dir: Path, pixel_type: st
                 and row["pixelType"] == pixel_type
                 and (
                     (row["backend"] == "stackprocessing" and row["parameter"] == lmip_windows.get(str(row["shape"])))
-                    or (row["backend"] != "stackprocessing" and row["parameter"] == parameter)
+                    or row["backend"] != "stackprocessing"
                 )
             ]
             title_parameter = "window 256/64/16"

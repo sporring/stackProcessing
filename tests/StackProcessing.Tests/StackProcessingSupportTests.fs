@@ -2131,7 +2131,7 @@ let stackProcessingSupportSuite =
 
                 let info = getZarrInfo zarrPath 0 0
                 Expect.equal info.size [ 5UL; 4UL; 4UL ] "Zarr metadata should expose x/y/z image size."
-                Expect.equal info.topLeftInfo.componentType "uint8" "Zarr metadata should expose the dataset dtype."
+                Expect.equal info.componentType "uint8" "Zarr metadata should expose the dataset dtype."
 
                 rereadSlabs <-
                     source (2UL * 1024UL * 1024UL * 1024UL)
@@ -2214,9 +2214,9 @@ let stackProcessingSupportSuite =
                 >=> writeZarr complex128Path "complex128" 2u 3u 2u 2u 1.0 1.0 1.0 0
                 |> sink
 
-                Expect.equal (getZarrInfo float64Path 0 0).topLeftInfo.componentType "float64" "Float64 Zarr metadata should expose float64 dtype."
-                Expect.equal (getZarrInfo complex64Path 0 0).topLeftInfo.componentType "complex64" "Complex64 Zarr metadata should expose complex64 dtype."
-                Expect.equal (getZarrInfo complex128Path 0 0).topLeftInfo.componentType "complex128" "Complex128 Zarr metadata should expose complex128 dtype."
+                Expect.equal (getZarrInfo float64Path 0 0).componentType "float64" "Float64 Zarr metadata should expose float64 dtype."
+                Expect.equal (getZarrInfo complex64Path 0 0).componentType "complex64" "Complex64 Zarr metadata should expose complex64 dtype."
+                Expect.equal (getZarrInfo complex128Path 0 0).componentType "complex128" "Complex128 Zarr metadata should expose complex128 dtype."
 
                 float64Slabs <-
                     source (2UL * 1024UL * 1024UL * 1024UL)

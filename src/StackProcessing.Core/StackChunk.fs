@@ -1507,6 +1507,20 @@ let thresholdNative<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
 
     Stage.map $"chunkThresholdNative.{typeof<'T>.Name}.{threshold}" mapper id id
 
+let thresholdLocatedNativeUInt8
+    (threshold: double)
+    : Stage<LocatedChunk<uint8>, LocatedChunk<uint8>> =
+    let mapper _debug (located: LocatedChunk<uint8>) : LocatedChunk<uint8> =
+        try
+            let output = thresholdNativeChunk threshold located.Chunk
+            { Index = located.Index
+              Layout = { located.Layout with PixelType = "uint8" }
+              Chunk = output }
+        finally
+            Chunk.decRef located.Chunk
+
+    Stage.map $"chunkThresholdLocatedNative.UInt8.{threshold}" mapper id id
+
 let thresholdNativeParallelCollect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (threshold: double)
     (workers: int)

@@ -437,11 +437,16 @@ module PipelineCodeGenerator =
         || node.FunctionId = "FitBiasModel"
         || node.FunctionId = "FitBiasModelMasked"
 
-    let private stackInfoFieldExpression bindingName portIndex =
-        [| $"{bindingName}.dimensions"
+    let private imageInfoFieldExpression bindingName portIndex =
+        [| $"{bindingName}.format"
+           $"{bindingName}.dimensions"
            $"{bindingName}.size"
            $"{bindingName}.componentType"
            $"{bindingName}.numberOfComponents"
+           $"{bindingName}.chunks"
+           $"{bindingName}.chunks[0]"
+           $"{bindingName}.chunks[1]"
+           $"{bindingName}.chunks[2]"
            $"{bindingName}.size[0]"
            $"{bindingName}.size[1]"
            $"{bindingName}.size[2]" |]
@@ -474,35 +479,30 @@ module PipelineCodeGenerator =
     let private isExpandNode (node: SavedNode) =
         node.FunctionId = "Expand"
 
-    let private isWriteStackInfoNode (node: SavedNode) =
+    let private isWriteImageInfoNode (node: SavedNode) =
         node.FunctionId = "Write"
-        && savedParamValue "format" node <> "OME-Zarr"
-        && savedParamValue "format" node <> "NeXus/HDF5"
 
     let private isWriteChunkInfoNode (node: SavedNode) =
         node.FunctionId = "WriteChunks"
-        || (node.FunctionId = "Write"
-            && (savedParamValue "format" node = "OME-Zarr" || savedParamValue "format" node = "NeXus/HDF5"))
 
     let private readFormat (node: SavedNode) =
         savedParamValue "format" node
 
-    let private isReadStackInfoNode (node: SavedNode) =
+    let private isReadImageInfoNode (node: SavedNode) =
         match node.FunctionId with
         | "Read"
         | "ReadRandom"
-        | "ReadRange" -> readFormat node <> "OME-Zarr" && readFormat node <> "NeXus/HDF5"
+        | "ReadRange" -> true
         | _ -> false
+
+    let private isImageInfoNode (node: SavedNode) =
+        node.FunctionId = "GetZarrInfo" || node.FunctionId = "GetNexusInfo"
 
     let private isChunkInfoNode (node: SavedNode) =
-        node.FunctionId = "GetChunkInfo" || node.FunctionId = "GetZarrInfo" || node.FunctionId = "GetNexusInfo"
+        node.FunctionId = "GetChunkInfo"
 
     let private isReadChunkInfoNode (node: SavedNode) =
-        match node.FunctionId with
-        | "Read"
-        | "ReadRandom"
-        | "ReadRange" -> readFormat node = "OME-Zarr" || readFormat node = "NeXus/HDF5"
-        | _ -> false
+        false
 
     let private quantileFieldExpression bindingName portIndex =
         if portIndex >= 0 && portIndex < 5 then Some $"{bindingName}[{portIndex}]" else None
@@ -519,7 +519,7 @@ module PipelineCodeGenerator =
         | _ ->
             if portIndex = 0 then Some bindingName else None
 
-    let private parameterExpression (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (quantileNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (serialGeometryNamesByNodeId: Map<string, string>) (node: SavedNode) parameterIndex key =
+    let private parameterExpression (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (quantileNamesByNodeId: Map<string, string>) (imageInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (serialGeometryNamesByNodeId: Map<string, string>) (node: SavedNode) parameterIndex key =
         let linkedExpression =
             graph.Edges
             |> Seq.tryFind (fun edge ->
@@ -559,12 +559,12 @@ module PipelineCodeGenerator =
                                 match quantileNamesByNodeId |> Map.tryFind edge.FromNode with
                                 | Some name -> quantileFieldExpression name edge.FromPort
                                 | None ->
-                                    stackInfoNamesByNodeId
+                                    imageInfoNamesByNodeId
                                     |> Map.tryFind edge.FromNode
                                     |> Option.bind (fun name ->
                                         match nodesById |> Map.tryFind edge.FromNode with
                                         | Some sourceNode when sourceNode.FunctionId = "Expand" ->
-                                            stackInfoFieldExpression name edge.FromPort
+                                            imageInfoFieldExpression name edge.FromPort
                                         | Some _ when edge.FromPort = 0 ->
                                             Some name
                                         | _ ->
@@ -594,7 +594,7 @@ module PipelineCodeGenerator =
             { Value = savedParamValue key node
               IsLinked = false }
 
-    let private scalarBinding (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (quantileNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (serialGeometryNamesByNodeId: Map<string, string>) (node: SavedNode) =
+    let private scalarBinding (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (quantileNamesByNodeId: Map<string, string>) (imageInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (serialGeometryNamesByNodeId: Map<string, string>) (node: SavedNode) =
         let name = scalarNamesByNodeId |> Map.find node.Id
 
         let value =
@@ -603,7 +603,7 @@ module PipelineCodeGenerator =
                 let parameterExpression key =
                     node.Parameters
                     |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
                     |> Option.defaultValue { Value = ""; IsLinked = false }
 
                 let operation =
@@ -630,7 +630,7 @@ module PipelineCodeGenerator =
                 let parameterExpression =
                     node.Parameters
                     |> Seq.tryFindIndex (fun parameter -> parameter.Key = "a")
-                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index "a")
+                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index "a")
                     |> Option.defaultValue { Value = ""; IsLinked = false }
 
                 let argument =
@@ -644,7 +644,7 @@ module PipelineCodeGenerator =
                 let parameterExpression key =
                     node.Parameters
                     |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
                     |> Option.defaultValue { Value = ""; IsLinked = false }
 
                 let seed = (parameterExpression "seed").Value
@@ -664,7 +664,7 @@ module PipelineCodeGenerator =
                 let histogram =
                     node.Parameters
                     |> Seq.tryFindIndex (fun parameter -> parameter.Key = "histogram")
-                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index "histogram")
+                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index "histogram")
                     |> Option.defaultValue { Value = savedParamValue "histogram" node; IsLinked = false }
 
                 $"{functionName} {histogram.Value}"
@@ -673,11 +673,11 @@ module PipelineCodeGenerator =
 
         name, $"let {name} = {value}"
 
-    let private chunkInfoBinding (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (quantileNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (serialGeometryNamesByNodeId: Map<string, string>) (node: SavedNode) =
+    let private chunkInfoBinding (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (quantileNamesByNodeId: Map<string, string>) (imageInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (serialGeometryNamesByNodeId: Map<string, string>) (node: SavedNode) =
         let parameterExpression key =
             node.Parameters
             |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
             |> Option.defaultValue { Value = ""; IsLinked = false }
 
         let stringArgument key =
@@ -687,25 +687,14 @@ module PipelineCodeGenerator =
         let name = chunkInfoNamesByNodeId |> Map.find node.Id
         let input = stringArgument "input"
 
-        if node.FunctionId = "GetZarrInfo" then
-            let multiscaleIndex = parameterExpression "multiscaleIndex"
-            let datasetIndex = parameterExpression "datasetIndex"
-            name, $"let {name} = getZarrInfo {input} {multiscaleIndex.Value} {datasetIndex.Value}"
-        elif node.FunctionId = "GetNexusInfo" then
-            let datasetPath = stringArgument "datasetPath"
-            let frameAxis = parameterExpression "frameAxis"
-            let yAxis = parameterExpression "yAxis"
-            let xAxis = parameterExpression "xAxis"
-            name, $"let {name} = getNexusInfo {input} {datasetPath} {frameAxis.Value} {yAxis.Value} {xAxis.Value}"
-        else
-            let suffix = stringArgument "suffix"
-            name, $"let {name} = getChunkInfo {input} {suffix}"
+        let suffix = stringArgument "suffix"
+        name, $"let {name} = getChunkInfo {input} {suffix}"
 
-    let private savedElementLine (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (quantileNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (serialGeometryNamesByNodeId: Map<string, string>) (node: SavedNode) =
+    let private savedElementLine (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (quantileNamesByNodeId: Map<string, string>) (imageInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (serialGeometryNamesByNodeId: Map<string, string>) (node: SavedNode) =
         let parameterExpressionForNode (targetNode: SavedNode) key =
             targetNode.Parameters
             |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId targetNode index key)
+            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId targetNode index key)
             |> Option.defaultValue { Value = ""; IsLinked = false }
 
         let parameterExpression key =
@@ -902,8 +891,8 @@ module PipelineCodeGenerator =
                                         PortType.Custom "ImageStats"
                                     elif recordSource.FunctionId = "ObjectSizeStats" then
                                         PortType.Custom "ObjectSizeStats"
-                                    elif isWriteStackInfoNode recordSource || isReadStackInfoNode recordSource then
-                                        PortType.Custom "StackInfo"
+                                    elif isImageInfoNode recordSource || isWriteImageInfoNode recordSource || isReadImageInfoNode recordSource then
+                                        PortType.Custom "ImageInfo"
                                     elif isChunkInfoNode recordSource || isReadChunkInfoNode recordSource then
                                         PortType.Custom "ChunkInfo"
                                     else
@@ -1211,7 +1200,7 @@ module PipelineCodeGenerator =
             let format = savedParamValue "format" node
             let input = quotedParameter "input"
             let suffix = quotedParameterOrDefault "suffix" ".tiff"
-            let slabDepth = parameterValue "slabDepth"
+            let thickDepth = parameterValue "thickDepth"
             let multiscaleIndex = parameterValue "multiscaleIndex"
             let datasetIndex = parameterValue "datasetIndex"
             let timepoint = parameterValue "timepoint"
@@ -1226,7 +1215,7 @@ module PipelineCodeGenerator =
                 let volumeInput = $"(volumeFilePath {input} {suffix})"
                 $"|> readChunkVolume<{pixelType}> {volumeInput}" |> sourcePrefix availableMemory
             | "OME-Zarr" ->
-                $"|> readZarrSlab<{pixelType}> {input} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
+                $"|> readZarrThick<{pixelType}> 0u System.UInt32.MaxValue {thickDepth} {input} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
             | "NeXus/HDF5" ->
                 $"|> readNexusSlab<{pixelType}> {input} {datasetPath} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
             | _ ->
@@ -1272,7 +1261,7 @@ module PipelineCodeGenerator =
                 let physicalSizeY = parameterValue "physicalSizeY"
                 let physicalSizeZ = parameterValue "physicalSizeZ"
                 let maxConcurrentWrites = parameterValue "maxConcurrentWrites"
-                $">=> writeZarr {output} {name} {depth} {chunkX} {chunkY} {chunkZ} {physicalSizeX} {physicalSizeY} {physicalSizeZ} {maxConcurrentWrites}"
+                $">=> writeZarrThick {output} {name} {depth} {chunkX} {chunkY} {chunkZ} {physicalSizeX} {physicalSizeY} {physicalSizeZ} {maxConcurrentWrites}"
             | "NeXus/HDF5" ->
                 let datasetPath = quotedParameter "datasetPath"
                 let depth = parameterValue "depth"
@@ -1977,35 +1966,35 @@ module PipelineCodeGenerator =
             |> Array.mapi (fun index node -> node.Id, $"Quantiles{index}")
             |> Map.ofArray
 
-        let stackInfoExpandNodesWithLinkedOutputs =
-            expandNodesFor (fun node -> isWriteStackInfoNode node || isReadStackInfoNode node)
+        let imageInfoExpandNodesWithLinkedOutputs =
+            expandNodesFor (fun node -> isImageInfoNode node || isWriteImageInfoNode node || isReadImageInfoNode node)
 
-        let stackInfoProducerNodesForExpand =
-            stackInfoExpandNodesWithLinkedOutputs
+        let imageInfoProducerNodesForExpand =
+            imageInfoExpandNodesWithLinkedOutputs
             |> Array.choose expandSourceNode
             |> Array.distinctBy _.Id
 
-        let stackInfoProducerNodesWithDirectLinkedOutputs =
+        let imageInfoProducerNodesWithDirectLinkedOutputs =
             graph.Edges
             |> Array.choose (fun edge ->
                 if edge.FromKind = "reducerOutput" && edge.ToKind = "parameterInput" then
                     nodesById |> Map.tryFind edge.FromNode
                 else
                     None)
-            |> Array.filter (fun node -> isWriteStackInfoNode node || isReadStackInfoNode node)
+            |> Array.filter (fun node -> isImageInfoNode node || isWriteImageInfoNode node || isReadImageInfoNode node)
             |> Array.distinctBy _.Id
 
-        let stackInfoProducerNodesWithLinkedOutputs =
-            Array.concat [ stackInfoProducerNodesForExpand; stackInfoProducerNodesWithDirectLinkedOutputs ]
+        let imageInfoProducerNodesWithLinkedOutputs =
+            Array.concat [ imageInfoProducerNodesForExpand; imageInfoProducerNodesWithDirectLinkedOutputs ]
             |> Array.distinctBy _.Id
 
-        let stackInfoNamesByNodeId =
+        let imageInfoNamesByNodeId =
             let producerNames =
-                stackInfoProducerNodesWithLinkedOutputs
-                |> Array.mapi (fun index node -> node.Id, $"StackInfo{index}")
+                imageInfoProducerNodesWithLinkedOutputs
+                |> Array.mapi (fun index node -> node.Id, $"ImageInfo{index}")
 
             let expandNames =
-                stackInfoExpandNodesWithLinkedOutputs
+                imageInfoExpandNodesWithLinkedOutputs
                 |> Array.mapi (fun index node -> node.Id, $"Expand{index + statsExpandNodesWithLinkedOutputs.Length}")
 
             Array.concat [ producerNames; expandNames ]
@@ -2050,7 +2039,7 @@ module PipelineCodeGenerator =
 
             let expandNames =
                 chunkInfoExpandNodesWithLinkedOutputs
-                |> Array.mapi (fun index node -> node.Id, $"Expand{index + statsExpandNodesWithLinkedOutputs.Length + stackInfoExpandNodesWithLinkedOutputs.Length}")
+                |> Array.mapi (fun index node -> node.Id, $"Expand{index + statsExpandNodesWithLinkedOutputs.Length + imageInfoExpandNodesWithLinkedOutputs.Length}")
 
             Array.concat [ producerNames; expandNames ]
             |> Map.ofArray
@@ -2106,7 +2095,7 @@ module PipelineCodeGenerator =
                             match quantileNamesByNodeId |> Map.tryFind edge.FromNode with
                             | Some name -> Some name
                             | None ->
-                                match stackInfoNamesByNodeId |> Map.tryFind edge.FromNode with
+                                match imageInfoNamesByNodeId |> Map.tryFind edge.FromNode with
                                 | Some name -> Some name
                                 | None ->
                                     match chunkInfoNamesByNodeId |> Map.tryFind edge.FromNode with
@@ -2229,7 +2218,7 @@ module PipelineCodeGenerator =
                     None)
 
         let stageCall (node: SavedNode) =
-            let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node
+            let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node
 
             if line.StartsWith(">=> ", StringComparison.Ordinal) then
                 Some(line.Substring(4))
@@ -2362,7 +2351,7 @@ module PipelineCodeGenerator =
                     let right = inputExpression 1 |> parenthesizeBlock
                     $"({newLine}{indentBlock 4 left},{newLine}{indentBlock 4 right}{newLine}){newLine}||> zip{newLine}>=> {stage}"
                 | _ ->
-                    let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node
+                    let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node
 
                     match incomingDataEdge node.Id 0 with
                     | Some _ ->
@@ -2449,7 +2438,7 @@ module PipelineCodeGenerator =
                     && not (translationTableNamesByNodeId |> Map.containsKey node.Id)
                     && not (histogramNamesByNodeId |> Map.containsKey node.Id)
                     && not (quantileNamesByNodeId |> Map.containsKey node.Id)
-                    && not (stackInfoNamesByNodeId |> Map.containsKey node.Id)
+                    && not (imageInfoNamesByNodeId |> Map.containsKey node.Id)
                     && not (chunkInfoNamesByNodeId |> Map.containsKey node.Id)
                     && not (serialGeometryNamesByNodeId |> Map.containsKey node.Id)
                     && not (dataEdges |> Array.exists (fun edge -> edge.FromNode = node.Id)))
@@ -2566,7 +2555,7 @@ module PipelineCodeGenerator =
             let scalarBindings =
                 scalarNodes
                 |> Array.map (fun node ->
-                    let name, text = scalarBinding graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node
+                    let name, text = scalarBinding graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node
 
                     { Name = name
                       Dependencies = parameterBindingDependencies node |> Set.remove name
@@ -2594,7 +2583,7 @@ module PipelineCodeGenerator =
                     let parameter key =
                         node.Parameters
                         |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-                        |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                        |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
                         |> Option.defaultValue { Value = savedParamValue key node; IsLinked = false }
 
                     let numericParameter key =
@@ -2620,17 +2609,51 @@ module PipelineCodeGenerator =
                       Dependencies = parameterBindingDependencies node |> Set.remove name
                       Text = $"let {name} = quantiles [{quantileValues}] ({histogram} :> obj)" })
 
-            let stackInfoBindings =
-                let stackInfoProducerBindings =
-                    stackInfoProducerNodesWithLinkedOutputs
+            let imageInfoBindings =
+                let imageInfoProducerBindings =
+                    imageInfoProducerNodesWithLinkedOutputs
                     |> Array.map (fun node ->
                         match node.FunctionId with
-                        | "Read" ->
-                            let name = stackInfoNamesByNodeId |> Map.find node.Id
+                        | "GetZarrInfo" ->
+                            let name = imageInfoNamesByNodeId |> Map.find node.Id
                             let parameter key =
                                 node.Parameters
                                 |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                                |> Option.defaultValue { Value = savedParamValue key node; IsLinked = false }
+                            let stringArgument key =
+                                let expression = parameter key
+                                if expression.IsLinked then expression.Value else quote expression.Value
+                            let input = stringArgument "input"
+                            let multiscaleIndex = (parameter "multiscaleIndex").Value
+                            let datasetIndex = (parameter "datasetIndex").Value
+                            { Name = name
+                              Dependencies = parameterBindingDependencies node |> Set.remove name
+                              Text = $"let {name} = getZarrInfo {input} {multiscaleIndex} {datasetIndex}" }
+                        | "GetNexusInfo" ->
+                            let name = imageInfoNamesByNodeId |> Map.find node.Id
+                            let parameter key =
+                                node.Parameters
+                                |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
+                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                                |> Option.defaultValue { Value = savedParamValue key node; IsLinked = false }
+                            let stringArgument key =
+                                let expression = parameter key
+                                if expression.IsLinked then expression.Value else quote expression.Value
+                            let input = stringArgument "input"
+                            let datasetPath = stringArgument "datasetPath"
+                            let frameAxis = (parameter "frameAxis").Value
+                            let yAxis = (parameter "yAxis").Value
+                            let xAxis = (parameter "xAxis").Value
+                            { Name = name
+                              Dependencies = parameterBindingDependencies node |> Set.remove name
+                              Text = $"let {name} = getNexusInfo {input} {datasetPath} {frameAxis} {yAxis} {xAxis}" }
+                        | "Read" ->
+                            let name = imageInfoNamesByNodeId |> Map.find node.Id
+                            let parameter key =
+                                node.Parameters
+                                |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
+                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
                                 |> Option.defaultValue { Value = savedParamValue key node; IsLinked = false }
                             let stringArgument key =
                                 let expression = parameter key
@@ -2649,20 +2672,28 @@ module PipelineCodeGenerator =
                             let suffix = stringArgumentOrDefault "suffix" ".tiff"
                             let format = savedParamValue "format" node
                             let text =
-                                if format = "Volume file" then
-                                    let volumeInput = $"(volumeFilePath {input} {suffix})"
-                                    $"let {name} = getFileInfo {volumeInput}"
-                                else
-                                    $"let {name} = getStackInfo {input} {suffix}"
+                                match format with
+                                | "Volume file" -> $"let {name} = getImageFileInfo {input} {suffix}"
+                                | "OME-Zarr" ->
+                                    let multiscaleIndex = (parameter "multiscaleIndex").Value
+                                    let datasetIndex = (parameter "datasetIndex").Value
+                                    $"let {name} = getZarrInfo {input} {multiscaleIndex} {datasetIndex}"
+                                | "NeXus/HDF5" ->
+                                    let datasetPath = stringArgument "datasetPath"
+                                    let frameAxis = (parameter "frameAxis").Value
+                                    let yAxis = (parameter "yAxis").Value
+                                    let xAxis = (parameter "xAxis").Value
+                                    $"let {name} = getNexusInfo {input} {datasetPath} {frameAxis} {yAxis} {xAxis}"
+                                | _ -> $"let {name} = getImageInfo {input} {suffix}"
                             { Name = name
                               Dependencies = parameterBindingDependencies node |> Set.remove name
                               Text = text }
                         | "ReadRandom" ->
-                            let name = stackInfoNamesByNodeId |> Map.find node.Id
+                            let name = imageInfoNamesByNodeId |> Map.find node.Id
                             let parameter key =
                                 node.Parameters
                                 |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
                                 |> Option.defaultValue { Value = savedParamValue key node; IsLinked = false }
                             let stringArgument key =
                                 let expression = parameter key
@@ -2676,48 +2707,78 @@ module PipelineCodeGenerator =
                             let suffix = stringArgumentOrDefault "suffix" ".tiff"
                             let text =
                                 match savedParamValue "format" node with
-                                | "Volume file" ->
-                                    let volumeInput = $"(volumeFilePath {input} {suffix})"
-                                    $"let {name} = getFileInfo {volumeInput}"
-                                | _ ->
-                                    $"let {name} = getStackInfo {input} {suffix}"
+                                | "Volume file" -> $"let {name} = getImageFileInfo {input} {suffix}"
+                                | "OME-Zarr" ->
+                                    let multiscaleIndex = (parameter "multiscaleIndex").Value
+                                    let datasetIndex = (parameter "datasetIndex").Value
+                                    $"let {name} = getZarrInfo {input} {multiscaleIndex} {datasetIndex}"
+                                | "NeXus/HDF5" ->
+                                    let datasetPath = stringArgument "datasetPath"
+                                    let frameAxis = (parameter "frameAxis").Value
+                                    let yAxis = (parameter "yAxis").Value
+                                    let xAxis = (parameter "xAxis").Value
+                                    $"let {name} = getNexusInfo {input} {datasetPath} {frameAxis} {yAxis} {xAxis}"
+                                | _ -> $"let {name} = getImageInfo {input} {suffix}"
                             { Name = name
                               Dependencies = parameterBindingDependencies node |> Set.remove name
                               Text = text }
                         | "ReadRange" ->
-                            let name = stackInfoNamesByNodeId |> Map.find node.Id
+                            let name = imageInfoNamesByNodeId |> Map.find node.Id
                             let parameter key =
                                 node.Parameters
                                 |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
                                 |> Option.defaultValue { Value = savedParamValue key node; IsLinked = false }
                             let stringArgument key =
                                 let expression = parameter key
                                 if expression.IsLinked then expression.Value else quote expression.Value
                             let input = stringArgument "input"
                             let suffix = stringArgument "suffix"
+                            let format = savedParamValue "format" node
+                            let text =
+                                match format with
+                                | "Volume file" -> $"let {name} = getImageFileInfo {input} {suffix}"
+                                | "OME-Zarr" ->
+                                    let multiscaleIndex = (parameter "multiscaleIndex").Value
+                                    let datasetIndex = (parameter "datasetIndex").Value
+                                    $"let {name} = getZarrInfo {input} {multiscaleIndex} {datasetIndex}"
+                                | "NeXus/HDF5" ->
+                                    let datasetPath = stringArgument "datasetPath"
+                                    let frameAxis = (parameter "frameAxis").Value
+                                    let yAxis = (parameter "yAxis").Value
+                                    let xAxis = (parameter "xAxis").Value
+                                    $"let {name} = getNexusInfo {input} {datasetPath} {frameAxis} {yAxis} {xAxis}"
+                                | _ -> $"let {name} = getImageInfo {input} {suffix}"
                             { Name = name
                               Dependencies = parameterBindingDependencies node |> Set.remove name
-                              Text = $"let {name} = getStackInfo {input} {suffix}" }
+                              Text = text }
                         | "Write" ->
                             let parameter key =
                                 node.Parameters
                                 |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
                                 |> Option.defaultValue { Value = savedParamValue key node; IsLinked = false }
 
                             let stringArgument key =
                                 let expression = parameter key
                                 if expression.IsLinked then expression.Value else quote expression.Value
 
-                            let name = stackInfoNamesByNodeId |> Map.find node.Id
+                            let name = imageInfoNamesByNodeId |> Map.find node.Id
                             let expression = pipelineExpression Set.empty node
                             let output = stringArgument "output"
                             let suffix = stringArgument "suffix"
+                            let format = savedParamValue "format" node
                             let infoExpression =
-                                match savedParamValue "format" node with
-                                | "Volume file" -> $"getFileInfo (volumeFilePath {output} {suffix})"
-                                | _ -> $"getStackInfo {output} {suffix}"
+                                match format with
+                                | "Volume file" -> $"getImageFileInfo {output} {suffix}"
+                                | "OME-Zarr" -> $"getZarrInfo {output} 0 0"
+                                | "NeXus/HDF5" ->
+                                    let datasetPath = stringArgument "datasetPath"
+                                    let frameAxis = (parameter "frameAxis").Value
+                                    let yAxis = (parameter "yAxis").Value
+                                    let xAxis = (parameter "xAxis").Value
+                                    $"getNexusInfo {output} {datasetPath} {frameAxis} {yAxis} {xAxis}"
+                                | _ -> $"getImageInfo {output} {suffix}"
                             let body = indentBlock 4 $"{expression}{newLine}|> sink{newLine}{infoExpression}"
 
                             { Name = name
@@ -2728,12 +2789,12 @@ module PipelineCodeGenerator =
                                   |> Set.remove name
                               Text = $"let {name} ={newLine}{body}" }
                         | _ ->
-                            failwith $"Unsupported StackInfo producer: {node.FunctionId}")
+                            failwith $"Unsupported ImageInfo producer: {node.FunctionId}")
 
-                let stackInfoExpandBindings =
-                    stackInfoExpandNodesWithLinkedOutputs
+                let imageInfoExpandBindings =
+                    imageInfoExpandNodesWithLinkedOutputs
                     |> Array.map (fun node ->
-                        let name = stackInfoNamesByNodeId |> Map.find node.Id
+                        let name = imageInfoNamesByNodeId |> Map.find node.Id
 
                         let sourceName =
                             graph.Edges
@@ -2742,13 +2803,13 @@ module PipelineCodeGenerator =
                                 && edge.ToKind <> "parameterInput"
                                 && edge.ToPort = 0)
                             |> Option.bind bindingNameForOutput
-                            |> Option.defaultWith (fun () -> failwith $"Expand node '{node.Id}' is missing a StackInfo input.")
+                            |> Option.defaultWith (fun () -> failwith $"Expand node '{node.Id}' is missing a ImageInfo input.")
 
                         { Name = name
                           Dependencies = Set.singleton sourceName
                           Text = $"let {name} = {sourceName}" })
 
-                Array.concat [ stackInfoProducerBindings; stackInfoExpandBindings ]
+                Array.concat [ imageInfoProducerBindings; imageInfoExpandBindings ]
 
             let chunkInfoBindings =
                 let chunkInfoProducerBindings =
@@ -2757,7 +2818,7 @@ module PipelineCodeGenerator =
                         let parameter key =
                             node.Parameters
                             |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-                            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
                             |> Option.defaultValue { Value = savedParamValue key node; IsLinked = false }
 
                         let stringArgument key =
@@ -2765,57 +2826,12 @@ module PipelineCodeGenerator =
                             if expression.IsLinked then expression.Value else quote expression.Value
 
                         match node.FunctionId with
-                        | "GetChunkInfo"
-                        | "GetZarrInfo"
-                        | "GetNexusInfo" ->
-                            let name, text = chunkInfoBinding graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node
+                        | "GetChunkInfo" ->
+                            let name, text = chunkInfoBinding graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node
 
                             { Name = name
                               Dependencies = parameterBindingDependencies node |> Set.remove name
                               Text = text }
-                        | "Read"
-                        | "ReadRandom" ->
-                            let name = chunkInfoNamesByNodeId |> Map.find node.Id
-                            let input = stringArgument "input"
-                            let suffix = stringArgument "suffix"
-                            let multiscaleIndex = (parameter "multiscaleIndex").Value
-                            let datasetIndex = (parameter "datasetIndex").Value
-                            let datasetPath = stringArgument "datasetPath"
-                            let frameAxis = (parameter "frameAxis").Value
-                            let yAxis = (parameter "yAxis").Value
-                            let xAxis = (parameter "xAxis").Value
-                            let text =
-                                match savedParamValue "format" node with
-                                | "OME-Zarr" -> $"let {name} = getZarrInfo {input} {multiscaleIndex} {datasetIndex}"
-                                | "NeXus/HDF5" -> $"let {name} = getNexusInfo {input} {datasetPath} {frameAxis} {yAxis} {xAxis}"
-                                | _ -> $"let {name} = getChunkInfo {input} {suffix}"
-                            { Name = name
-                              Dependencies = parameterBindingDependencies node |> Set.remove name
-                              Text = text }
-                        | "Write" ->
-                            let name = chunkInfoNamesByNodeId |> Map.find node.Id
-                            let expression = pipelineExpression Set.empty node
-                            let output = stringArgument "output"
-                            let multiscaleIndex = "0"
-                            let datasetIndex = "0"
-                            let datasetPath = stringArgument "datasetPath"
-                            let frameAxis = (parameter "frameAxis").Value
-                            let yAxis = (parameter "yAxis").Value
-                            let xAxis = (parameter "xAxis").Value
-                            let format = savedParamValue "format" node
-                            let infoExpression =
-                                match format with
-                                | "OME-Zarr" -> $"getZarrInfo {output} {multiscaleIndex} {datasetIndex}"
-                                | "NeXus/HDF5" -> $"getNexusInfo {output} {datasetPath} {frameAxis} {yAxis} {xAxis}"
-                                | _ -> failwith $"Write node '{node.Id}' does not produce ChunkInfo for format '{format}'."
-                            let body = indentBlock 4 $"{expression}{newLine}|> sink{newLine}{infoExpression}"
-                            { Name = name
-                              Dependencies =
-                                  Set.union
-                                      (pipelineBindingDependencies Set.empty node)
-                                      (parameterBindingDependencies node)
-                                  |> Set.remove name
-                              Text = $"let {name} ={newLine}{body}" }
                         | "WriteChunks" ->
                             let name = chunkInfoNamesByNodeId |> Map.find node.Id
                             let expression = pipelineExpression Set.empty node
@@ -2862,7 +2878,7 @@ module PipelineCodeGenerator =
                       Dependencies = pipelineBindingDependencies Set.empty node |> Set.remove name
                       Text = $"let {name} ={newLine}{body}" })
 
-            let bindings = Array.concat [ scalarBindings; statsBindings; translationTableBindings; histogramBindings; quantileBindings; stackInfoBindings; chunkInfoBindings; serialGeometryBindings ]
+            let bindings = Array.concat [ scalarBindings; statsBindings; translationTableBindings; histogramBindings; quantileBindings; imageInfoBindings; chunkInfoBindings; serialGeometryBindings ]
             let bindingsByName = bindings |> Array.map (fun binding -> binding.Name, binding) |> Map.ofArray
             let visited = HashSet<string>()
             let ordered = ResizeArray<NamedBinding>()
@@ -2887,10 +2903,10 @@ module PipelineCodeGenerator =
 
         let postRootNames =
             Array.append
-                (stackInfoProducerNodesWithLinkedOutputs
+                (imageInfoProducerNodesWithLinkedOutputs
                  |> Array.choose (fun node ->
                      if node.FunctionId = "Write" then
-                         stackInfoNamesByNodeId |> Map.tryFind node.Id
+                         imageInfoNamesByNodeId |> Map.tryFind node.Id
                      else
                          None))
                 (chunkInfoProducerNodesWithLinkedOutputs

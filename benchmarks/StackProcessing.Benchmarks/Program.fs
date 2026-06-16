@@ -62,7 +62,7 @@ Generate:
 
 Run:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run --operation copy|threshold|median|median-native-nth|dilate|connectedComponents --pixel-type UInt8|UInt16|Int32|Float32 --input DIR --output DIR [--radius N] [--threshold X] [--window N] [--available-memory BYTES]
-  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr --operation copy|threshold|dilate --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--radius N] [--threshold X] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr --operation copy|copyThickThin|zarrToTiff|tiffToZarr|threshold|convolve|dilate --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR_OR_TIFF_DIR --output ZARR_OR_TIFF_DIR [--radius N] [--kernel-size N] [--threshold X] [--workers N] [--chunk-size N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-direct-copy --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-direct-threshold --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-direct-threshold-raw --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--threshold X]
@@ -139,6 +139,9 @@ let private require name (opts: Map<string,string>) =
 
 let private optional name fallback (opts: Map<string,string>) =
     opts.TryFind name |> Option.defaultValue fallback
+
+let private optionalValue name (opts: Map<string,string>) =
+    opts.TryFind name
 
 let private writeInternalSeconds (elapsed: TimeSpan) =
     let path = Environment.GetEnvironmentVariable("BENCHMARK_INTERNAL_SECONDS_PATH")
@@ -1640,39 +1643,181 @@ let private runChunkMedianStandardUInt8 input output radius availableMemory =
     else
         runChunkMedianPhYBandsUInt8 input output radius 3 availableMemory
 
-let private runZarrTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> operation shape input output radius kernelSize thresholdValue availableMemory =
-    ensureCleanDirectory output
+let private splitChunkThick<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<'T>, Chunk<'T>> =
+    let name = $"splitChunkThick.{typeof<'T>.Name}"
+
+    let apply (debug: bool) (input: AsyncSeq<Chunk<'T>>) =
+        asyncSeq {
+            for chunk in input do
+                try
+                    let width, height, depth = chunk.Size
+                    if depth = 0UL then
+                        invalidArg "chunk" $"splitChunkThick cannot split an empty-depth chunk: {chunk.Size}."
+                    let depthInt = int depth
+                    let sliceBytes = chunk.ByteLength / depthInt
+                    if sliceBytes * depthInt <> chunk.ByteLength then
+                        invalidArg "chunk" $"splitChunkThick cannot evenly split {chunk.ByteLength} bytes into {depth} slices."
+
+                    if debug && depth > 1UL then
+                        printfn $"[{name}] Splitting thick chunk with depth {depth}."
+
+                    for localZ in 0 .. depthInt - 1 do
+                        let output = Chunk.create<'T> (width, height, 1UL)
+                        Buffer.BlockCopy(chunk.Bytes, localZ * sliceBytes, output.Bytes, 0, sliceBytes)
+                        yield output
+                finally
+                    Chunk.decRef chunk
+        }
+
+    let transition = SlimPipeline.ProfileTransition.create SlimPipeline.Streaming SlimPipeline.Streaming
+    let memoryModel = SlimPipeline.StageMemoryModel.fromSinglePeak SlimPipeline.Map id
+    SlimPipeline.Stage.fromAsyncSeq name apply transition memoryModel id
+
+let private collectChunkSlicesThick<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (thickDepth: uint)
+    : Stage<Chunk<'T>, Chunk<'T>> =
+
+    let name = $"collectChunkSlicesThick.{typeof<'T>.Name}"
+    let thickDepth = max 1u thickDepth |> int
+
+    let apply (debug: bool) (input: AsyncSeq<Chunk<'T>>) =
+        asyncSeq {
+            let mutable slices = ResizeArray<Chunk<'T>>()
+            let mutable width = 0UL
+            let mutable height = 0UL
+
+            let flush () =
+                if slices.Count = 0 then
+                    None
+                else
+                    let depth = slices.Count
+                    let output = Chunk.create<'T> (width, height, uint64 depth)
+                    try
+                        let sliceBytes = slices[0].ByteLength
+                        for i in 0 .. depth - 1 do
+                            Buffer.BlockCopy(slices[i].Bytes, 0, output.Bytes, i * sliceBytes, sliceBytes)
+                            Chunk.decRef slices[i]
+                        if debug && depth > 1 then
+                            printfn $"[{name}] Collected {depth} slices into a thick chunk."
+                        slices <- ResizeArray<Chunk<'T>>()
+                        Some output
+                    with
+                    | ex ->
+                        Chunk.decRef output
+                        for slice in slices do
+                            Chunk.decRef slice
+                        slices <- ResizeArray<Chunk<'T>>()
+                        raise ex
+
+            try
+                for chunk in input do
+                    let chunkWidth, chunkHeight, chunkDepth = chunk.Size
+                    if chunkDepth <> 1UL then
+                        Chunk.decRef chunk
+                        invalidArg "chunk" $"collectChunkSlicesThick expects 2D chunks with depth 1, got {chunk.Size}."
+
+                    if slices.Count = 0 then
+                        width <- chunkWidth
+                        height <- chunkHeight
+                    elif chunkWidth <> width || chunkHeight <> height then
+                        Chunk.decRef chunk
+                        invalidArg "chunk" $"collectChunkSlicesThick expected slices of size {width}x{height}, got {chunkWidth}x{chunkHeight}."
+
+                    slices.Add chunk
+                    if slices.Count = thickDepth then
+                        match flush () with
+                        | Some output -> yield output
+                        | None -> ()
+
+                match flush () with
+                | Some output -> yield output
+                | None -> ()
+            with
+            | ex ->
+                for slice in slices do
+                    Chunk.decRef slice
+                raise ex
+        }
+
+    let transition = SlimPipeline.ProfileTransition.create SlimPipeline.Streaming SlimPipeline.Streaming
+    let memoryModel = SlimPipeline.StageMemoryModel.fromSinglePeak SlimPipeline.Map id
+    SlimPipeline.Stage.fromAsyncSeq name apply transition memoryModel id
+
+let private runZarrTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> operation shape input output radius kernelSize thresholdValue workers chunkSize availableMemory =
     let src = benchmarkSource availableMemory
-    let zarrInfo = getZarrInfo input 0 0
     let chunkDepth, chunkY, chunkX =
-        match zarrInfo.chunks with
-        | _t :: _c :: z :: y :: x :: _ -> max 1u (uint z), max 1u (uint y), max 1u (uint x)
-        | z :: y :: x :: _ -> max 1u (uint z), max 1u (uint y), max 1u (uint x)
-        | _ -> 16u, 256u, 256u
+        if operation = "tiffToZarr" then
+            let chunkSize = max 1u chunkSize
+            chunkSize, chunkSize, chunkSize
+        else
+            let zarrInfo = getZarrInfo input 0 0
+            match zarrInfo.chunks with
+            | x :: y :: z :: _ -> max 1u (uint z), max 1u (uint y), max 1u (uint x)
+            | _ -> 16u, 256u, 256u
     let depth = max 1u shape.Depth
-    let readInput () =
+    let readInputThick () =
         src
-        |> readZarrRange<'T> 0u 1 (depth - 1u) input 0 0 0 0 0
+        |> readZarrThick<'T> 0u (depth - 1u) chunkDepth input 0 0 0 0 0
+
+    let readInputSlices () =
+        readInputThick ()
+        >=> splitChunkThick<'T>
 
     match operation with
     | "copy" ->
-        readInput ()
-        >=> writeZarr<'T> output "benchmark" depth chunkX chunkY chunkDepth 1.0 1.0 1.0 0
+        src
+        |> readZarrEncodedChunks input 0 0 0 0
+        >=> writeZarrEncodedChunksWithCompression ZarrCompression.None output "benchmark" 1.0 1.0 1.0 0
+        |> sink
+    | "copyThickThin" ->
+        readInputSlices ()
+        >=> collectChunkSlicesThick<'T> chunkDepth
+        >=> writeZarrThickWithCompression<'T> ZarrCompression.None output "benchmark" depth chunkX chunkY chunkDepth 1.0 1.0 1.0 0
+        |> sink
+    | "zarrToTiff" ->
+        readInputThick ()
+        >=> writeThick<'T> output ".tiff"
+        |> sink
+    | "tiffToZarr" ->
+        src
+        |> readThick<'T> chunkDepth input ".tiff"
+        >=> writeZarrThickWithCompression<'T> ZarrCompression.None output "benchmark" depth chunkX chunkY chunkDepth 1.0 1.0 1.0 0
         |> sink
     | "threshold" ->
-        readInput ()
-        >=> thresholdRange<'T> thresholdValue infinity
-        >=> writeZarr<uint8> output "benchmark" depth chunkX chunkY chunkDepth 1.0 1.0 1.0 0
-        |> sink
+        if typeof<'T> = typeof<uint8> then
+            src
+            |> readZarrChunks<uint8> input 0 0 0 0
+            >=> thresholdZarrChunksUInt8 thresholdValue
+            >=> writeZarrChunksWithCompression<uint8> ZarrCompression.None output "benchmark" 1.0 1.0 1.0 0
+            |> sink
+        else
+            readInputThick ()
+            >=> thresholdRange<'T> thresholdValue infinity
+            >=> writeZarrThickWithCompression<uint8> ZarrCompression.None output "benchmark" depth chunkX chunkY chunkDepth 1.0 1.0 1.0 0
+            |> sink
     | "median" ->
-        failwith "run-zarr median used the retired Image/Slab stage bridge; use the TIFF Chunk median benchmarks or add a Chunk-native Zarr median benchmark."
+        failwith "run-zarr median used a retired Image stage bridge; use the TIFF Chunk median benchmarks or add a Chunk-native Zarr median benchmark."
     | "convolve" ->
-        failwith "run-zarr convolve used the retired Image/Slab stage bridge; use a Chunk-native convolution benchmark."
+        if workers < 1 then
+            invalidArg "workers" $"Zarr convolution expects at least one worker/window, got {workers}."
+
+        let kernel = uniformKernel3DFloat32 kernelSize
+        let convolution =
+            if workers = 1 then
+                ChunkFunctions.convolveFixedKernelNative<'T> kernel
+            else
+                ChunkFunctions.convolveFixedKernelNativeParallel<'T> kernel workers
+
+        src
+        |> readZarrAlignedSlices<'T> 0u (depth - 1u) input 0 0 0 0
+        >=> convolution
+        >=> writeZarrAlignedSlicesWithCompression<'T> ZarrCompression.None output "benchmark" depth chunkX chunkY chunkDepth 1.0 1.0 1.0 0
+        |> sink
     | "dilate" ->
-        readInput ()
+        readInputSlices ()
         >=> thresholdRange<'T> 128.0 infinity
         >=> binaryDilate radius
-        >=> writeZarr<uint8> output "benchmark" depth chunkX chunkY chunkDepth 1.0 1.0 1.0 0
+        >=> writeZarrWithCompression<uint8> ZarrCompression.None output "benchmark" depth chunkX chunkY chunkDepth 1.0 1.0 1.0 0
         |> sink
     | _ -> failwith $"unsupported Zarr operation '{operation}'"
     0
@@ -1686,14 +1831,17 @@ let private runZarr opts =
     let radius = optional "radius" "1" opts |> UInt32.Parse
     let kernelSize = optional "kernel-size" "3" opts |> UInt32.Parse
     let thresholdValue = optional "threshold" "128" opts |> fun s -> Double.Parse(s, invariant)
+    let workers = optional "workers" "3" opts |> Int32.Parse
+    let chunkSize = optional "chunk-size" "128" opts |> UInt32.Parse
     let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+    ensureCleanDirectory output
     let stopwatch = Stopwatch.StartNew()
     let exitCode =
         match pixelType with
-        | UInt8 -> runZarrTyped<uint8> operation shape input output radius kernelSize thresholdValue availableMemory
-        | UInt16 -> runZarrTyped<uint16> operation shape input output radius kernelSize thresholdValue availableMemory
+        | UInt8 -> runZarrTyped<uint8> operation shape input output radius kernelSize thresholdValue workers chunkSize availableMemory
+        | UInt16 -> runZarrTyped<uint16> operation shape input output radius kernelSize thresholdValue workers chunkSize availableMemory
         | Int32 -> failwith "run-zarr benchmark currently supports UInt8, UInt16, and Float32 only."
-        | Float32 -> runZarrTyped<float32> operation shape input output radius kernelSize thresholdValue availableMemory
+        | Float32 -> runZarrTyped<float32> operation shape input output radius kernelSize thresholdValue workers chunkSize availableMemory
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
     exitCode
@@ -2528,8 +2676,7 @@ let private runZarrChunkCopyTyped<'T when 'T: equality and 'T: (new: unit -> 'T)
     let depth = max 1u (uint zarrInfo.size[2])
     let chunkDepth, chunkY, chunkX =
         match zarrInfo.chunks with
-        | _t :: _c :: z :: y :: x :: _ -> max 1u (uint z), max 1u (uint y), max 1u (uint x)
-        | z :: y :: x :: _ -> max 1u (uint z), max 1u (uint y), max 1u (uint x)
+        | x :: y :: z :: _ -> max 1u (uint z), max 1u (uint y), max 1u (uint x)
         | _ -> 16u, 256u, 256u
     let src = benchmarkSource availableMemory
     src

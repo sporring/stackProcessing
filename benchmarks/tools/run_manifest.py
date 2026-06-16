@@ -122,7 +122,7 @@ def input_dir(args, case):
 
 
 def output_dir(args, case, repeat):
-    parameter = case_parameter(case).replace("=", "-")
+    parameter = effective_case_parameter(args.backend, case).replace("=", "-")
     return Path(args.output_root) / args.backend / f"{case['operation']}_{case['pixelType']}_{case['shape']}_{parameter}_r{repeat:02d}"
 
 
@@ -134,7 +134,16 @@ def case_parameter(case):
     return f"{name}={value}"
 
 
-def parameter_args(case):
+def effective_case_parameter(backend, case):
+    if case["operation"] == "connectedComponents" and backend != "stackprocessing":
+        return "none"
+    return case_parameter(case)
+
+
+def parameter_args(case, backend):
+    if case["operation"] == "connectedComponents" and backend != "stackprocessing":
+        return []
+
     key = case.get("parameterName", "")
     value = case.get("parameterValue", "")
     if key == "radius":
@@ -152,7 +161,7 @@ def backend_command(args, case, repeat):
     inp = str(input_dir(args, case))
     out = str(output_dir(args, case, repeat))
     common = ["--operation", case["operation"], "--pixel-type", case["pixelType"], "--input", inp, "--output", out]
-    params = parameter_args(case)
+    params = parameter_args(case, args.backend)
 
     if args.backend == "stackprocessing":
         if case["operation"] == "fftRoundtrip":
@@ -230,7 +239,7 @@ def backend_command(args, case, repeat):
             matlab_args["threshold"] = case["parameterValue"]
         if case.get("parameterName") == "kernelSize":
             matlab_args["kernelSize"] = case["parameterValue"]
-        if case.get("parameterName") == "window":
+        if case.get("parameterName") == "window" and args.backend == "stackprocessing":
             matlab_args["window"] = case["parameterValue"]
         call = "addpath('%s'); bench_stack(%s)" % (
             str(ROOT / "benchmarks/matlab").replace("'", "''"),
@@ -256,7 +265,7 @@ def measured_command(args, case, repeat):
         "--shape",
         case["shape"],
         "--parameter",
-        case_parameter(case),
+        effective_case_parameter(args.backend, case),
         "--repeat-index",
         str(repeat),
         "--",
@@ -292,7 +301,7 @@ def result_key(args, case, repeat):
         case["operation"],
         case["pixelType"],
         case["shape"],
-        case_parameter(case),
+        effective_case_parameter(args.backend, case),
         str(repeat),
     )
 

@@ -225,7 +225,7 @@ module PortType =
         | Custom "Record"
         | Custom "ImageStats"
         | Custom "ObjectSizeStats"
-        | Custom "StackInfo"
+        | Custom "ImageInfo"
         | Custom "ChunkInfo" -> true
         | _ -> false
 

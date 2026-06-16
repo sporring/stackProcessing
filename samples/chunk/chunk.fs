@@ -20,7 +20,7 @@ let main arg =
     |> sink
 
     let chunkInfo = getZarrInfo output 0 0
-    printfn $"Wrote Zarr: chunks={chunkInfo.chunks} size={chunkInfo.size} componentType={chunkInfo.topLeftInfo.componentType}"
+    printfn $"Wrote Zarr: chunks={chunkInfo.chunks} size={chunkInfo.size} componentType={chunkInfo.componentType}"
 
     let output2 = "../tmp/chunk-zarr-copy"
     deleteIfExists output2

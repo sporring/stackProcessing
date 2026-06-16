@@ -28,7 +28,7 @@ module BuiltInCatalog =
   let serialVolumeGeometry = PortType.Custom "SerialVolumeGeometry"
   let record = PortType.Custom "Record"
   let imageStats = PortType.Custom "ImageStats"
-  let stackInfo = PortType.Custom "StackInfo"
+  let imageInfo = PortType.Custom "ImageInfo"
   let chunkInfo = PortType.Custom "ChunkInfo"
   let serialTransPair = PortType.Tuple(imageAny, serialSliceManifest)
   let streamedObjects = PortType.Custom "StreamedObjects"
@@ -47,11 +47,16 @@ module BuiltInCatalog =
         DefaultValue = defaultValue
         Type = parameterType }
 
-  let private stackInfoOutputs =
-      [ makePort "Dimensions: UInt32" (Scalar(BasicType.Numeric UInt32))
+  let private imageInfoOutputs =
+      [ makePort "Format: String" (Scalar BasicType.String)
+        makePort "Dimensions: UInt32" (Scalar(BasicType.Numeric UInt32))
         makePort "Size: UInt64 list" (Custom "UInt64List")
         makePort "ComponentType: String" (Scalar BasicType.String)
         makePort "NumberOfComponents: UInt32" (Scalar(BasicType.Numeric UInt32))
+        makePort "Chunks: int list" intList
+        makePort "ChunkX: Int32" (Scalar(BasicType.Numeric Int32))
+        makePort "ChunkY: Int32" (Scalar(BasicType.Numeric Int32))
+        makePort "ChunkZ: Int32" (Scalar(BasicType.Numeric Int32))
         makePort "Width: UInt64" (Scalar(BasicType.Numeric UInt64))
         makePort "Height: UInt64" (Scalar(BasicType.Numeric UInt64))
         makePort "Depth: UInt64" (Scalar(BasicType.Numeric UInt64)) ]
@@ -88,7 +93,7 @@ module BuiltInCatalog =
       match portType with
       | Custom "ImageStats" -> imageStatsOutputs
       | Custom "ObjectSizeStats" -> objectSizeStatsOutputs
-      | Custom "StackInfo" -> stackInfoOutputs
+      | Custom "ImageInfo" -> imageInfoOutputs
       | Custom "ChunkInfo" -> chunkInfoOutputs
       | _ -> []
 
@@ -120,7 +125,7 @@ module BuiltInCatalog =
       "Writes a stack as 3D chunk files for later chunked reading. The selected format controls which image types can be connected to the input pin, using the same constraints as write. MetaImage (.mha) is usually faster than TIFF for 3D chunks because each chunk is saved as a small volume rather than a stack of image pages."
 
   let private zarrFormatDescription =
-      "Reads or writes an OME-Zarr volume through ZarrNET. The native .NET implementation supports UInt8, UInt16, Float32, Float64, Complex64, and Complex128 in StackProcessing; Studio exposes Complex64 by default to keep memory pressure low. readZarrSlab serves 2D slices from a selected timepoint/channel/resolution; writeZarr writes a single timepoint/channel volume and exposes chunk sizes and physical voxel spacing so Studio can be used as a stack-to-Zarr converter."
+      "Reads or writes an OME-Zarr volume through ZarrNET. The native .NET implementation supports UInt8, UInt16, Float32, Float64, Complex64, and Complex128 in StackProcessing; Studio exposes Complex64 by default to keep memory pressure low. readZarrThick serves full-width Chunk groups from a selected timepoint/channel/resolution; writeZarrThick writes a single timepoint/channel volume and exposes chunk sizes and physical voxel spacing so Studio can be used as a stack-to-Zarr converter."
 
   let private nexusFormatDescription =
       "Reads a rank-3 NeXus/HDF5 detector stack through PureHDF using an explicit dataset path and axis mapping. This covers common MAX IV and ESRF detector-stack layouts while keeping streaming slice reads larger-than-memory friendly. Compressed detector files that use external HDF5 filters may require a later native/plugin fallback."
@@ -385,14 +390,14 @@ module BuiltInCatalog =
       Inputs = []
       Outputs =
           [ makePort "Float64" imageFloat64
-            makePort "StackInfo" stackInfo ]
+            makePort "ImageInfo" imageInfo ]
       Parameters =
           [ availableMemoryParameter
             makeParameter "type" "Type" "Float64" BasicType.String
             readFormatParameter
             makeParameter "input" "Input" "input" BasicType.String
             readSuffixParameter ".tiff"
-            makeParameter "slabDepth" "Slab depth" "8" (BasicType.Numeric UInt32)
+            makeParameter "thickDepth" "Thick depth" "8" (BasicType.Numeric UInt32)
             makeParameter "multiscaleIndex" "Multiscale index" "0" (BasicType.Numeric Int32)
             makeParameter "datasetIndex" "Dataset index" "0" (BasicType.Numeric Int32)
             makeParameter "timepoint" "Timepoint" "0" (BasicType.Numeric Int32)
@@ -413,7 +418,7 @@ module BuiltInCatalog =
       Inputs = []
       Outputs =
           [ makePort "Float64" imageFloat64
-            makePort "StackInfo" stackInfo ]
+            makePort "ImageInfo" imageInfo ]
       Parameters =
           [ availableMemoryParameter
             makeParameter "type" "Type" "Float64" BasicType.String
@@ -464,7 +469,7 @@ module BuiltInCatalog =
       Inputs = []
       Outputs =
           [ makePort "Float64" imageFloat64
-            makePort "StackInfo" stackInfo ]
+            makePort "ImageInfo" imageInfo ]
       Parameters =
           [ availableMemoryParameter
             makeParameter "type" "Type" "Float64" BasicType.String
@@ -911,7 +916,7 @@ module BuiltInCatalog =
           Description = writeFormatDescription
           Aliases = [ "output"; "save"; "tiff"; "file"; "volume"; "zarr"; "nexus"; "hdf5" ]
           Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "StackInfo" stackInfo ]
+          Outputs = [ makePort "ImageInfo" imageInfo ]
           Parameters =
               [ writeFormatParameter
                 makeParameter "output" "Output" "output" BasicType.String
@@ -1042,7 +1047,7 @@ module BuiltInCatalog =
           DisplayName = "expand"
           Category = "Sources / Sinks"
           Summary = "Expose record fields as scalar outputs."
-          Description = "Expands record-like values, such as ImageStats, StackInfo, or ChunkInfo, into scalar fields that can be connected to print or other parameter inputs. The output ports adapt to the connected record type."
+          Description = "Expands record-like values, such as ImageStats, ImageInfo, or ChunkInfo, into scalar fields that can be connected to print or other parameter inputs. The output ports adapt to the connected record type."
           Aliases = [ "info"; "metadata"; "record"; "expand"; "stats"; "mean"; "width"; "height"; "depth"; "size"; "component" ]
           Inputs = [ makePort "Record" record ]
           Outputs = []
@@ -1064,10 +1069,10 @@ module BuiltInCatalog =
           DisplayName = "getZarrInfo"
           Category = "Sources / Sinks"
           Summary = "Inspect an OME-Zarr dataset and expose chunk layout and image dimensions."
-          Description = "Reads metadata from a selected OME-Zarr multiscale dataset. Chunks reports the storage chunk shape, Size is the x/y/z image size, and ComponentType maps to the Zarr dtype used by readZarrSlab/writeZarr."
+          Description = "Reads metadata from a selected OME-Zarr multiscale dataset. Chunks reports the storage chunk shape, Size is the x/y/z image size, and ComponentType maps to the Zarr dtype used by readZarrThick/writeZarrThick."
           Aliases = [ "info"; "metadata"; "zarr"; "ome-zarr"; "chunk"; "chunks"; "width"; "height"; "depth"; "size"; "component" ]
           Inputs = []
-          Outputs = chunkInfoOutputs
+          Outputs = imageInfoOutputs
           Parameters =
               [ makeParameter "input" "Name" "input.zarr" BasicType.String
                 makeParameter "multiscaleIndex" "Multiscale index" "0" (BasicType.Numeric Int32)
@@ -1080,7 +1085,7 @@ module BuiltInCatalog =
           Description = nexusFormatDescription
           Aliases = [ "info"; "metadata"; "nexus"; "hdf5"; "h5"; "chunk"; "chunks"; "width"; "height"; "depth"; "size"; "component" ]
           Inputs = []
-          Outputs = chunkInfoOutputs
+          Outputs = imageInfoOutputs
           Parameters =
               [ makeParameter "input" "Name" "scan.h5" BasicType.String
                 makeParameter "datasetPath" "Dataset path" "/entry/data/data" BasicType.String

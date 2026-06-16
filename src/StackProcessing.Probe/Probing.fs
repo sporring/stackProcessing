@@ -445,10 +445,10 @@ let private sampleCompatibleProbeFeatures (probe: ProbeResultJson) =
         | other -> other
 
     let readFeature =
-        $"Read:type={capitalizedType}:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
+        $"Read:type={capitalizedType}:format=Image stack:suffix=.tiff:thickDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
 
     let readFeatureWithAxes =
-        $"Read:type={capitalizedType}:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0:yAxis=1:xAxis=2"
+        $"Read:type={capitalizedType}:format=Image stack:suffix=.tiff:thickDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0:yAxis=1:xAxis=2"
 
     let writeFeature =
         "Write:format=Image stack:suffix=.tiff:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0"
@@ -1384,7 +1384,7 @@ let private readZarrNode input pixelType =
       "type", pixelType
       "format", "OME-Zarr"
       "input", input
-      "slabDepth", "16"
+      "thickDepth", "16"
       "multiscaleIndex", "0"
       "datasetIndex", "0"
       "timepoint", "0"
@@ -2232,9 +2232,9 @@ let private bottomUpGraphTemplates config =
 
 let private generatedGraphTemplates () =
     let readUInt8Feature =
-        "Read:type=UInt8:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
+        "Read:type=UInt8:format=Image stack:suffix=.tiff:thickDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
     let readFloatFeature =
-        "Read:type=Float32:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
+        "Read:type=Float32:format=Image stack:suffix=.tiff:thickDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
     let writeFeature =
         "Write:format=Image stack:suffix=.tiff:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0"
     let thresholdFeature = "Threshold:type=UInt8:lower=128.0:upper=infinity"
@@ -2955,13 +2955,13 @@ let main args =
                                      >=> write (outputDir size "read-uint8-write") ".tiff")
 
                        let readUInt8Feature =
-                           "Read:type=UInt8:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
+                           "Read:type=UInt8:format=Image stack:suffix=.tiff:thickDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
                        let readUInt8FeatureWithAxes =
-                           "Read:type=UInt8:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0:yAxis=1:xAxis=2"
+                           "Read:type=UInt8:format=Image stack:suffix=.tiff:thickDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0:yAxis=1:xAxis=2"
                        let readFloatFeature =
-                           "Read:type=Float32:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
+                           "Read:type=Float32:format=Image stack:suffix=.tiff:thickDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
                        let readFloatFeatureWithAxes =
-                           "Read:type=Float32:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0:yAxis=1:xAxis=2"
+                           "Read:type=Float32:format=Image stack:suffix=.tiff:thickDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0:yAxis=1:xAxis=2"
                        let writeStackFeature =
                            "Write:format=Image stack:suffix=.tiff:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0"
                        let writeStackFeatureWithAxes =
@@ -3251,9 +3251,9 @@ let main args =
                                          >=> write (outputDir size "filters-float-write") ".tiff")
 
                            let readUInt8Feature =
-                               "Read:type=UInt8:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
+                               "Read:type=UInt8:format=Image stack:suffix=.tiff:thickDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0"
                            let readUInt8FeatureWithAxes =
-                               "Read:type=UInt8:format=Image stack:suffix=.tiff:slabDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0:yAxis=1:xAxis=2"
+                               "Read:type=UInt8:format=Image stack:suffix=.tiff:thickDepth=1:multiscaleIndex=0:datasetIndex=0:timepoint=0:channel=0:maxParallelChunks=0:frameAxis=0:yAxis=1:xAxis=2"
                            let writeStackFeature =
                                "Write:format=Image stack:suffix=.tiff:depth=1:chunkX=64:chunkY=64:chunkZ=8:maxConcurrentWrites=0:frameAxis=0"
                            let writeStackFeatureWithAxes =

@@ -11,7 +11,7 @@ the LMIP paper figures, and copy the generated PDFs into:
   notes/LMIP_Optimiser_and_Studio/figures
 
 Options:
-  --repeat N              Repeats for the main TIFF and Zarr matrices. Default: 3.
+  --repeat N              Repeats for the main TIFF matrix. Default: 3.
   --parallel-repeat N     Repeats for Chunk worker-sweep figures. Default: 6.
   --convolve-repeat N     Repeats for the Chunk convolve worker sweep. Default: 3.
   --dry-run               Print commands instead of running them.
@@ -79,17 +79,11 @@ main_backends="${MAIN_BACKENDS:-stackprocessing,python-skimage-scipy,cpp-itk,mat
 stackprocessing_dll="benchmarks/StackProcessing.Benchmarks/bin/Release/net10.0/StackProcessing.Benchmarks.dll"
 itk_exe="benchmarks/cpp-itk/build/benchmark_itk"
 input_root="tmp/benchmarks/input"
-omezarr_root="tmp/benchmarks/input-omezarr-lmip-${date_stamp}"
 output_root="tmp/benchmarks/output-lmip-${date_stamp}"
-zarr_output_root="tmp/benchmarks/output-lmip-zarr-${date_stamp}"
 main_raw="benchmarks/results/raw.csv"
 main_summary="benchmarks/results/summary.csv"
-zarr_raw="benchmarks/results/raw.zarr-none.csv"
-zarr_summary="benchmarks/results/summary.zarr-none.csv"
 figure_dir="benchmarks/results/figures"
 tex_figure_dir="notes/LMIP_Optimiser_and_Studio/figures"
-halo_input_root="tmp/benchmarks/input-omezarr-halo-lmip-${date_stamp}"
-halo_output_root="tmp/benchmarks/output-zarr-halo-lmip-${date_stamp}"
 
 histogram_raw="tmp/benchmarks/chunk-histogram-parallel-raw-${date_stamp}.csv"
 histogram_summary="tmp/benchmarks/chunk-histogram-parallel-summary-${date_stamp}.csv"
@@ -97,7 +91,6 @@ dilate_raw="tmp/benchmarks/chunk-dilate-radius3-parallel-raw-${date_stamp}.csv"
 dilate_summary="tmp/benchmarks/chunk-dilate-radius3-parallel-summary-${date_stamp}.csv"
 convolve_raw="tmp/benchmarks/chunk-convolve-float32-k7-parallel-all-sizes-raw-${date_stamp}.csv"
 convolve_summary="tmp/benchmarks/chunk-convolve-float32-k7-parallel-summary-${date_stamp}.csv"
-zarr_halo_raw="tmp/zarr-halo-comparison-none.csv"
 
 run() {
   printf '+'
@@ -139,7 +132,7 @@ echo "Using Python: $PYTHON"
 echo "Date stamp:   $date_stamp"
 echo "Dry run:      $dry_run"
 
-run mkdir -p "benchmarks/results" "$figure_dir" "$tex_figure_dir" "$output_root" "$zarr_output_root"
+run mkdir -p "benchmarks/results" "$figure_dir" "$tex_figure_dir" "$output_root"
 
 echo
 echo "== Build native and managed benchmark binaries =="
@@ -170,101 +163,6 @@ run "$PYTHON" benchmarks/tools/plot_results.py \
   --input "$main_summary" \
   --output-dir "$figure_dir"
 copy_main_figures_to_tex
-
-echo
-echo "== Dask/OME-Zarr storage-layout benchmark matrix =="
-run rm -f "$zarr_raw" "$zarr_summary"
-run "$PYTHON" benchmarks/tools/prepare_inputs.py \
-  --cases benchmarks/config/special-cases.csv \
-  --input-root "$input_root" \
-  --force
-
-if [[ "$dry_run" -eq 0 ]]; then
-  "$PYTHON" - "$input_root" "$omezarr_root" <<'PY'
-import csv
-import subprocess
-import sys
-from pathlib import Path
-
-input_root = Path(sys.argv[1])
-omezarr_root = Path(sys.argv[2])
-cases = Path("benchmarks/config/special-cases.csv")
-seen = sorted({(row["pixelType"], row["shape"]) for row in csv.DictReader(cases.open(newline=""))})
-for pixel_type, shape in seen:
-    command = [
-        sys.executable,
-        "benchmarks/tools/tiff_stack_to_omezarr.py",
-        "--input",
-        str(input_root / f"{pixel_type}_{shape}"),
-        "--output",
-        str(omezarr_root / f"{pixel_type}_{shape}"),
-        "--shape",
-        shape,
-        "--pixel-type",
-        pixel_type,
-    ]
-    print("+ " + " ".join(command), flush=True)
-    subprocess.run(command, check=True)
-PY
-else
-  echo "+ convert special-case TIFF inputs to OME-Zarr stores under $omezarr_root"
-fi
-
-run "$PYTHON" benchmarks/tools/run_manifest.py \
-  --cases benchmarks/config/special-cases.csv \
-  --backend python-dask-omezarr \
-  --results "$zarr_raw" \
-  --input-root "$omezarr_root" \
-  --output-root "$zarr_output_root" \
-  --repeat "$repeat"
-
-run "$PYTHON" benchmarks/tools/summarize_results.py \
-  --input "$zarr_raw" \
-  --output "$zarr_summary"
-
-run "$PYTHON" benchmarks/tools/plot_zarr_results.py \
-  --summary "$zarr_summary" \
-  --output-dir "$figure_dir" \
-  --latex-dir "$tex_figure_dir"
-
-echo
-echo "== Zarr halo-layout benchmark =="
-run rm -f "$zarr_halo_raw"
-for chunk_side in 32 64 128; do
-  halo_input="$halo_input_root/UInt8_1024x1024x1024_chunk${chunk_side}"
-  run "$PYTHON" benchmarks/tools/generate_omezarr_ramp.py \
-    --output "$halo_input" \
-    --shape 1024x1024x1024 \
-    --pixel-type UInt8 \
-    --chunk-shape "${chunk_side}x${chunk_side}x${chunk_side}" \
-    --codec none \
-    --force
-
-  for repeat_index in $(seq 1 "$repeat"); do
-    halo_output="$halo_output_root/python-dask-omezarr-halo/median_UInt8_1024x1024x1024_chunk-${chunk_side}_r$(printf '%02d' "$repeat_index")"
-    run "$PYTHON" benchmarks/tools/measure.py \
-      --output "$zarr_halo_raw" \
-      --backend python-dask-omezarr-halo \
-      --operation median \
-      --pixel-type UInt8 \
-      --shape 1024x1024x1024 \
-      --parameter "chunk=${chunk_side}" \
-      --repeat-index "$repeat_index" \
-      -- \
-      "$PYTHON" benchmarks/python-dask-omezarr/bench.py \
-        --operation median \
-        --pixel-type UInt8 \
-        --input "$halo_input" \
-        --output "$halo_output" \
-        --radius 1
-    run rm -rf "$halo_output"
-  done
-done
-
-run "$PYTHON" benchmarks/tools/plot_zarr_halo_comparison.py \
-  --input "$zarr_halo_raw" \
-  --output-dir "$figure_dir" \
-  --latex-dir "$tex_figure_dir"
 
 echo
 echo "== Chunk histogram worker sweep =="
@@ -336,7 +234,6 @@ echo
 echo "Done."
 echo "Main raw:       $main_raw"
 echo "Main summary:   $main_summary"
-echo "Zarr raw:       $zarr_raw"
-echo "Zarr summary:   $zarr_summary"
 echo "Figures:        $figure_dir"
 echo "TeX figures:    $tex_figure_dir"
+echo "Zarr comparison: run benchmarks/run_zarr_chunk_comparison_fast.sh and, when mounted, benchmarks/run_zarr_chunk_comparison_slow.sh"
