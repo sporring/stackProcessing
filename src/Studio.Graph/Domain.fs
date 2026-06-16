@@ -255,6 +255,8 @@ module PortType =
         | Custom "VectorImageFloat64", Custom "VectorImageFloat32" -> true
         | Image _, Image Number -> true
         | Image Number, Image _ -> true
+        | Scalar(BasicType.Numeric Float64), Scalar(BasicType.Numeric Float32)
+        | Scalar(BasicType.Numeric Float32), Scalar(BasicType.Numeric Float64) -> true
         | _ -> outputType = inputType
 
 type Parameter =

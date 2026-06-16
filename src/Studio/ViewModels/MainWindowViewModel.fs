@@ -3342,18 +3342,27 @@ type MainWindowViewModel() as this =
                     | _ -> true
 
                 let pruneInvalidConnectors () =
-                    let invalidConnectors =
-                        drawing.Connectors
-                        |> Seq.filter (fun connector ->
-                            not (pinIsStillOnNode connector.Start)
-                            || not (pinIsStillOnNode connector.End)
-                            || not (canConnectPins connector.Start connector.End))
-                        |> Seq.toArray
+                    let connectors = drawing.Connectors |> Seq.toArray
+                    let validConnectors =
+                        connectors
+                        |> Array.filter (fun connector ->
+                            pinIsStillOnNode connector.Start
+                            && pinIsStillOnNode connector.End
+                            && canConnectPins connector.Start connector.End)
 
-                    for connector in invalidConnectors do
-                        drawing.Connectors.Remove(connector) |> ignore
+                    if validConnectors.Length = connectors.Length then
+                        false
+                    else
+                        let previousSuppressConnectorCollectionRefresh = suppressConnectorCollectionRefresh
+                        suppressConnectorCollectionRefresh <- true
+                        try
+                            drawing.Connectors.Clear()
+                            for connector in validConnectors do
+                                drawing.Connectors.Add(connector) |> ignore
+                        finally
+                            suppressConnectorCollectionRefresh <- previousSuppressConnectorCollectionRefresh
 
-                    invalidConnectors.Length > 0
+                        true
 
                 let refreshExpandNodes () =
                     let mutable changed = false

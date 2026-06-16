@@ -723,21 +723,21 @@ module PipelineCodeGenerator =
         let parameterValueForNode targetNode key =
             let expression = parameterExpressionForNode targetNode key
 
-            if expression.IsLinked then
+            match dynamicParameterTypeForNode targetNode key with
+            | Some(BasicType.Numeric Float32) when expression.IsLinked ->
+                $"float32 ({expression.Value})"
+            | Some(BasicType.Numeric numericType) when not expression.IsLinked ->
+                numericLiteral numericType expression.Value
+            | Some BasicType.Bool when not expression.IsLinked ->
+                expression.Value.Trim().ToLowerInvariant()
+            | Some BasicType.Unit when not expression.IsLinked ->
+                "()"
+            | Some BasicType.Map when not expression.IsLinked ->
                 expression.Value
-            else
-                match dynamicParameterTypeForNode targetNode key with
-                | Some(BasicType.Numeric numericType) ->
-                    numericLiteral numericType expression.Value
-                | Some BasicType.Bool ->
-                    expression.Value.Trim().ToLowerInvariant()
-                | Some BasicType.Unit ->
-                    "()"
-                | Some BasicType.Map ->
-                    expression.Value
-                | Some BasicType.String
-                | None ->
-                    expression.Value
+            | Some BasicType.String when not expression.IsLinked ->
+                expression.Value
+            | _ ->
+                expression.Value
 
         let parameterValue key =
             parameterValueForNode node key
