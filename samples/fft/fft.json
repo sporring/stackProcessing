@@ -4,28 +4,34 @@
     { "id": "source", "functionId": "NormalNoise", "x": 80.0, "y": 120.0,
       "parameters": [
         { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
-        { "key": "type", "value": "Float64", "useInput": false },
-        { "key": "width", "value": "64", "useInput": false },
-        { "key": "height", "value": "64", "useInput": false },
-        { "key": "depth", "value": "64", "useInput": false },
+        { "key": "type", "value": "Float32", "useInput": false },
+        { "key": "width", "value": "8", "useInput": false },
+        { "key": "height", "value": "8", "useInput": false },
+        { "key": "depth", "value": "4", "useInput": false },
         { "key": "mean", "value": "128.0", "useInput": false },
         { "key": "std", "value": "25.0", "useInput": false } ] },
     { "id": "fft", "functionId": "FFT", "x": 290.0, "y": 120.0,
       "parameters": [
-        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "type", "value": "Float32", "useInput": false },
         { "key": "chunkX", "value": "16", "useInput": false },
         { "key": "chunkY", "value": "16", "useInput": false },
         { "key": "chunkZ", "value": "8", "useInput": false } ] },
-    { "id": "ifft", "functionId": "InvFFT", "x": 470.0, "y": 120.0,
+    { "id": "ifft", "functionId": "InvFFT", "x": 1010.0, "y": 120.0,
       "parameters": [
         { "key": "chunkX", "value": "16", "useInput": false },
         { "key": "chunkY", "value": "16", "useInput": false },
         { "key": "chunkZ", "value": "8", "useInput": false } ] },
-    { "id": "cast", "functionId": "Cast", "x": 650.0, "y": 120.0,
+    { "id": "shift1", "functionId": "ShiftFFT", "x": 650.0, "y": 120.0,
       "parameters": [
-        { "key": "sourceType", "value": "Float64", "useInput": false },
-        { "key": "targetType", "value": "Float32", "useInput": false } ] },
-    { "id": "write", "functionId": "Write", "x": 830.0, "y": 120.0,
+        { "key": "chunkX", "value": "16", "useInput": false },
+        { "key": "chunkY", "value": "16", "useInput": false },
+        { "key": "chunkZ", "value": "8", "useInput": false } ] },
+    { "id": "shift2", "functionId": "ShiftFFT", "x": 830.0, "y": 120.0,
+      "parameters": [
+        { "key": "chunkX", "value": "16", "useInput": false },
+        { "key": "chunkY", "value": "16", "useInput": false },
+        { "key": "chunkZ", "value": "8", "useInput": false } ] },
+    { "id": "write", "functionId": "Write", "x": 1190.0, "y": 120.0,
       "parameters": [
         { "key": "format", "value": "Image stack", "useInput": false },
         { "key": "output", "value": "../tmp/fft", "useInput": false },
@@ -33,8 +39,9 @@
   ],
   "edges": [
     { "fromNode": "source", "fromKind": "dataOutput", "fromPort": 0, "toNode": "fft", "toKind": "dataInput", "toPort": 0 },
-    { "fromNode": "fft", "fromKind": "dataOutput", "fromPort": 0, "toNode": "ifft", "toKind": "dataInput", "toPort": 0 },
-    { "fromNode": "ifft", "fromKind": "dataOutput", "fromPort": 0, "toNode": "cast", "toKind": "dataInput", "toPort": 0 },
-    { "fromNode": "cast", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 }
+    { "fromNode": "fft", "fromKind": "dataOutput", "fromPort": 0, "toNode": "shift1", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "shift1", "fromKind": "dataOutput", "fromPort": 0, "toNode": "shift2", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "shift2", "fromKind": "dataOutput", "fromPort": 0, "toNode": "ifft", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "ifft", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 }
   ]
 }

@@ -26,6 +26,14 @@ def parse_args():
             "stackprocessing-arraypool-slice-reuse",
             "stackprocessing-byte-slice-reuse",
             "stackprocessing-byte-float32-slice-reuse",
+            "stackprocessing-libtiff-direct-copy",
+            "stackprocessing-libtiff-direct-threshold",
+            "stackprocessing-libtiff-direct-threshold-intype",
+            "stackprocessing-libtiff-strip-copy",
+            "stackprocessing-libtiff-raw-strip-copy",
+            "stackprocessing-native-libtiff-raw-strip-copy",
+            "stackprocessing-tifflibrary-raw-strip-copy",
+            "stackprocessing-imagesharp-copy",
             "stackprocessing-zarr",
             "stackprocessing-zarr-direct",
             "python-skimage-scipy",
@@ -82,10 +90,28 @@ def filter_cases(cases, pixel_types, shapes, operations, parameters):
 
 
 def backend_supports_case(backend, case):
+    if case["operation"] == "fftRoundtrip":
+        return backend in {"stackprocessing", "cpp-itk"} and case["pixelType"] == "Float32"
     if backend == "stackprocessing-zarr":
         return case["pixelType"] in {"UInt8", "UInt16", "Float32"} and case["operation"] == "median"
     if backend == "stackprocessing-zarr-direct":
         return case["pixelType"] in {"UInt8", "UInt16", "Float32"} and case["operation"] in {"copy", "threshold"}
+    if backend == "stackprocessing-libtiff-direct-copy":
+        return case["pixelType"] in {"UInt8", "UInt16", "Float32"} and case["operation"] == "copy"
+    if backend == "stackprocessing-libtiff-direct-threshold":
+        return case["pixelType"] in {"UInt8", "UInt16", "Float32"} and case["operation"] == "threshold"
+    if backend == "stackprocessing-libtiff-direct-threshold-intype":
+        return case["pixelType"] in {"UInt8", "UInt16", "Float32"} and case["operation"] == "threshold"
+    if backend == "stackprocessing-libtiff-strip-copy":
+        return case["pixelType"] in {"UInt8", "UInt16", "Float32"} and case["operation"] == "copy"
+    if backend == "stackprocessing-libtiff-raw-strip-copy":
+        return case["pixelType"] in {"UInt8", "UInt16", "Float32"} and case["operation"] == "copy"
+    if backend == "stackprocessing-native-libtiff-raw-strip-copy":
+        return case["pixelType"] in {"UInt8", "UInt16", "Float32"} and case["operation"] == "copy"
+    if backend == "stackprocessing-tifflibrary-raw-strip-copy":
+        return case["pixelType"] in {"UInt8", "UInt16", "Float32"} and case["operation"] == "copy"
+    if backend == "stackprocessing-imagesharp-copy":
+        return case["pixelType"] in {"UInt8", "UInt16"} and case["operation"] == "copy"
     if backend == "python-dask-omezarr":
         return case["operation"] != "connectedComponents"
     return True
@@ -96,7 +122,7 @@ def input_dir(args, case):
 
 
 def output_dir(args, case, repeat):
-    parameter = case_parameter(case).replace("=", "-")
+    parameter = effective_case_parameter(args.backend, case).replace("=", "-")
     return Path(args.output_root) / args.backend / f"{case['operation']}_{case['pixelType']}_{case['shape']}_{parameter}_r{repeat:02d}"
 
 
@@ -108,7 +134,16 @@ def case_parameter(case):
     return f"{name}={value}"
 
 
-def parameter_args(case):
+def effective_case_parameter(backend, case):
+    if case["operation"] == "connectedComponents" and backend != "stackprocessing":
+        return "none"
+    return case_parameter(case)
+
+
+def parameter_args(case, backend):
+    if case["operation"] == "connectedComponents" and backend != "stackprocessing":
+        return []
+
     key = case.get("parameterName", "")
     value = case.get("parameterValue", "")
     if key == "radius":
@@ -126,9 +161,33 @@ def backend_command(args, case, repeat):
     inp = str(input_dir(args, case))
     out = str(output_dir(args, case, repeat))
     common = ["--operation", case["operation"], "--pixel-type", case["pixelType"], "--input", inp, "--output", out]
-    params = parameter_args(case)
+    params = parameter_args(case, args.backend)
 
     if args.backend == "stackprocessing":
+        if case["operation"] == "fftRoundtrip":
+            return [
+                "dotnet",
+                args.stackprocessing_dll,
+                "run-chunk-fft3d-zarr-roundtrip-io",
+                "--shape",
+                case["shape"],
+                "--input",
+                inp,
+                "--output",
+                out,
+            ]
+        if case["operation"] == "copy":
+            return [
+                "dotnet",
+                args.stackprocessing_dll,
+                "run-stack-read-write",
+                "--pixel-type",
+                case["pixelType"],
+                "--input",
+                inp,
+                "--output",
+                out,
+            ]
         return ["dotnet", args.stackprocessing_dll, "run"] + common + params
     if args.backend == "stackprocessing-arraypool":
         return ["dotnet", args.stackprocessing_dll, "run-arraypool"] + common + params
@@ -140,6 +199,22 @@ def backend_command(args, case, repeat):
         return ["dotnet", args.stackprocessing_dll, "run-byte-slice-reuse"] + common + params
     if args.backend == "stackprocessing-byte-float32-slice-reuse":
         return ["dotnet", args.stackprocessing_dll, "run-byte-float32-slice-reuse"] + common + params
+    if args.backend == "stackprocessing-libtiff-direct-copy":
+        return ["dotnet", args.stackprocessing_dll, "run-libtiff-direct-copy"] + common
+    if args.backend == "stackprocessing-libtiff-direct-threshold":
+        return ["dotnet", args.stackprocessing_dll, "run-libtiff-direct-threshold"] + common + params
+    if args.backend == "stackprocessing-libtiff-direct-threshold-intype":
+        return ["dotnet", args.stackprocessing_dll, "run-libtiff-direct-threshold-intype"] + common + params
+    if args.backend == "stackprocessing-libtiff-strip-copy":
+        return ["dotnet", args.stackprocessing_dll, "run-libtiff-strip-copy"] + common
+    if args.backend == "stackprocessing-libtiff-raw-strip-copy":
+        return ["dotnet", args.stackprocessing_dll, "run-libtiff-raw-strip-copy"] + common
+    if args.backend == "stackprocessing-native-libtiff-raw-strip-copy":
+        return ["dotnet", args.stackprocessing_dll, "run-native-libtiff-raw-strip-copy"] + common
+    if args.backend == "stackprocessing-tifflibrary-raw-strip-copy":
+        return ["dotnet", args.stackprocessing_dll, "run-tifflibrary-raw-strip-copy"] + common
+    if args.backend == "stackprocessing-imagesharp-copy":
+        return ["dotnet", args.stackprocessing_dll, "run-imagesharp-copy"] + common
     if args.backend == "stackprocessing-zarr":
         return ["dotnet", args.stackprocessing_dll, "run-zarr"] + common + ["--shape", case["shape"]] + params
     if args.backend == "stackprocessing-zarr-direct":
@@ -164,7 +239,7 @@ def backend_command(args, case, repeat):
             matlab_args["threshold"] = case["parameterValue"]
         if case.get("parameterName") == "kernelSize":
             matlab_args["kernelSize"] = case["parameterValue"]
-        if case.get("parameterName") == "window":
+        if case.get("parameterName") == "window" and args.backend == "stackprocessing":
             matlab_args["window"] = case["parameterValue"]
         call = "addpath('%s'); bench_stack(%s)" % (
             str(ROOT / "benchmarks/matlab").replace("'", "''"),
@@ -190,7 +265,7 @@ def measured_command(args, case, repeat):
         "--shape",
         case["shape"],
         "--parameter",
-        case_parameter(case),
+        effective_case_parameter(args.backend, case),
         "--repeat-index",
         str(repeat),
         "--",
@@ -226,7 +301,7 @@ def result_key(args, case, repeat):
         case["operation"],
         case["pixelType"],
         case["shape"],
-        case_parameter(case),
+        effective_case_parameter(args.backend, case),
         str(repeat),
     )
 

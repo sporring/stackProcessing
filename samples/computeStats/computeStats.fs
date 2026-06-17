@@ -15,7 +15,7 @@ let main arg =
 
     src
     |> read<uint8> input ".tiff"
-    >=> computeStats () --> print ()
+    >=> (computeStats<uint8> () --> print ())
     |> sink
 
     0

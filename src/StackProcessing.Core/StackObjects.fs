@@ -3,7 +3,6 @@ module StackObjects
 open System
 open System.Collections.Generic
 open FSharp.Control
-open Image.InternalHelpers
 open SlimPipeline
 open StackCore
 open StackPoints
@@ -229,15 +228,19 @@ let private mergeActiveAndLocal label activeObjects localComponents =
       Bounds = bounds
       Size = size }
 
-let private processSlice connectivity ((stateNextLabel, active): uint64 * Map<uint64, ActiveObject>) (image: Image<'T>) =
-    let width = int (image.GetWidth())
-    let height = int (image.GetHeight())
-    let z = image.index
+let private processChunkSlice<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    connectivity
+    ((stateNextLabel, active): uint64 * Map<uint64, ActiveObject>)
+    z
+    (chunk: Chunk<'T>)
+    =
+    let widthU, heightU, depthU = chunk.Size
+    if depthU <> 1UL then
+        invalidArg "chunk" $"streamConnectedObjectsChunk expects 2D slice chunks with depth 1, got {chunk.Size}."
+    let width = int widthU
+    let height = int heightU
     let zOffsets = zNeighborOffsets connectivity
-    let pixels = image.toFlatArray()
-    // This deliberately uses a small streaming F# flood-fill. If object streaming becomes a bottleneck,
-    // compare it with a slab-local implementation that delegates labeling to SimpleITK and keeps this
-    // frontier-carry/early-emit logic around the slab labels.
+    let pixels = (Chunk.span chunk).ToArray()
     let components =
         connectedComponents2D connectivity z width height (fun x y -> foreground pixels[flatIndex2 width x y])
 
@@ -293,27 +296,31 @@ let private processSlice connectivity ((stateNextLabel, active): uint64 * Map<ui
 
     (nextLabel, nextActive), completed |> Seq.toList
 
-let streamConnectedObjects<'T when 'T: equality> connectivity : Stage<Image<'T>, StreamedObject list> =
-    let name = "streamConnectedObjects"
+let streamConnectedObjectsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    connectivity
+    : Stage<Chunk<'T>, StreamedObject list> =
+    let name = "streamConnectedObjectsChunk"
 
-    let apply _debug (input: AsyncSeq<Image<'T>>) =
+    let apply _debug (input: AsyncSeq<Chunk<'T>>) =
         asyncSeq {
             let mutable state = 1UL, Map.empty<uint64, ActiveObject>
             let enumerator = input.GetAsyncEnumerator()
             let mutable more = true
+            let mutable z = 0
 
             while more do
                 let! hasNext = enumerator.MoveNextAsync().AsTask() |> Async.AwaitTask
 
                 if hasNext then
-                    let image = enumerator.Current
+                    let chunk = enumerator.Current
                     let nextState, completed =
                         try
-                            processSlice connectivity state image
+                            processChunkSlice connectivity state z chunk
                         finally
-                            image.decRefCount()
+                            Chunk.decRef chunk
 
                     state <- nextState
+                    z <- z + 1
                     yield completed
                 else
                     more <- false
@@ -335,21 +342,6 @@ let streamConnectedObjects<'T when 'T: equality> connectivity : Stage<Image<'T>,
 
     Stage.fromPipe name (ProfileTransition.create Streaming Streaming) id id pipe
 
-let private copyBinaryImage (image: Image<uint8>) =
-    let copy = Image<uint8>.ofFlatArray(image.GetSize(), image.toFlatArray())
-    copy.index <- image.index
-    copy
-
-let private invertedBinaryImage (image: Image<uint8>) =
-    let pixels = image.toFlatArray()
-    let width = int (image.GetWidth())
-    let height = int (image.GetHeight())
-    let inverted =
-        Array.map (fun value -> if value = 0uy then 1uy else 0uy) pixels
-        |> fun values -> Image<uint8>.ofFlatArray([ uint width; uint height ], values)
-    inverted.index <- image.index
-    inverted
-
 let private paintObjectValue width value (buffer: SortedDictionary<int, uint8[]>) (object: StreamedObject) =
     for position in object.Positions do
         match buffer.TryGetValue position.Z with
@@ -364,7 +356,25 @@ let private touchesXYBoundary width height (object: StreamedObject) =
     || object.Bounds.MaxX >= width - 1
     || object.Bounds.MaxY >= height - 1
 
-let private emitBufferedThrough width height cutoff (buffer: SortedDictionary<int, uint8[]>) =
+let private copyBinaryChunkBytes (chunk: Chunk<uint8>) =
+    let output = Array.zeroCreate<uint8> chunk.ByteLength
+    chunk.Bytes.AsSpan(0, chunk.ByteLength).CopyTo(output.AsSpan())
+    output
+
+let private invertedBinaryChunk (chunk: Chunk<uint8>) =
+    let output = Chunk.create<uint8> chunk.Size
+    try
+        let inputPixels = Chunk.span<uint8> chunk
+        let outputPixels = Chunk.span<uint8> output
+        for i in 0 .. inputPixels.Length - 1 do
+            outputPixels[i] <- if inputPixels[i] = 0uy then 1uy else 0uy
+        output
+    with
+    | ex ->
+        Chunk.decRef output
+        raise ex
+
+let private emitChunkBufferThrough width height cutoff (buffer: SortedDictionary<int, uint8[]>) =
     seq {
         let mutable emitting = true
 
@@ -372,30 +382,36 @@ let private emitBufferedThrough width height cutoff (buffer: SortedDictionary<in
             let z = buffer.Keys |> Seq.head
 
             if z <= cutoff then
-                let image = Image<uint8>.ofFlatArray([ uint width; uint height ], buffer[z])
-                image.index <- z
-                buffer.Remove z |> ignore
-                yield image
+                let chunk = Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
+                try
+                    buffer[z].AsSpan().CopyTo(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+                    buffer.Remove z |> ignore
+                    yield chunk
+                with
+                | ex ->
+                    Chunk.decRef chunk
+                    raise ex
             else
                 emitting <- false
     }
 
-let private bufferedBinaryComponentEdit
+let private bufferedBinaryChunkComponentEdit
     name
     (maximumVolume: uint64)
     connectivity
     targetValue
-    componentImage
+    componentChunk
     isProtectedComponent
-    : Stage<Image<uint8>, Image<uint8>> =
+    : Stage<Chunk<uint8>, Chunk<uint8>> =
 
-    let apply _debug (input: AsyncSeq<Image<uint8>>) =
+    let apply _debug (input: AsyncSeq<Chunk<uint8>>) =
         asyncSeq {
             let buffer = SortedDictionary<int, uint8[]>()
             let mutable state = 1UL, Map.empty<uint64, ActiveObject>
             let mutable width = None
             let mutable height = None
             let mutable firstZ = None
+            let mutable z = 0
             let enumerator = input.GetAsyncEnumerator()
             let mutable more = true
 
@@ -403,29 +419,34 @@ let private bufferedBinaryComponentEdit
                 let! hasNext = enumerator.MoveNextAsync().AsTask() |> Async.AwaitTask
 
                 if hasNext then
-                    let image = enumerator.Current
-                    let currentWidth = int (image.GetWidth())
-                    let currentHeight = int (image.GetHeight())
+                    let chunk = enumerator.Current
+                    let widthU, heightU, depthU = chunk.Size
+                    if depthU <> 1UL then
+                        invalidArg "chunk" $"{name} expects 2D UInt8 slice chunks with depth 1, got {chunk.Size}."
+                    if widthU > uint64 Int32.MaxValue || heightU > uint64 Int32.MaxValue then
+                        invalidArg "chunk" $"{name} chunk dimensions must fit in Int32, got {chunk.Size}."
+
+                    let currentWidth = int widthU
+                    let currentHeight = int heightU
 
                     match width, height with
                     | None, None ->
                         width <- Some currentWidth
                         height <- Some currentHeight
-                        firstZ <- Some image.index
+                        firstZ <- Some z
                     | Some expectedWidth, Some expectedHeight when expectedWidth = currentWidth && expectedHeight = currentHeight -> ()
                     | _ ->
                         invalidOp $"{name} requires a stream with constant x-y slice size."
 
-                    let bufferedIndex = image.index
-                    buffer[bufferedIndex] <- image.toFlatArray()
+                    buffer[z] <- copyBinaryChunkBytes chunk
 
-                    let componentInput = componentImage image
+                    let componentInput = componentChunk chunk
                     let nextState, completed =
                         try
-                            processSlice connectivity state componentInput
+                            processChunkSlice connectivity state z componentInput
                         finally
-                            componentInput.decRefCount()
-                            image.decRefCount()
+                            Chunk.decRef componentInput
+                            Chunk.decRef chunk
 
                     state <- nextState
 
@@ -436,7 +457,7 @@ let private bufferedBinaryComponentEdit
                     let _, active = state
                     let cutoff =
                         if active.IsEmpty then
-                            bufferedIndex
+                            z
                         else
                             active
                             |> Map.toSeq
@@ -444,8 +465,10 @@ let private bufferedBinaryComponentEdit
                             |> Seq.min
                             |> fun minActiveZ -> minActiveZ - 1
 
-                    for image in emitBufferedThrough currentWidth currentHeight cutoff buffer do
-                        yield image
+                    for chunk in emitChunkBufferThrough currentWidth currentHeight cutoff buffer do
+                        yield chunk
+
+                    z <- z + 1
                 else
                     more <- false
 
@@ -463,8 +486,8 @@ let private bufferedBinaryComponentEdit
                 if object.Size <= maximumVolume && not (isProtectedComponent currentWidth currentHeight firstZ lastZ object) then
                     paintObjectValue currentWidth targetValue buffer object
 
-            for image in emitBufferedThrough (width |> Option.defaultValue 0) (height |> Option.defaultValue 0) Int32.MaxValue buffer do
-                yield image
+            for chunk in emitChunkBufferThrough (width |> Option.defaultValue 0) (height |> Option.defaultValue 0) Int32.MaxValue buffer do
+                yield chunk
         }
 
     let pipe =
@@ -474,32 +497,32 @@ let private bufferedBinaryComponentEdit
 
     Stage.fromPipe name (ProfileTransition.create Streaming Streaming) id id pipe
 
-let removeSmallObjects maximumVolume connectivity : Stage<Image<uint8>, Image<uint8>> =
-    bufferedBinaryComponentEdit
-        "removeSmallObjects"
+let removeSmallObjectsChunk maximumVolume connectivity : Stage<Chunk<uint8>, Chunk<uint8>> =
+    bufferedBinaryChunkComponentEdit
+        "chunkRemoveSmallObjects"
         maximumVolume
         connectivity
         0uy
-        copyBinaryImage
+        Chunk.incRef
         (fun _ _ _ _ _ -> false)
 
-let fillSmallHoles maximumVolume connectivity : Stage<Image<uint8>, Image<uint8>> =
+let fillSmallHolesChunk maximumVolume connectivity : Stage<Chunk<uint8>, Chunk<uint8>> =
     let protectExterior width height firstZ lastZ object =
         touchesXYBoundary width height object
         || (firstZ |> Option.exists (fun z -> object.Bounds.MinZ = z))
         || (lastZ |> Option.exists (fun z -> object.Bounds.MaxZ = z))
 
-    bufferedBinaryComponentEdit
-        "fillSmallHoles"
+    bufferedBinaryChunkComponentEdit
+        "chunkFillSmallHoles"
         maximumVolume
         connectivity
         1uy
-        invertedBinaryImage
+        invertedBinaryChunk
         protectExterior
 
-let private paintObjectBatch width height (objects: StreamedObject list) =
-    if width = 0u then invalidArg (nameof width) "paintObjects width must be positive."
-    if height = 0u then invalidArg (nameof height) "paintObjects height must be positive."
+let private paintObjectChunkBatch width height (objects: StreamedObject list) =
+    if width = 0u then invalidArg (nameof width) "paintObjectsChunk width must be positive."
+    if height = 0u then invalidArg (nameof height) "paintObjectsChunk height must be positive."
 
     let width = int width
     let height = int height
@@ -508,56 +531,54 @@ let private paintObjectBatch width height (objects: StreamedObject list) =
     |> List.collect _.Positions
     |> List.groupBy _.Z
     |> List.sortBy fst
-    |> List.map (fun (z, positions) ->
-        let pixels = Array.zeroCreate<uint8> (width * height)
+    |> List.map (fun (_z, positions) ->
+        let chunk = Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
+        chunk.Bytes.AsSpan(0, chunk.ByteLength).Clear()
+        let pixels = Chunk.span chunk
 
         for position in positions do
             if position.X < 0 || position.X >= width || position.Y < 0 || position.Y >= height then
-                invalidOp $"Object position ({position.X},{position.Y},{position.Z}) is outside the requested paint image size {width}x{height}."
+                invalidOp $"Object position ({position.X},{position.Y},{position.Z}) is outside the requested paint chunk size {width}x{height}."
 
             pixels[flatIndex2 width position.X position.Y] <- 1uy
 
-        let image = Image<uint8>.ofFlatArray([ uint width; uint height ], pixels)
-        image.index <- z
-        image)
+        chunk)
 
-let paintObjects width height : Stage<StreamedObject list, Image<uint8>> =
-    Stage.map "paintObjects" (fun _ -> paintObjectBatch width height) id id
-    --> Stage.flatten "paintObjects: flatten"
+let paintObjectsChunk width height : Stage<StreamedObject list, Chunk<uint8>> =
+    Stage.map "paintObjectsChunk" (fun _ -> paintObjectChunkBatch width height) id id
+    --> Stage.flatten "paintObjectsChunk: flatten"
 
-let private paintObjectCropped (object: StreamedObject) =
-    let width = object.Bounds.MaxX - object.Bounds.MinX + 1
-    let height = object.Bounds.MaxY - object.Bounds.MinY + 1
-
-    if width <= 0 || height <= 0 then
-        []
-    else
-        object.Positions
-        |> List.groupBy _.Z
-        |> List.sortBy fst
-        |> List.map (fun (z, positions) ->
-            let pixels = Array.zeroCreate<uint8> (width * height)
-
-            for position in positions do
-                let x = position.X - object.Bounds.MinX
-                let y = position.Y - object.Bounds.MinY
-
-                if x < 0 || x >= width || y < 0 || y >= height then
-                    invalidOp $"Object position ({position.X},{position.Y},{position.Z}) is outside its bounding box."
-
-                pixels[flatIndex2 width x y] <- 1uy
-
-            let image = Image<uint8>.ofFlatArray([ uint width; uint height ], pixels)
-            image.index <- z - object.Bounds.MinZ
-            image)
-
-let private paintCroppedObjectBatch (objects: StreamedObject list) =
+let private paintCroppedObjectChunkBatch (objects: StreamedObject list) =
     objects
-    |> List.collect paintObjectCropped
+    |> List.collect (fun object ->
+        let width = object.Bounds.MaxX - object.Bounds.MinX + 1
+        let height = object.Bounds.MaxY - object.Bounds.MinY + 1
 
-let paintObjectsCropped : Stage<StreamedObject list, Image<uint8>> =
-    Stage.map "paintObjectsCropped" (fun _ -> paintCroppedObjectBatch) id id
-    --> Stage.flatten "paintObjectsCropped: flatten"
+        if width <= 0 || height <= 0 then
+            []
+        else
+            object.Positions
+            |> List.groupBy _.Z
+            |> List.sortBy fst
+            |> List.map (fun (_z, positions) ->
+                let chunk = Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
+                chunk.Bytes.AsSpan(0, chunk.ByteLength).Clear()
+                let pixels = Chunk.span chunk
+
+                for position in positions do
+                    let x = position.X - object.Bounds.MinX
+                    let y = position.Y - object.Bounds.MinY
+
+                    if x < 0 || x >= width || y < 0 || y >= height then
+                        invalidOp $"Object position ({position.X},{position.Y},{position.Z}) is outside its bounding box."
+
+                    pixels[flatIndex2 width x y] <- 1uy
+
+                chunk))
+
+let paintObjectsCroppedChunk : Stage<StreamedObject list, Chunk<uint8>> =
+    Stage.map "paintObjectsCroppedChunk" (fun _ -> paintCroppedObjectChunkBatch) id id
+    --> Stage.flatten "paintObjectsCroppedChunk: flatten"
 
 let private measurementsOfObject (object: StreamedObject) =
     { Label = object.Label

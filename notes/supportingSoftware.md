@@ -30,7 +30,6 @@ dotnet test
 Run specific test projects:
 
 ```bash
-dotnet test tests/Image.Tests/Image.Tests.fsproj
 dotnet test tests/SlimPipeline.Tests/SlimPipeline.Tests.fsproj
 dotnet test tests/StackProcessing.Tests/StackProcessing.Tests.fsproj
 dotnet test tests/Studio.Tests/Studio.Tests.fsproj
@@ -79,10 +78,10 @@ See [../benchmarks/README.md](../benchmarks/README.md) for the current benchmark
 
 StackProcessing builds on:
 
-- SimpleITK and ITK for image IO and native image filters.
 - FSharp.Control.AsyncSeq for asynchronous streams.
 - Avalonia, NodeEditorAvalonia, PanAndZoom, and CommunityToolkit.Mvvm for Studio.
 - Plotly.NET for charts and reports.
 - PureHDF and ZarrNET for HDF5/NeXus and Zarr-style array storage.
 - Expecto, YoloDev.Expecto.TestSdk, Microsoft.NET.Test.Sdk, and coverlet for tests.
 - DIKU.Graph for graph algorithms used in the core.
+- Native helper libraries from `native/` for selected Chunk kernels.

@@ -33,7 +33,7 @@
           "useInput": false
         },
         {
-          "key": "slabDepth",
+          "key": "thickDepth",
           "value": "1",
           "useInput": false
         },
@@ -121,151 +121,14 @@
       ]
     },
     {
-      "id": "node-4",
-      "functionId": "WriteSlabSlices",
-      "x": 760.296535326087,
-      "y": 195.6514945652172,
-      "parameters": [
-        {
-          "key": "output",
-          "value": "../tmp/connectedComponents-labels",
-          "useInput": false
-        },
-        {
-          "key": "suffix",
-          "value": ".mha",
-          "useInput": false
-        },
-        {
-          "key": "windowSize",
-          "value": "None",
-          "useInput": false
-        }
-      ]
-    },
-    {
-      "id": "node-5",
-      "functionId": "ComponentTranslationTable",
-      "x": 919.1599864130435,
-      "y": 195.6514945652172,
-      "parameters": [
-        {
-          "key": "windowSize",
-          "value": "None",
-          "useInput": false
-        }
-      ]
-    },
-    {
-      "id": "node-6",
-      "functionId": "Read",
-      "x": 126.5903532608695,
-      "y": 331.51902173913015,
-      "parameters": [
-        {
-          "key": "availableMemory",
-          "value": "2147483648UL",
-          "useInput": false
-        },
-        {
-          "key": "type",
-          "value": "UInt64",
-          "useInput": false
-        },
-        {
-          "key": "format",
-          "value": "Image stack",
-          "useInput": false
-        },
-        {
-          "key": "input",
-          "value": "../tmp/connectedComponents-labels",
-          "useInput": false
-        },
-        {
-          "key": "suffix",
-          "value": ".mha",
-          "useInput": false
-        },
-        {
-          "key": "slabDepth",
-          "value": "1",
-          "useInput": false
-        },
-        {
-          "key": "multiscaleIndex",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "datasetIndex",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "timepoint",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "channel",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "maxParallelChunks",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "datasetPath",
-          "value": "/entry/data/data",
-          "useInput": false
-        },
-        {
-          "key": "frameAxis",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "yAxis",
-          "value": "1",
-          "useInput": false
-        },
-        {
-          "key": "xAxis",
-          "value": "2",
-          "useInput": false
-        }
-      ]
-    },
-    {
-      "id": "node-7",
-      "functionId": "CollapseComponentLabels",
-      "x": 534.1599864130435,
-      "y": 331.51902173913015,
-      "parameters": [
-        {
-          "key": "windowSize",
-          "value": "None",
-          "useInput": false
-        },
-        {
-          "key": "translationTable",
-          "value": "",
-          "useInput": true
-        }
-      ]
-    },
-    {
       "id": "node-8",
       "functionId": "Cast",
       "x": 760.296535326087,
-      "y": 331.51902173913015,
+      "y": 195.6514945652172,
       "parameters": [
         {
           "key": "sourceType",
-          "value": "UInt64",
+          "value": "UInt32",
           "useInput": false
         },
         {
@@ -279,7 +142,7 @@
       "id": "node-9",
       "functionId": "ScalarOpImage",
       "x": 989.1599864130435,
-      "y": 331.51902173913015,
+      "y": 195.6514945652172,
       "parameters": [
         {
           "key": "operation",
@@ -302,7 +165,7 @@
       "id": "node-10",
       "functionId": "Write",
       "x": 1124.1599864130435,
-      "y": 331.51902173913015,
+      "y": 195.6514945652172,
       "parameters": [
         {
           "key": "format",
@@ -433,34 +296,10 @@
       "toPort": 0
     },
     {
-      "fromNode": "node-5",
-      "fromKind": "reducerOutput",
-      "fromPort": 0,
-      "toNode": "node-7",
-      "toKind": "parameterInput",
-      "toPort": 1
-    },
-    {
-      "fromNode": "node-7",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-8",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
       "fromNode": "node-8",
       "fromKind": "dataOutput",
       "fromPort": 0,
       "toNode": "node-9",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "node-6",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-7",
       "toKind": "dataInput",
       "toPort": 0
     },
@@ -500,15 +339,7 @@
       "fromNode": "node-3",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "node-4",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "node-4",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-5",
+      "toNode": "node-8",
       "toKind": "dataInput",
       "toPort": 0
     }

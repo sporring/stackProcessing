@@ -5,7 +5,6 @@ open System.Globalization
 open System.IO
 open System.Text
 open FSharp.Control
-open Image.InternalHelpers
 open SlimPipeline
 open StackCore
 open TinyLinAlg
@@ -293,21 +292,29 @@ let selectGroupedValueOutput (groupSize: uint) (part: uint) : Stage<'T, 'T> =
         (fun values -> (values + uint64 groupSize - 1UL) / uint64 groupSize)
     --> StackCore.flattenList ()
 
-let private imageToVolume (images: Image<'T> list) =
-    match images with
+let private chunkToVolume<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunks: Chunk<'T> list) =
+    match chunks with
     | [] -> Array3D.zeroCreate<double> 0 0 0
     | first :: _ ->
-        let width = int (first.GetWidth())
-        let height = int (first.GetHeight())
-        let depth = images.Length
+        let width64, height64, depth64 = first.Size
+        if depth64 <> 1UL then
+            invalidArg "chunks" $"Chunk keypoint stages expect 2D slice chunks with depth 1, got {first.Size}."
+        if width64 > uint64 Int32.MaxValue || height64 > uint64 Int32.MaxValue then
+            invalidArg "chunks" $"Chunk keypoint slice dimensions must fit Int32, got {first.Size}."
+
+        let width = int width64
+        let height = int height64
+        let depth = chunks.Length
         let volume = Array3D.zeroCreate<double> width height depth
 
-        images
-        |> List.iteri (fun z image ->
-            let pixels = image.toFlatArray()
+        chunks
+        |> List.iteri (fun z chunk ->
+            if chunk.Size <> first.Size then
+                invalidArg "chunks" $"Chunk keypoint windows need same-sized slices, got {chunk.Size} and {first.Size}."
+            let pixels = Chunk.span chunk
             for y in 0 .. height - 1 do
                 for x in 0 .. width - 1 do
-                    volume[x, y, z] <- Convert.ToDouble(pixels[flatIndex2 width x y], invariant))
+                    volume[x, y, z] <- Convert.ToDouble(pixels[Chunk.toIndex width height x y 0], invariant))
 
         volume
 
@@ -315,15 +322,45 @@ let private clamp lo hi value =
     if value < lo then lo elif value > hi then hi else value
 
 let private gaussianBlur3D sigma (source: double[,,]) =
-    let image = Image<float>.ofArray3D(source, "gaussianBlur3D.input")
-    try
-        let smoothed = ImageFunctions.smoothingRecursiveGaussian sigma image
-        try
-            smoothed.toArray3D()
-        finally
-            smoothed.decRefCount()
-    finally
-        image.decRefCount()
+    let radius = max 1 (int (ceil (3.0 * sigma)))
+    let kernel =
+        [| for i in -radius .. radius -> Math.Exp(-(float (i * i)) / (2.0 * sigma * sigma)) |]
+    let kernelSum = kernel |> Array.sum
+    for i in 0 .. kernel.Length - 1 do
+        kernel[i] <- kernel[i] / kernelSum
+
+    let width = source.GetLength(0)
+    let height = source.GetLength(1)
+    let depth = source.GetLength(2)
+    let tmpX = Array3D.zeroCreate<double> width height depth
+    let tmpY = Array3D.zeroCreate<double> width height depth
+    let output = Array3D.zeroCreate<double> width height depth
+
+    for z in 0 .. depth - 1 do
+        for y in 0 .. height - 1 do
+            for x in 0 .. width - 1 do
+                let mutable acc = 0.0
+                for k in -radius .. radius do
+                    acc <- acc + kernel[k + radius] * source[clamp 0 (width - 1) (x + k), y, z]
+                tmpX[x, y, z] <- acc
+
+    for z in 0 .. depth - 1 do
+        for y in 0 .. height - 1 do
+            for x in 0 .. width - 1 do
+                let mutable acc = 0.0
+                for k in -radius .. radius do
+                    acc <- acc + kernel[k + radius] * tmpX[x, clamp 0 (height - 1) (y + k), z]
+                tmpY[x, y, z] <- acc
+
+    for z in 0 .. depth - 1 do
+        for y in 0 .. height - 1 do
+            for x in 0 .. width - 1 do
+                let mutable acc = 0.0
+                for k in -radius .. radius do
+                    acc <- acc + kernel[k + radius] * tmpY[x, y, clamp 0 (depth - 1) (z + k)]
+                output[x, y, z] <- acc
+
+    output
 
 let private central (source: double[,,]) x y z axis =
     let width = source.GetLength(0)
@@ -367,21 +404,17 @@ let private isStrictLocalMaximum (response: double[,,]) x y z =
 
     isMaximum
 
-let private keypointsFromResponse threshold scale (images: Image<'T> list) (window: Window<Image<'T>>) (response: double[,,]) =
+let private keypointsFromChunkResponse threshold scale (window: Window<Chunk<'T>>) (response: double[,,]) =
     let width = response.GetLength(0)
     let height = response.GetLength(1)
     let depth = response.GetLength(2)
-    let targetZ =
-        Window.emitItems window
-        |> List.map _.index
-        |> Set.ofList
-
+    let emitStart, emitCount = window.EmitRange
+    let emitStop = int emitStart + int emitCount - 1
     let points = ResizeArray<CoordinatePoint>()
 
     if width >= 3 && height >= 3 && depth >= 3 then
         for z in 1 .. depth - 2 do
-            let sourceZ = images[z].index
-            if targetZ.Contains sourceZ then
+            if z >= int emitStart && z <= emitStop then
                 for y in 1 .. height - 2 do
                     for x in 1 .. width - 2 do
                         let value = response[x, y, z]
@@ -389,57 +422,64 @@ let private keypointsFromResponse threshold scale (images: Image<'T> list) (wind
                             points.Add
                                 { X = float x
                                   Y = float y
-                                  Z = float sourceZ
+                                  Z = float z
                                   Scale = scale
                                   Response = value }
 
     { Points = points |> Seq.toList }
 
-let private releaseConsumed (window: Window<Image<'T>>) =
+let private releaseConsumedChunks (window: Window<Chunk<'T>>) =
     window.Items
     |> List.take (min (int window.ReleaseCount) window.Items.Length)
-    |> List.iter (fun image -> image.decRefCount())
+    |> List.iter Chunk.decRef
 
-let private localKeypointStage<'T when 'T: equality> name sigma stride response : Stage<Image<'T>, PointSet> =
+let private zeroChunkLike<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> _index (source: Chunk<'T>) =
+    let width, height, depth = source.Size
+    if depth <> 1UL then
+        invalidArg "source" $"Chunk keypoint stages expect 2D slice chunks with depth 1, got {source.Size}."
+    let chunk = Chunk.create<'T> (width, height, 1UL)
+    chunk.Bytes.AsSpan(0, chunk.ByteLength).Clear()
+    chunk
+
+let private localChunkKeypointStage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    name
+    sigma
+    stride
+    response
+    : Stage<Chunk<'T>, PointSet> =
     if sigma <= 0.0 then invalidArg "sigma" $"{name} sigma must be positive."
     if stride = 0u then invalidArg "stride" $"{name} stride must be positive."
 
     let pad = uint (ceil (3.0 * sigma)) + 2u
     let windowSize = stride + 2u * pad
 
-    let mapper (_debug: bool) (window: Window<Image<'T>>) =
+    let mapper (_debug: bool) (window: Window<Chunk<'T>>) =
         try
-            let images = window.Items
-            let volume = imageToVolume images
-            response images window volume
+            let volume = chunkToVolume window.Items
+            response window volume
         finally
-            releaseConsumed window
+            releaseConsumedChunks window
 
-    (StackCore.window windowSize pad stride)
+    Stage.window $"{name}.window" windowSize pad zeroChunkLike<'T> stride
     --> StackCore.mapWindow name mapper id id
 
-let private dogKeypointsInWindow<'T when 'T: equality>
+let private dogKeypointsInChunkWindow<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     sigma0
     scaleFactor
     scaleLevels
     contrastThreshold
-    (window: Window<Image<'T>>)
+    (window: Window<Chunk<'T>>)
     =
-
     let scaleLevels = int scaleLevels
     if scaleLevels < 4 then
-        invalidArg "scaleLevels" "dogKeypoints needs at least 4 Gaussian scale levels, giving at least 3 Difference-of-Gaussian levels."
+        invalidArg "scaleLevels" "chunkDogKeypoints needs at least 4 Gaussian scale levels, giving at least 3 Difference-of-Gaussian levels."
 
-    let images = window.Items
-    let targetZ =
-        Window.emitItems window
-        |> List.map _.index
-        |> Set.ofList
-
-    let volume = imageToVolume images
+    let volume = chunkToVolume window.Items
     let width = volume.GetLength(0)
     let height = volume.GetLength(1)
     let depth = volume.GetLength(2)
+    let emitStart, emitCount = window.EmitRange
+    let emitStop = int emitStart + int emitCount - 1
 
     if width < 3 || height < 3 || depth < 3 then
         PointSet.empty
@@ -467,8 +507,7 @@ let private dogKeypointsInWindow<'T when 'T: equality>
         for scaleIndex in 0 .. dogs.Length - 1 do
             let dog = dogs[scaleIndex]
             for z in 1 .. depth - 2 do
-                let sourceZ = images[z].index
-                if targetZ.Contains sourceZ then
+                if z >= int emitStart && z <= emitStop then
                     for y in 1 .. height - 2 do
                         for x in 1 .. width - 2 do
                             let value = dog[x, y, z]
@@ -493,50 +532,43 @@ let private dogKeypointsInWindow<'T when 'T: equality>
                                     points.Add
                                         { X = float x
                                           Y = float y
-                                          Z = float sourceZ
+                                          Z = float z
                                           Scale = sigmas[scaleIndex]
                                           Response = value }
 
         { Points = points |> Seq.toList }
 
-let dogKeypoints<'T when 'T: equality>
+let dogKeypointsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (sigma0: float)
     (scaleFactor: float)
     (scaleLevels: uint)
     (contrastThreshold: float)
     (stride: uint)
-    : Stage<Image<'T>, PointSet> =
-
-    if sigma0 <= 0.0 then invalidArg "sigma0" "dogKeypoints sigma0 must be positive."
-    if scaleFactor <= 1.0 then invalidArg "scaleFactor" "dogKeypoints scaleFactor must be greater than 1."
-    if scaleLevels < 4u then invalidArg "scaleLevels" "dogKeypoints needs at least 4 Gaussian scale levels."
-    if stride = 0u then invalidArg "stride" "dogKeypoints stride must be positive."
+    : Stage<Chunk<'T>, PointSet> =
+    if sigma0 <= 0.0 then invalidArg "sigma0" "chunkDogKeypoints sigma0 must be positive."
+    if scaleFactor <= 1.0 then invalidArg "scaleFactor" "chunkDogKeypoints scaleFactor must be greater than 1."
+    if scaleLevels < 4u then invalidArg "scaleLevels" "chunkDogKeypoints needs at least 4 Gaussian scale levels."
+    if stride = 0u then invalidArg "stride" "chunkDogKeypoints stride must be positive."
 
     let maxSigma = sigma0 * Math.Pow(scaleFactor, float (scaleLevels - 1u))
     let pad = uint (ceil (3.0 * maxSigma)) + 1u
     let windowSize = stride + 2u * pad
 
-    let releaseConsumed (window: Window<Image<'T>>) =
-        window.Items
-        |> List.take (min (int window.ReleaseCount) window.Items.Length)
-        |> List.iter (fun image -> image.decRefCount())
-
-    let mapper (_debug: bool) (window: Window<Image<'T>>) =
+    let mapper (_debug: bool) (window: Window<Chunk<'T>>) =
         try
-            dogKeypointsInWindow sigma0 scaleFactor scaleLevels contrastThreshold window
+            dogKeypointsInChunkWindow sigma0 scaleFactor scaleLevels contrastThreshold window
         finally
-            releaseConsumed window
+            releaseConsumedChunks window
 
-    (StackCore.window windowSize pad stride)
-    --> StackCore.mapWindow "dogKeypoints" mapper id id
+    Stage.window "chunkDogKeypoints.window" windowSize pad zeroChunkLike<'T> stride
+    --> StackCore.mapWindow "chunkDogKeypoints" mapper id id
 
-let logBlobKeypoints<'T when 'T: equality>
+let logBlobKeypointsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (sigma: float)
     (threshold: float)
     (stride: uint)
-    : Stage<Image<'T>, PointSet> =
-
-    localKeypointStage<'T> "logBlobKeypoints" sigma stride (fun images window volume ->
+    : Stage<Chunk<'T>, PointSet> =
+    localChunkKeypointStage<'T> "chunkLogBlobKeypoints" sigma stride (fun window volume ->
         let smoothed = gaussianBlur3D sigma volume
         let width = smoothed.GetLength(0)
         let height = smoothed.GetLength(1)
@@ -552,7 +584,7 @@ let logBlobKeypoints<'T when 'T: equality>
                         + second smoothed x y z 2
                     response[x, y, z] <- sigma * sigma * abs laplacian
 
-        keypointsFromResponse threshold sigma images window response)
+        keypointsFromChunkResponse threshold sigma window response)
 
 let private hessianResponse (responseKind: string) sigma (smoothed: double[,,]) =
     let width = smoothed.GetLength(0)
@@ -599,30 +631,28 @@ let private hessianResponse (responseKind: string) sigma (smoothed: double[,,]) 
 
     response
 
-let hessianKeypoints<'T when 'T: equality>
+let hessianKeypointsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (sigma: float)
     (responseKind: string)
     (threshold: float)
     (stride: uint)
-    : Stage<Image<'T>, PointSet> =
-
-    localKeypointStage<'T> "hessianKeypoints" sigma stride (fun images window volume ->
+    : Stage<Chunk<'T>, PointSet> =
+    localChunkKeypointStage<'T> "chunkHessianKeypoints" sigma stride (fun window volume ->
         let smoothed = gaussianBlur3D sigma volume
         let response = hessianResponse responseKind sigma smoothed
-        keypointsFromResponse threshold sigma images window response)
+        keypointsFromChunkResponse threshold sigma window response)
 
-let harris3DKeypoints<'T when 'T: equality>
+let harris3DKeypointsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (sigma: float)
     (rho: float)
     (k: float)
     (threshold: float)
     (stride: uint)
-    : Stage<Image<'T>, PointSet> =
+    : Stage<Chunk<'T>, PointSet> =
+    if sigma <= 0.0 then invalidArg "sigma" "chunkHarris3DKeypoints sigma must be positive."
+    if rho <= 0.0 then invalidArg "rho" "chunkHarris3DKeypoints rho must be positive."
 
-    if sigma <= 0.0 then invalidArg "sigma" "harris3DKeypoints sigma must be positive."
-    if rho <= 0.0 then invalidArg "rho" "harris3DKeypoints rho must be positive."
-
-    localKeypointStage<'T> "harris3DKeypoints" (max sigma rho) stride (fun images window volume ->
+    localChunkKeypointStage<'T> "chunkHarris3DKeypoints" (max sigma rho) stride (fun window volume ->
         let smoothed = gaussianBlur3D sigma volume
         let width = smoothed.GetLength(0)
         let height = smoothed.GetLength(1)
@@ -665,19 +695,18 @@ let harris3DKeypoints<'T when 'T: equality>
                     let trace = m.m00 + m.m11 + m.m22
                     response[x, y, z] <- det3 m - k * trace * trace * trace
 
-        keypointsFromResponse threshold (max sigma rho) images window response)
+        keypointsFromChunkResponse threshold (max sigma rho) window response)
 
-let forstner3DKeypoints<'T when 'T: equality>
+let forstner3DKeypointsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (sigma: float)
     (rho: float)
     (threshold: float)
     (stride: uint)
-    : Stage<Image<'T>, PointSet> =
+    : Stage<Chunk<'T>, PointSet> =
+    if sigma <= 0.0 then invalidArg "sigma" "chunkForstner3DKeypoints sigma must be positive."
+    if rho <= 0.0 then invalidArg "rho" "chunkForstner3DKeypoints rho must be positive."
 
-    if sigma <= 0.0 then invalidArg "sigma" "forstner3DKeypoints sigma must be positive."
-    if rho <= 0.0 then invalidArg "rho" "forstner3DKeypoints rho must be positive."
-
-    localKeypointStage<'T> "forstner3DKeypoints" (max sigma rho) stride (fun images window volume ->
+    localChunkKeypointStage<'T> "chunkForstner3DKeypoints" (max sigma rho) stride (fun window volume ->
         let smoothed = gaussianBlur3D sigma volume
         let width = smoothed.GetLength(0)
         let height = smoothed.GetLength(1)
@@ -720,15 +749,14 @@ let forstner3DKeypoints<'T when 'T: equality>
                     let trace = m.m00 + m.m11 + m.m22
                     response[x, y, z] <- if trace <= 1.0e-12 then 0.0 else det3 m / trace
 
-        keypointsFromResponse threshold (max sigma rho) images window response)
+        keypointsFromChunkResponse threshold (max sigma rho) window response)
 
-let phaseCongruencyKeypoints<'T when 'T: equality>
+let phaseCongruencyKeypointsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (sigma: float)
     (threshold: float)
     (stride: uint)
-    : Stage<Image<'T>, PointSet> =
-
-    localKeypointStage<'T> "phaseCongruencyKeypoints" sigma stride (fun images window volume ->
+    : Stage<Chunk<'T>, PointSet> =
+    localChunkKeypointStage<'T> "chunkPhaseCongruencyKeypoints" sigma stride (fun window volume ->
         let smoothed = gaussianBlur3D sigma volume
         let width = smoothed.GetLength(0)
         let height = smoothed.GetLength(1)
@@ -748,14 +776,13 @@ let phaseCongruencyKeypoints<'T when 'T: equality>
                         + second smoothed x y z 2
                     response[x, y, z] <- abs laplacian / (gradient + 1.0e-6)
 
-        keypointsFromResponse threshold sigma images window response)
+        keypointsFromChunkResponse threshold sigma window response)
 
-let siftKeypoints<'T when 'T: equality>
+let siftKeypointsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (sigma0: float)
     (scaleFactor: float)
     (scaleLevels: uint)
     (contrastThreshold: float)
     (stride: uint)
-    : Stage<Image<'T>, PointSet> =
-
-    dogKeypoints<'T> sigma0 scaleFactor scaleLevels contrastThreshold stride
+    : Stage<Chunk<'T>, PointSet> =
+    dogKeypointsChunk<'T> sigma0 scaleFactor scaleLevels contrastThreshold stride

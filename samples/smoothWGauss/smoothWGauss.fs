@@ -15,9 +15,9 @@ let main arg =
             "../data/volume", "../tmp/smoothWGauss"
 
     src
-    |> read<float> input ".tiff"
-    >=> smoothWGauss sigma None None None 
-    >=> cast<float,uint8>
+    |> read<float32> input ".tiff"
+    >=> gaussianFilter<float32> sigma 3 4
+    >=> cast<float32,uint8>
     >=> write output ".tiff"
     //>=> ignoreImages ()
     |> sink

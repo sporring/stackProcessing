@@ -12,6 +12,7 @@ type NumericType =
     | Int64
     | Float32
     | Float64
+    | Complex64
     | Complex
 
 module NumericType = 
@@ -28,6 +29,7 @@ module NumericType =
       | Int64 -> "Int64"
       | Float32 -> "Float32"
       | Float64 -> "Float64"
+      | Complex64 -> "Complex64"
       | Complex -> "Complex"
 
   let tryParse (value: string) =
@@ -43,7 +45,11 @@ module NumericType =
       | "Int64" -> Some Int64
       | "Float32" -> Some Float32
       | "Float64" -> Some Float64
+      | "Complex64"
+      | "ComplexFloat32" -> Some Complex64
       | "Complex" -> Some Complex
+      | "Complex128"
+      | "ComplexFloat64" -> Some Complex
       | _ -> None
 
 module ImageFileFormat =
@@ -170,6 +176,7 @@ module BasicType =
       | Numeric Int64 -> "Int64"
       | Numeric Float32 -> "Float32"
       | Numeric Float64 -> "Float64"
+      | Numeric Complex64 -> "Complex64"
       | Numeric Complex -> "Complex"
       | Bool -> "Bool"
       | String -> "String"
@@ -189,7 +196,11 @@ module BasicType =
       | "Int64" -> Some(Numeric Int64)
       | "Float32" -> Some(Numeric Float32)
       | "Float64" -> Some(Numeric Float64)
+      | "Complex64"
+      | "ComplexFloat32" -> Some(Numeric Complex64)
       | "Complex" -> Some(Numeric Complex)
+      | "Complex128"
+      | "ComplexFloat64" -> Some(Numeric Complex)
       | "Bool" -> Some Bool
       | "String" -> Some String
       | "Map" -> Some Map
@@ -214,7 +225,7 @@ module PortType =
         | Custom "Record"
         | Custom "ImageStats"
         | Custom "ObjectSizeStats"
-        | Custom "StackInfo"
+        | Custom "ImageInfo"
         | Custom "ChunkInfo" -> true
         | _ -> false
 
@@ -231,6 +242,7 @@ module PortType =
         | Int64 -> PortType.Image(NumericType.Int64)
         | Float32 -> PortType.Image(NumericType.Float32)
         | Float64 -> PortType.Image(NumericType.Float64)
+        | Complex64 -> PortType.Image(NumericType.Complex64)
         | Complex -> PortType.Image(NumericType.Complex)
 
     let canConnect (outputType: PortType) (inputType: PortType) =
@@ -239,8 +251,12 @@ module PortType =
         | _, Any -> true
         | outputType, Custom "Record" when isRecordType outputType -> true
         | Custom "ColorImage", Image Number -> true
+        | Custom "VectorImageFloat32", Custom "VectorImageFloat64" -> true
+        | Custom "VectorImageFloat64", Custom "VectorImageFloat32" -> true
         | Image _, Image Number -> true
         | Image Number, Image _ -> true
+        | Scalar(BasicType.Numeric Float64), Scalar(BasicType.Numeric Float32)
+        | Scalar(BasicType.Numeric Float32), Scalar(BasicType.Numeric Float64) -> true
         | _ -> outputType = inputType
 
 type Parameter =

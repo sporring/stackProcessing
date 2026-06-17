@@ -15,8 +15,6 @@ let main arg =
 
     src
     |> read<uint8> input ".tiff"
-    //|> getFilenames (input) ".tiff" Array.sort
-    //>=> readFiles<uint8>
     >=> write output ".tiff"
     |> sink
 

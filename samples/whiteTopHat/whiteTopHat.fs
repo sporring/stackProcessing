@@ -1,4 +1,4 @@
-// Extract small bright structures with a white top-hat filter.
+// Extract small foreground structures with a binary zonohedral white top-hat filter.
 open StackProcessing
 
 [<EntryPoint>]
@@ -14,7 +14,8 @@ let main args =
 
     src
     |> read<uint8> input ".tiff"
-    >=> whiteTopHat<uint8> 3u None
+    >=> thresholdRange<uint8> 1 255
+    >=> binaryWhiteTopHat 3u
     >=> write output ".tiff"
     |> sink
 

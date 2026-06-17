@@ -1,4 +1,4 @@
-// Compute the grayscale morphological gradient of a stack.
+// Compute the binary zonohedral morphological gradient of a mask stack.
 open StackProcessing
 
 [<EntryPoint>]
@@ -14,7 +14,8 @@ let main args =
 
     src
     |> read<uint8> input ".tiff"
-    >=> morphologicalGradient<uint8> 3u None
+    >=> thresholdRange<uint8> 1 255
+    >=> binaryGradient 3u
     >=> write output ".tiff"
     |> sink
 

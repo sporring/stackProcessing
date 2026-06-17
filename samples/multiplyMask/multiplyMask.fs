@@ -22,7 +22,7 @@ let main arg =
 
     (imageMaker, maskMaker) ||> zip
     >=> tap "[tab] For mul2"
-    >>=> mulPair
+    >=> mulPair<uint8>
     >=> tap "[tab] For write"
     >=> write output ".tiff"
     |> sink

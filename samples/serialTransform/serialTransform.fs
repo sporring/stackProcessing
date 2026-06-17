@@ -22,7 +22,7 @@ let main args =
     src
     |> read<float32> input ".tiff"
     >=> serialEstTrans<float32> 8 "dogAffine" 1.6 0.1
-    >=> serialApplyTrans<float32> 0.0 (Some geometry)
+    >=> serialApplyTrans<float32> 0.0f (Some geometry)
     >=> cast<float32, uint8>
     >=> write output ".tiff"
     |> sink

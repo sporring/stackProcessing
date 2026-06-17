@@ -14,7 +14,7 @@
         },
         {
           "key": "type",
-          "value": "Float64",
+          "value": "Float32",
           "useInput": false
         },
         {
@@ -33,7 +33,7 @@
           "useInput": false
         },
         {
-          "key": "slabDepth",
+          "key": "thickDepth",
           "value": "8",
           "useInput": false
         },
@@ -110,7 +110,7 @@
       "parameters": [
         {
           "key": "sourceType",
-          "value": "Float64",
+          "value": "Float32",
           "useInput": false
         },
         {

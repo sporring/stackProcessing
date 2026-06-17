@@ -23,6 +23,11 @@ type TriangleSet =
 module TriangleSet =
     let empty = { Triangles = [] }
 
+let private zeroChunkTyped<'T when 'T: equality> width height =
+    let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+    chunk.Bytes.AsSpan(0, chunk.ByteLength).Clear()
+    chunk
+
 let private point x y z =
     { X = x; Y = y; Z = z }
 
@@ -93,47 +98,56 @@ let private cubeTetrahedra =
        [| 0; 7; 4; 6 |]
        [| 0; 4; 5; 6 |] |]
 
-let private voxelValue (pixels: 'T[,]) x y =
-    pixels[x, y] |> Convert.ToDouble
-
-let private voxelValueOrBackground (pixels: 'T[,]) width height x y =
+let private chunkValueOrBackground<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (pixels: 'T[])
+    width
+    height
+    x
+    y =
     if x < 0 || y < 0 || x >= width || y >= height then
         0.0
     else
-        voxelValue pixels x y
+        Convert.ToDouble pixels[Chunk.toIndex width height x y 0]
 
-let private meshBetweenSlices<'T when 'T: equality> surfaceValue (lower: Image<'T>) (upper: Image<'T>) =
-    let width = min (int (lower.GetWidth())) (int (upper.GetWidth()))
-    let height = min (int (lower.GetHeight())) (int (upper.GetHeight()))
-    let lowerZ = float lower.index
-    let upperZ = float upper.index
-    let lowerPixels = lower.toArray2D()
-    let upperPixels = upper.toArray2D()
+let private meshBetweenChunks<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    surfaceValue
+    lowerZ
+    upperZ
+    (lower: Chunk<'T>)
+    (upper: Chunk<'T>) =
+    let lowerWidth, lowerHeight, lowerDepth = lower.Size
+    let upperWidth, upperHeight, upperDepth = upper.Size
+    if lowerDepth <> 1UL || upperDepth <> 1UL then
+        invalidArg "lower" $"marchingCubesChunk expects 2D slice chunks with depth 1, got {lower.Size} and {upper.Size}."
 
+    let width = min (int lowerWidth) (int upperWidth)
+    let height = min (int lowerHeight) (int upperHeight)
+    let lowerPixels = (Chunk.span lower).ToArray()
+    let upperPixels = (Chunk.span upper).ToArray()
     let triangles = ResizeArray<Triangle>()
 
     if width >= 1 && height >= 1 then
         for y in -1 .. height - 1 do
             for x in -1 .. width - 1 do
                 let positions =
-                    [| point (float x) (float y) lowerZ
-                       point (float (x + 1)) (float y) lowerZ
-                       point (float (x + 1)) (float (y + 1)) lowerZ
-                       point (float x) (float (y + 1)) lowerZ
-                       point (float x) (float y) upperZ
-                       point (float (x + 1)) (float y) upperZ
-                       point (float (x + 1)) (float (y + 1)) upperZ
-                       point (float x) (float (y + 1)) upperZ |]
+                    [| point (float x) (float y) (float lowerZ)
+                       point (float (x + 1)) (float y) (float lowerZ)
+                       point (float (x + 1)) (float (y + 1)) (float lowerZ)
+                       point (float x) (float (y + 1)) (float lowerZ)
+                       point (float x) (float y) (float upperZ)
+                       point (float (x + 1)) (float y) (float upperZ)
+                       point (float (x + 1)) (float (y + 1)) (float upperZ)
+                       point (float x) (float (y + 1)) (float upperZ) |]
 
                 let values =
-                    [| voxelValueOrBackground lowerPixels width height x y
-                       voxelValueOrBackground lowerPixels width height (x + 1) y
-                       voxelValueOrBackground lowerPixels width height (x + 1) (y + 1)
-                       voxelValueOrBackground lowerPixels width height x (y + 1)
-                       voxelValueOrBackground upperPixels width height x y
-                       voxelValueOrBackground upperPixels width height (x + 1) y
-                       voxelValueOrBackground upperPixels width height (x + 1) (y + 1)
-                       voxelValueOrBackground upperPixels width height x (y + 1) |]
+                    [| chunkValueOrBackground lowerPixels width height x y
+                       chunkValueOrBackground lowerPixels width height (x + 1) y
+                       chunkValueOrBackground lowerPixels width height (x + 1) (y + 1)
+                       chunkValueOrBackground lowerPixels width height x (y + 1)
+                       chunkValueOrBackground upperPixels width height x y
+                       chunkValueOrBackground upperPixels width height (x + 1) y
+                       chunkValueOrBackground upperPixels width height (x + 1) (y + 1)
+                       chunkValueOrBackground upperPixels width height x (y + 1) |]
 
                 let cube = Array.init 8 (fun index -> positions[index], values[index])
 
@@ -146,22 +160,33 @@ let private meshBetweenSlices<'T when 'T: equality> surfaceValue (lower: Image<'
 
     { Triangles = triangles |> Seq.toList }
 
-let marchingCubes<'T when 'T: equality> surfaceValue : Stage<Image<'T>, TriangleSet> =
-    let releaseConsumed (window: Window<Image<'T>>) =
+let marchingCubesChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    surfaceValue
+    : Stage<Chunk<'T>, TriangleSet> =
+    let releaseConsumed (window: Window<Chunk<'T>>) =
         window.Items
         |> List.take (min (int window.ReleaseCount) window.Items.Length)
-        |> List.iter (fun image -> image.decRefCount())
+        |> List.iter Chunk.decRef
 
-    let mapper (_debug: bool) (window: Window<Image<'T>>) =
+    let mapper (_debug: bool) (window: Window<Chunk<'T>>) =
         try
             match window.Items with
-            | lower :: upper :: _ -> meshBetweenSlices surfaceValue lower upper
+            | lower :: upper :: _ ->
+                let emitStart, _emitCount = window.EmitRange
+                let lowerZ = int emitStart
+                meshBetweenChunks surfaceValue lowerZ (lowerZ + 1) lower upper
             | _ -> TriangleSet.empty
         finally
             releaseConsumed window
 
-    (StackCore.window 2u 1u 1u)
-    --> StackCore.mapWindow "marchingCubes" mapper id id
+    let zeroMaker _index (source: Chunk<'T>) =
+        let width, height, depth = source.Size
+        if depth <> 1UL then
+            invalidArg "source" $"marchingCubesChunk expects 2D slice chunks with depth 1, got {source.Size}."
+        zeroChunkTyped<'T> (int width) (int height)
+
+    Stage.window "marchingCubesChunk.window" 2u 1u zeroMaker 1u
+    --> StackCore.mapWindow "marchingCubesChunk" mapper id id
 
 let private validateUnit name value =
     if value <= 0.0 then

@@ -1,0 +1,3 @@
+operation,pixelType,shape,parameterName,parameterValue,notes
+fftRoundtrip,Float32,128x128x128,,,TIFF stack FFT3D/invFFT3D roundtrip; StackProcessing uses compact spectral Zarr between forward and inverse phases
+fftRoundtrip,Float32,256x256x256,,,TIFF stack FFT3D/invFFT3D roundtrip; StackProcessing uses compact spectral Zarr between forward and inverse phases

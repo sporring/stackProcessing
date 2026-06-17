@@ -1,25 +1,28 @@
 module StackProcessing
 
-// open StackCore
+open System
 
-// //////////////////// StackCore
 type Stage<'S,'T> = SlimPipeline.Stage<'S,'T>
 type Profile = SlimPipeline.Profile
 type ProfileTransition = SlimPipeline.ProfileTransition
 type ResourceOps<'T> = SlimPipeline.ResourceOps<'T>
 type StageTimeCoefficients = SlimPipeline.StageTimeCoefficients
 type Window<'T> = SlimPipeline.Window<'T>
-type Slab<'T when 'T: equality> = StackCore.Slab<'T>
+
 type ChunkIndex = StackCore.ChunkIndex
 type ChunkLayout = StackCore.ChunkLayout
-type ChunkStorage<'T when 'T: equality> = StackCore.ChunkStorage<'T>
 type Chunk<'T when 'T: equality> = StackCore.Chunk<'T>
-module Chunk = StackCore.Chunk
-//type Slice<'S when 'S: equality> = Slice.Slice<'S>
-type Image<'S when 'S: equality> = Image.Image<'S>
-type ImageFacts = Image.ImageFacts
+type LocatedChunk<'T when 'T: equality> = StackCore.LocatedChunk<'T>
+type EncodedLocatedChunk = StackCore.EncodedLocatedChunk
+type VectorChunk<'T when 'T: equality> = StackCore.VectorChunk<'T>
+type SpectralLayout = StackCore.SpectralLayout
+type SpectralChunk = StackCore.SpectralChunk
+type HistogramBinning = StackCore.HistogramBinning
+type Histogram<'T when 'T: comparison> = StackCore.Histogram<'T>
+type ImageStats = StackCore.ImageStats
 type Point2D = StackCore.Point2D
 type Polygon2D = StackCore.Polygon2D
+module Chunk = StackCore.Chunk
 
 let optimizerEnabled = StackCore.optimizerEnabled
 let source = StackCore.source
@@ -39,108 +42,92 @@ let fork = StackCore.fork
 let (-->>) = StackCore.(-->>)
 let ignoreSingles = StackCore.ignoreSingles
 let ignorePairs = StackCore.ignorePairs
-let zeroMaker = StackCore.zeroMaker
 let sink = StackCore.sink
 let sinkList = StackCore.sinkList
 let drain = StackCore.drain
-let drainList = StackCore.drainList
-let drainLast = StackCore.drainLast
-let tap = StackCore.tap
-let tapIt = StackCore.tapIt
+let identity<'T> : Stage<'T, 'T> = StackCore.identityStage "identity"
+let windowSkipTakeM outputStart outputCount = StackCore.windowSkipTakeM outputStart outputCount
+let flattenList () = StackCore.flattenList ()
+let failTypeMismatch<'T> = StackCore.failTypeMismatch<'T>
+let tap<'T> (name: string) : Stage<'T, 'T> = SlimPipeline.Stage.tap name
+let tapIt<'T> (toString: 'T -> string) : Stage<'T, 'T> = SlimPipeline.Stage.tapIt toString
+let print<'T> () : Stage<'T, unit> =
+    SlimPipeline.Stage.consumeWith "print" (fun _debug _index value -> printfn "%A" value) (fun _ -> 0UL)
+
 let showChartData = StackCharts.showChartData
 let showChartDataWithLabels = StackCharts.showChartDataWithLabels
 let showChart = StackCharts.showChart
 let showChartWithLabels = StackCharts.showChartWithLabels
 let showChartXY = StackCharts.showChartXY
 let showChartXYWithLabels = StackCharts.showChartXYWithLabels
-let showImage = StackCharts.showImage
-let showImageWithLabels = StackCharts.showImageWithLabels
+let showChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackCharts.showChunk<'T>
+let showChunkWithLabels<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackCharts.showChunkWithLabels<'T>
 
-// //////////////////// StackIO
-type FileInfo = ImageFunctions.FileInfo
+type FileInfo = StackIO.FileInfo
 type ChunkInfo = StackIO.ChunkInfo
-type Position3D<'T> = StackPoints.Position3D<'T>
-type CoordinatePoint = StackPoints.CoordinatePoint
-type PointSet = StackPoints.PointSet
-type VectorizedMatrix = StackPoints.VectorizedMatrix
-type Affine = TinyLinAlg.Affine
-type AffineRegistrationOptions = StackRegistration.AffineRegistrationOptions
-type AffineRegistrationResult = StackRegistration.AffineRegistrationResult
-type RansacResult<'Model, 'Item> = StackRansac.RansacResult<'Model, 'Item>
-type PointMatch2D = StackRansac.PointMatch2D
-type ImageSetCoordinateSystem = StackManifest.ImageSetCoordinateSystem
-type ImageSetTransform = StackManifest.ImageSetTransform
-type ImageSetGrid = StackManifest.ImageSetGrid
-type ImageSetItem = StackManifest.ImageSetItem
-type ImageSetMember = StackManifest.ImageSetItem
-type ImageSetManifest = StackManifest.ImageSetManifest
-type StitchPlanItem = StackStitching.StitchPlanItem
-type StitchPlan = StackStitching.StitchPlan
-type ObjectConnectivity = StackObjects.ObjectConnectivity
-type ObjectBounds = StackObjects.ObjectBounds
-type StreamedObject = StackObjects.StreamedObject
-type ObjectMeasurements = StackObjects.ObjectMeasurements
-type ObjectSizeStats = StackObjects.ObjectSizeStats
-type BiasPolynomialTerm = StackBias.BiasPolynomialTerm
-type BiasPolynomialModel = StackBias.BiasPolynomialModel
-type SerialSliceTransform = StackSerialSections.SerialSliceTransform
-type SerialSliceManifest = StackSerialSections.SerialSliceManifest
-type SerialVolumeGeometry = StackSerialSections.SerialVolumeGeometry
-type Point3D = StackMesh.Point3D
-type Triangle = StackMesh.Triangle
-type TriangleSet = StackMesh.TriangleSet
-
+type ImageInfo = StackIO.ImageInfo
+let getFileInfo = StackIO.getFileInfo
 let getStackDepth = StackIO.getStackDepth
-let getFileInfo = ImageFunctions.getFileInfo
-let getStackInfo = StackIO.getStackInfo
+let getImageInfo = StackIO.getImageInfo
+let getImageFileInfo = StackIO.getImageFileInfo
 let volumeFilePath = StackIO.volumeFilePath
 let getStackSize = StackIO.getStackSize
 let getStackWidth = StackIO.getStackWidth
 let getStackHeight = StackIO.getStackHeight
 let getFilenames = StackIO.getFilenames
-let readFiles<'T when 'T: equality> = StackIO.readFiles<'T>
-let readFilesWithShape<'T when 'T: equality> = StackIO.readFilesWithShape<'T>
-let readFilePairs<'T when 'T: equality> = StackIO.readFilePairs<'T>
-let readFiltered<'T when 'T: equality> = StackIO.readFiltered<'T>
-let read<'T when 'T: equality> = StackIO.read<'T>
-let readVolume<'T when 'T: equality> = StackIO.readVolume<'T>
-let readVolumeRandom<'T when 'T: equality> = StackIO.readVolumeRandom<'T>
-let readVolumeRange<'T when 'T: equality> = StackIO.readVolumeRange<'T>
-let readRandom<'T when 'T: equality> = StackIO.readRandom<'T>
-let readRange<'T when 'T: equality> = StackIO.readRange<'T>
 let getChunkInfo = StackIO.getChunkInfo
 let getZarrInfo = StackIO.getZarrInfo
 let getNexusInfo = StackIO.getNexusInfo
 let getChunkFilename = StackIO.getChunkFilename
-let readSlabStacked<'T when 'T: equality> = StackIO.readSlabStacked<'T>
-let readSlabAsWindows<'T when 'T: equality> = StackIO.readSlabAsWindows<'T>
-let readSlab<'T when 'T: equality> = StackIO.readSlab<'T>
-let readZarrSlabStacked<'T when 'T: equality> = StackIO.readZarrSlabStacked<'T>
-let readZarrSlab<'T when 'T: equality> = StackIO.readZarrSlab<'T>
-let readZarrRandom<'T when 'T: equality> = StackIO.readZarrRandom<'T>
-let readZarrRange<'T when 'T: equality> = StackIO.readZarrRange<'T>
-let readNexusSlabStacked<'T when 'T: equality> = StackIO.readNexusSlabStacked<'T>
-let readNexusSlab<'T when 'T: equality> = StackIO.readNexusSlab<'T>
-let readNexusRandom<'T when 'T: equality> = StackIO.readNexusRandom<'T>
-let readNexusRange<'T when 'T: equality> = StackIO.readNexusRange<'T>
-let readPointSet = StackPoints.readPointSet
-let coordinateX<'T when 'T: equality> width height depth = StackImageFunctions.coordinateX<'T> width height depth
-let coordinateY<'T when 'T: equality> width height depth = StackImageFunctions.coordinateY<'T> width height depth
-let coordinateZ<'T when 'T: equality> width height depth = StackImageFunctions.coordinateZ<'T> width height depth
-let imageCenter = TinyLinAlg.imageCenter
-let randomRigidTransformAround = TinyLinAlg.randomRigidTransformAround
-let randomRigidTransform = TinyLinAlg.randomRigidTransform
 let deleteIfExists = StackIO.deleteIfExists
-let write = StackIO.write
-let writeThrough = StackIO.write
-let writeVolume<'T when 'T: equality> = StackIO.writeVolume<'T>
-let writeZarr = StackIO.writeZarr
-let writeZarrSlab = StackIO.writeZarrSlab
-let writeZarrSlabNamed = StackIO.writeZarrSlabNamed
-let writeNexus = StackIO.writeNexus
-let writeNexusSlab = StackIO.writeNexusSlab
-let writeChunks = StackIO.writeChunks
-let writeSlabSlices<'T when 'T: equality> = StackIO.writeSlabSlices<'T>
+
+let writeZarrComplex64InterleavedFloat32 = StackIO.writeZarrComplex64InterleavedFloat32
+let writeZarrComplex64InterleavedFloat32WithCompression = StackIO.writeZarrComplex64InterleavedFloat32WithCompression
+let writeZarrSpectralComplex64InterleavedFloat32 = StackIO.writeZarrSpectralComplex64InterleavedFloat32
+let writeZarrSpectralComplex64InterleavedFloat32WithCompression = StackIO.writeZarrSpectralComplex64InterleavedFloat32WithCompression
+let readZarrSpectralComplex64InterleavedFloat32Range = StackIO.readZarrSpectralComplex64InterleavedFloat32Range
+let fftZComplex64InterleavedZarrTiles = StackIO.fftZComplex64InterleavedZarrTiles
+let invFftZComplex64InterleavedZarrTiles = StackIO.invFftZComplex64InterleavedZarrTiles
+let fftZComplex64InterleavedZarrRawChunks = StackIO.fftZComplex64InterleavedZarrRawChunks
+let invFftZComplex64InterleavedZarrRawChunks = StackIO.invFftZComplex64InterleavedZarrRawChunks
+let fftZComplex64InterleavedZarrSubchunks = StackIO.fftZComplex64InterleavedZarrSubchunks
+let invFftZComplex64InterleavedZarrSubchunks = StackIO.invFftZComplex64InterleavedZarrSubchunks
+let fftRoundtripZComplex64InterleavedZarrSubchunks = StackIO.fftRoundtripZComplex64InterleavedZarrSubchunks
+let writeZarrSpectralComplex64InterleavedFloat32Tiled = StackIO.writeZarrSpectralComplex64InterleavedFloat32Tiled
+let readZarrSpectralComplex64InterleavedFloat32TiledRange = StackIO.readZarrSpectralComplex64InterleavedFloat32TiledRange
+
+let read<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readChunkSlices<'T>
+let readThick<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readChunkThick<'T>
+let readRandom<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readChunkSlicesRandom<'T>
+let readRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readChunkSlicesRange<'T>
+let readVolume<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readChunkVolume<'T>
+let readColor = StackIO.readColorChunkSlices
+let readColorRandom = StackIO.readColorChunkSlicesRandom
+let readColorRange = StackIO.readColorChunkSlicesRange
+let write<'T when 'T: equality> = StackIO.writeChunkSlices<'T>
+let writeThick<'T when 'T: equality> = StackIO.writeChunkThick<'T>
+let writeColor = StackIO.writeColorChunkSlices
+let readZarrRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readZarrChunkSlicesRange<'T>
+let readZarrThick<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readZarrChunkThickRange<'T>
+let readZarrAlignedSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readZarrChunkSlicesAlignedRange<'T>
+let readZarrChunks<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readZarrLocatedChunks<'T>
+let readZarrEncodedChunks = StackIO.readZarrEncodedChunks
+let writeZarr<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.writeZarrChunkSlices<'T>
+let writeZarrWithCompression<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.writeZarrChunkSlicesWithCompression<'T>
+let writeZarrThick<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.writeZarrChunkThick<'T>
+let writeZarrThickWithCompression<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.writeZarrChunkThickWithCompression<'T>
+let writeZarrAlignedSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.writeZarrChunkSlicesAligned<'T>
+let writeZarrAlignedSlicesWithCompression<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.writeZarrChunkSlicesAlignedWithCompression<'T>
+let writeZarrChunks<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.writeZarrLocatedChunks<'T>
+let writeZarrChunksWithCompression<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.writeZarrLocatedChunksWithCompression<'T>
+let writeZarrEncodedChunks = StackIO.writeZarrEncodedChunks
+let writeZarrEncodedChunksWithCompression = StackIO.writeZarrEncodedChunksWithCompression
+
+type Position3D<'T> = StackPoints.Position3D<'T>
+type CoordinatePoint = StackPoints.CoordinatePoint
+type PointSet = StackPoints.PointSet
+type VectorizedMatrix = StackPoints.VectorizedMatrix
+let readPointSet = StackPoints.readPointSet
 let writePointSet = StackPoints.writePointSet
 let writeCSVPointSet = StackPoints.writeCSVPointSet
 let vectorizeMatrix = StackPoints.vectorizeMatrix
@@ -150,10 +137,15 @@ let writeMatrix = StackPoints.writeMatrix
 let writeCSVMatrix = StackPoints.writeCSVMatrix
 let writeCSVHistogram<'T when 'T: comparison> = StackPoints.writeCSVHistogram<'T>
 let selectGroupedValueOutput = StackPoints.selectGroupedValueOutput
-let writeMesh = StackMesh.writeMesh
-let meshFilePath = StackMesh.meshFilePath
 
-// //////////////////// StackRegistration
+type Affine = TinyLinAlg.Affine
+type AffineRegistrationOptions = StackRegistration.AffineRegistrationOptions
+type AffineRegistrationResult = StackRegistration.AffineRegistrationResult
+type RansacResult<'Model, 'Item> = StackRansac.RansacResult<'Model, 'Item>
+type PointMatch2D = StackRansac.PointMatch2D
+let imageCenter = TinyLinAlg.imageCenter
+let randomRigidTransformAround = TinyLinAlg.randomRigidTransformAround
+let randomRigidTransform = TinyLinAlg.randomRigidTransform
 let defaultAffineRegistrationOptions = StackRegistration.defaultAffineRegistrationOptions
 let earthMoversDistance = StackRegistration.earthMoversDistance
 let transformPointSet = StackRegistration.transformPointSet
@@ -166,7 +158,12 @@ let ransacFit = StackRansac.fit
 let affine2DFromMatches = StackRansac.affine2DFromMatches
 let affine2DRansac = StackRansac.affine2DRansac
 
-// //////////////////// StackManifest
+type ImageSetCoordinateSystem = StackManifest.ImageSetCoordinateSystem
+type ImageSetTransform = StackManifest.ImageSetTransform
+type ImageSetGrid = StackManifest.ImageSetGrid
+type ImageSetItem = StackManifest.ImageSetItem
+type ImageSetMember = StackManifest.ImageSetItem
+type ImageSetManifest = StackManifest.ImageSetManifest
 let identityImageSetTransform = StackManifest.identityTransform
 let imageSetTransformFromMatrix = StackManifest.transformFromMatrix
 let imageSetTransformToMatrix = StackManifest.transformToMatrix
@@ -194,213 +191,336 @@ let replaceImageSetMemberTransform = StackManifest.replaceImageTransform
 let writeImageSetManifest = StackManifest.writeManifest
 let readImageSetManifest = StackManifest.readManifest
 
-// //////////////////// StackStitching
-let createStitchPlan = StackStitching.createStitchPlan
-let stitchManifestImages<'T when 'T: equality> = StackStitching.stitchManifestImages<'T>
+let zero<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.chunkZero<'T>
+let coordinateX<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.chunkCoordinateX<'T>
+let coordinateY<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.chunkCoordinateY<'T>
+let coordinateZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.chunkCoordinateZ<'T>
+let polygonMask = ChunkFunctions.chunkPolygonMask
+let euler2DTransformPath = ChunkFunctions.euler2DTransformPath
+let createByEuler2DTransform<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.createByEuler2DTransformFromChunk<'T>
+let repeat<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.chunkRepeat<'T>
+let repeatStage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.chunkRepeatStage<'T>
+let pad<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.pad<'T>
+let crop<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.crop<'T>
+let squeeze<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.squeeze<'T>
+let concatenateAlong<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.concatenateAlong<'T>
+let permuteAxes<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.permuteAxes<'T>
+let resize<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.chunkResize<'T>
+let resample<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.chunkResample<'T>
+let show<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.show<'T>
+let signedDistanceBand = ChunkFunctions.signedDistanceBandNativeParallelCollect
+let connectedComponents = ChunkFunctions.connectedComponentsSauf3DUInt8
+let connectedComponentsUInt32 () = ChunkFunctions.connectedComponentsSauf3DUInt8UInt32 ()
+let connectedComponentsUInt32Windowed = ChunkFunctions.connectedComponentsSauf3DUInt8UInt32ParallelCollect
+let toVectorImage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.toVectorImage<'T>
+let vectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.vectorElement<'T>
+let vectorRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.vectorRange<'T>
+let appendVectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.appendVectorElement<'T>
+let vectorMapElements = ChunkFunctions.vectorMapElements
+let vector3ToColor = ChunkFunctions.vector3ToColor
+let colorToVector3 = ChunkFunctions.colorToVector3
+let vectorDot = ChunkFunctions.vectorDot
+let vectorMagnitude = ChunkFunctions.vectorMagnitude
+let vectorCross3D = ChunkFunctions.vectorCross3D
+let vectorAngleTo = ChunkFunctions.vectorAngleTo
+let vectorDotFloat32 = ChunkFunctions.vectorDotFloat32
+let vectorMagnitudeFloat32 = ChunkFunctions.vectorMagnitudeFloat32
+let vector3ToColorFloat32 = ChunkFunctions.vector3ToColorFloat32
+let vectorAngleToFloat32 = ChunkFunctions.vectorAngleToFloat32
+let pca = ChunkFunctions.PCA
+let pcaFloat32 = ChunkFunctions.PCAFloat32
+let structureTensor = ChunkFunctions.structureTensorNativeParallelCollect
+let selectGroupedVectorOutput = ChunkFunctions.selectGroupedVectorOutput
+let toComplex64 = ChunkFunctions.toComplex64
+let polarToComplex64 = ChunkFunctions.polarToComplex64
+let complex64Real = ChunkFunctions.complex64Real
+let complex64Imag = ChunkFunctions.complex64Imag
+let complex64Modulus = ChunkFunctions.complex64Modulus
+let complex64Argument = ChunkFunctions.complex64Argument
+let complex64Conjugate = ChunkFunctions.complex64Conjugate
+let fft = ChunkFunctions.fftXYFloat32ToComplex64Interleaved
+let fftRealXY = ChunkFunctions.fftRealXYFloat32ToHermitianPackedComplex64Interleaved
+let fft3D = ChunkFunctions.fft3DFloat32ToComplex64Interleaved
+let fft3DComplexXY = ChunkFunctions.fft3DFloat32ToComplex64Interleaved
+let fft3DRealXY = ChunkFunctions.fft3DRealXYFloat32ToComplex64Interleaved
+let fftXYThenZPlanned = ChunkFunctions.fftXYThenZFloat32ToComplex64InterleavedPlanned
+let invFft3DRealXY = ChunkFunctions.invFft3DRealXYComplex64InterleavedToFloat32
+let invFft = ChunkFunctions.invFftXYComplex64InterleavedToFloat32
+let invFftRealXY = ChunkFunctions.invFftXYHermitianPackedComplex64InterleavedToFloat32
+let fftShift3D = ChunkFunctions.fftShift3DComplex64Interleaved
+let imageHistogram<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.histogramReducer<'T>
+let imageHistogramDense<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.histogramDenseReducer<'T>
+let imageHistogramLeftEdges<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.histogramLeftEdgesReducer<'T>
+let imageHistogramFixedBins<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.histogramFixedBinsReducer<'T>
+let histogramEqualization<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.histogramEqualization<'T>
+let quantiles = ChunkFunctions.quantiles
+let computeStats<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> () = ChunkFunctions.computeStats<'T> ()
+let volume = ChunkFunctions.volume
+let sumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.chunkSumProjection<'T>
 
-// //////////////////// StackObjects
-let streamConnectedObjects<'T when 'T: equality> = StackObjects.streamConnectedObjects<'T>
-let removeSmallObjects = StackObjects.removeSmallObjects
-let fillSmallHoles = StackObjects.fillSmallHoles
-let paintObjects = StackObjects.paintObjects
-let paintObjectsCropped = StackObjects.paintObjectsCropped
+let momentsThresholdFromHistogram (histogram: Histogram<'T>) : float =
+    let ordered =
+        histogram.Counts
+        |> Map.toList
+        |> List.map (fun (value, count) -> Convert.ToDouble value, count)
+        |> List.sortBy fst
+
+    match ordered with
+    | [] -> invalidArg "histogram" "Cannot estimate a moments threshold from an empty histogram."
+    | [ value, _ ] -> value
+    | _ ->
+        let totalCount = ordered |> List.sumBy (snd >> float)
+        let moment power =
+            ordered
+            |> List.sumBy (fun (value, count) -> (value ** power) * float count)
+            |> fun value -> value / totalCount
+
+        let m0 = 1.0
+        let m1 = moment 1.0
+        let m2 = moment 2.0
+        let m3 = moment 3.0
+        let cd = m0 * m2 - m1 * m1
+
+        if abs cd < 1e-12 then
+            m1
+        else
+            let c0 = (-m2 * m2 + m1 * m3) / cd
+            let c1 = (-m3 + m2 * m1) / cd
+            let discriminant = c1 * c1 - 4.0 * c0
+
+            if discriminant < 0.0 then
+                m1
+            else
+                let root = sqrt discriminant
+                let z0 = 0.5 * (-c1 - root)
+                let z1 = 0.5 * (-c1 + root)
+                let denominator = z1 - z0
+
+                if abs denominator < 1e-12 then
+                    m1
+                else
+                    let p0 = (z1 - m1) / denominator |> max 0.0 |> min 1.0
+                    let target = p0 * totalCount
+                    let mutable cumulative = 0.0
+                    let mutable threshold = fst (List.last ordered)
+                    let mutable found = false
+
+                    for index in 0 .. ordered.Length - 1 do
+                        let value, count = ordered[index]
+                        if not found then
+                            cumulative <- cumulative + float count
+                            if cumulative >= target then
+                                threshold <-
+                                    if index < ordered.Length - 1 then
+                                        0.5 * (value + fst ordered[index + 1])
+                                    else
+                                        value
+                                found <- true
+
+                    threshold
+
+let histogram2pairs<'T when 'T: comparison> : Stage<Histogram<'T>, ('T * uint64) list> =
+    SlimPipeline.Stage.liftUnary "histogram2pairs" (fun histogram -> histogram.Counts |> Map.toList) id id
+
+let histogramCounts<'T when 'T: comparison> : Stage<Histogram<'T>, Map<'T, uint64>> =
+    SlimPipeline.Stage.liftUnary "histogramCounts" (fun histogram -> histogram.Counts) id id
+
+let pairs2floats<'T, 'S> : Stage<('T * 'S) list, (float * float) list> =
+    SlimPipeline.Stage.liftUnary
+        "pairs2floats"
+        (List.map (fun (x, y) -> Convert.ToDouble x, Convert.ToDouble y))
+        id
+        id
+
+let plot (plt: float list -> float list -> unit) : Stage<(float * float) list, unit> =
+    let consumer _debug _index points =
+        let x, y = points |> List.unzip
+        plt x y
+    SlimPipeline.Stage.consumeWith "plot" consumer (fun _ -> 0UL)
+
+let otsuThresholdFromHistogram (histogram: Histogram<'T>) : float =
+    let ordered =
+        histogram.Counts
+        |> Map.toList
+        |> List.choose (fun (value, count) ->
+            if count = 0UL then
+                None
+            else
+                Some(Convert.ToDouble value, count))
+        |> List.sortBy fst
+
+    match ordered with
+    | [] -> invalidArg "histogram" "Cannot estimate an Otsu threshold from an empty histogram."
+    | [ value, _ ] -> value
+    | _ ->
+        let totalCount = ordered |> List.sumBy (snd >> float)
+        let totalMean = ordered |> List.sumBy (fun (value, count) -> value * float count)
+        let mutable bestThreshold = fst ordered[0]
+        let mutable bestVariance = Double.NegativeInfinity
+        let mutable backgroundWeight = 0.0
+        let mutable backgroundSum = 0.0
+
+        for index in 0 .. ordered.Length - 2 do
+            let value, count = ordered[index]
+            backgroundWeight <- backgroundWeight + float count
+            backgroundSum <- backgroundSum + value * float count
+            let foregroundWeight = totalCount - backgroundWeight
+
+            if backgroundWeight > 0.0 && foregroundWeight > 0.0 then
+                let backgroundMean = backgroundSum / backgroundWeight
+                let foregroundMean = (totalMean - backgroundSum) / foregroundWeight
+                let variance = backgroundWeight * foregroundWeight * pown (backgroundMean - foregroundMean) 2
+
+                if variance > bestVariance then
+                    bestVariance <- variance
+                    bestThreshold <- 0.5 * (value + fst ordered[index + 1])
+
+        bestThreshold
+
+let finiteDiffKernel1D = ChunkFunctions.finiteDiffKernel1D
+let thresholdRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (lower: double) (upper: double) =
+    ChunkFunctions.thresholdRange<'T> lower upper
+let thresholdZarrChunksUInt8 = ChunkFunctions.thresholdLocatedNativeUInt8
+let sqrtFloat32 = ChunkFunctions.sqrtFloat32
+let absFloat32 = ChunkFunctions.absFloat32
+let squareFloat32 = ChunkFunctions.squareFloat32
+let clamp<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.clamp<'T>
+let shiftScale<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.shiftScale<'T>
+let intensityWindow<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.intensityWindow<'T>
+let cast<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct and 'S :> ValueType
+                     and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<'S>, Chunk<'T>> =
+    if typeof<'S> = typeof<'T> then
+        unbox (box (StackCore.identityStage "cast.identity"))
+    elif typeof<'T> = typeof<float32> then
+        unbox (box (ChunkFunctions.castToFloat32<'S>))
+    elif typeof<'T> = typeof<uint8> then
+        unbox (box (ChunkFunctions.castToUInt8<'S>))
+    elif typeof<'S> = typeof<float32> then
+        unbox (box (ChunkFunctions.castFromFloat32<'T>))
+    else
+        ChunkFunctions.castToFloat32<'S> --> ChunkFunctions.castFromFloat32<'T>
+let inline addScalar value = ChunkFunctions.addScalar value
+let inline subScalar value = ChunkFunctions.subScalar value
+let inline mulScalar value = ChunkFunctions.mulScalar value
+let inline divScalar value = ChunkFunctions.divScalar value
+let inline scalarAdd value = ChunkFunctions.scalarAdd value
+let inline scalarSub value = ChunkFunctions.scalarSub value
+let inline scalarMul value = ChunkFunctions.scalarMul value
+let inline scalarDiv value = ChunkFunctions.scalarDiv value
+let inline addPair<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType and 'T: (static member ( + ) : 'T * 'T -> 'T)> = ChunkFunctions.add<'T>
+let inline subPair<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType and 'T: (static member ( - ) : 'T * 'T -> 'T)> = ChunkFunctions.subtract<'T>
+let inline mulPair<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType and 'T: (static member ( * ) : 'T * 'T -> 'T)> = ChunkFunctions.multiply<'T>
+let inline divPair<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType and 'T: (static member ( / ) : 'T * 'T -> 'T)> = ChunkFunctions.divide<'T>
+let inline maxOfPair<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.maximum<'T>
+let inline minOfPair<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.minimum<'T>
+let equal<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.equal<'T>
+let notEqual<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.notEqual<'T>
+let greater<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.greater<'T>
+let greaterEqual<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.greaterEqual<'T>
+let less<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.less<'T>
+let lessEqual<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.lessEqual<'T>
+let maskAnd = ChunkFunctions.maskAnd
+let maskOr = ChunkFunctions.maskOr
+let maskXor = ChunkFunctions.maskXor
+let maskNot = ChunkFunctions.maskNot
+let convolveFixedKernel<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> kernel workers =
+    ChunkFunctions.convolveFixedKernelNativeParallel<'T> kernel workers
+let convolveX<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.convolveNativeXParallelCollect<'T>
+let convolveY<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.convolveNativeYParallelCollect<'T>
+let convolveZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.convolveNativeZParallelCollect<'T>
+let finiteDiffX<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.finiteDiffNativeXParallelCollect<'T>
+let finiteDiffY<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.finiteDiffNativeYParallelCollect<'T>
+let finiteDiffZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.finiteDiffNativeZParallelCollect<'T>
+let separableConvolve<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.separableConvolveNativeParallelCollect<'T>
+let boxFilter<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.boxFilterNativeParallelCollect<'T>
+let boxFilterXYZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.boxFilterNativeParallelCollectXYZ<'T>
+let gaussianFilter<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.gaussianFilterNativeParallelCollect<'T>
+let gaussianFilterXYZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.gaussianFilterNativeParallelCollectXYZ<'T>
+let gradientVector = ChunkFunctions.gradientVectorNativeParallelCollect
+let gradientVectorXYZ = ChunkFunctions.gradientVectorNativeParallelCollectXYZ
+let gradientMagnitude = ChunkFunctions.gradientMagnitudeNativeParallelCollect
+let gradientMagnitudeXYZ = ChunkFunctions.gradientMagnitudeNativeParallelCollectXYZ
+let hessianUpper = ChunkFunctions.hessianUpperNativeParallelCollect
+let hessianUpperXYZ = ChunkFunctions.hessianUpperNativeParallelCollectXYZ
+let laplacian = ChunkFunctions.laplacianNativeParallelCollect
+let laplacianXYZ = ChunkFunctions.laplacianNativeParallelCollectXYZ
+let sobelMagnitude = ChunkFunctions.sobelMagnitudeNativeParallelCollect
+let sobelX<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.sobelXNativeParallelCollect<'T>
+let sobelY<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.sobelYNativeParallelCollect<'T>
+let sobelZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.sobelZNativeParallelCollect<'T>
+let medianUInt8 = ChunkFunctions.medianNativeNthElementUInt8ParallelCollect
+let medianUInt16 = ChunkFunctions.medianNativeNthElementUInt16ParallelCollect
+let medianInt32 = ChunkFunctions.medianNativeNthElementInt32ParallelCollect
+let medianFloat32 = ChunkFunctions.medianNativeNthElementFloat32ParallelCollect
+let addNormalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.addNormalNoise<'T>
+let addSaltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.addSaltAndPepperNoise<'T>
+let addShotNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.addShotNoise<'T>
+let binaryDilate = ChunkFunctions.binaryDilateZonohedral
+let binaryErode = ChunkFunctions.binaryErodeZonohedral
+let binaryOpening = ChunkFunctions.binaryOpeningZonohedral
+let binaryClosing = ChunkFunctions.binaryClosingZonohedral
+let binaryWhiteTopHat = ChunkFunctions.binaryWhiteTopHatZonohedral
+let binaryWhiteTopHatWindowed = ChunkFunctions.binaryWhiteTopHatZonohedralParallel
+let binaryBlackTopHat = ChunkFunctions.binaryBlackTopHatZonohedral
+let binaryBlackTopHatWindowed = ChunkFunctions.binaryBlackTopHatZonohedralParallel
+let binaryGradient = ChunkFunctions.binaryGradientZonohedral
+let binaryGradientWindowed = ChunkFunctions.binaryGradientZonohedralParallel
+let binaryContour = ChunkFunctions.binaryContourZonohedral
+let binaryContourWindowed = ChunkFunctions.binaryContourZonohedralParallel
+
+type ObjectConnectivity = StackObjects.ObjectConnectivity
+type ObjectBounds = StackObjects.ObjectBounds
+type StreamedObject = StackObjects.StreamedObject
+type ObjectMeasurements = StackObjects.ObjectMeasurements
+type ObjectSizeStats = StackObjects.ObjectSizeStats
+let streamConnectedObjects<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackObjects.streamConnectedObjectsChunk<'T>
+let paintObjects = StackObjects.paintObjectsChunk
+let paintObjectsCropped = StackObjects.paintObjectsCroppedChunk
 let measureObjects = StackObjects.measureObjects
 let objectSizes = StackObjects.objectSizes
 let objectSizeStats = StackObjects.objectSizeStats
 let histogram = StackObjects.histogram
+let removeSmallObjects = StackObjects.removeSmallObjectsChunk
+let fillSmallHoles = StackObjects.fillSmallHolesChunk
 
-// //////////////////// StackAffineResampler
-let resampleAffineFromChunks = StackAffineResampler.resampleAffineFromChunks
-let resampleAffine = StackAffineResampler.resampleAffine
-
-// //////////////////// StackImageFunctions
-type ImageStats = ImageFunctions.ImageStats
-
-let cast<'S,'T when 'S: equality and 'T: equality> = StackImageFunctions.cast<'S,'T>
-let add = StackImageFunctions.add
-let addPair = StackImageFunctions.addPair
-let inline scalarAddImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> = StackImageFunctions.scalarAddImage<^T>
-let inline imageAddScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> = StackImageFunctions.imageAddScalar<^T>
-let sub = StackImageFunctions.sub
-let subPair = StackImageFunctions.subPair
-let inline scalarSubImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> = StackImageFunctions.scalarSubImage<^T>
-let inline imageSubScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> = StackImageFunctions.imageSubScalar<^T>
-let mul = StackImageFunctions.mul
-let mulPair = StackImageFunctions.mulPair
-let inline scalarMulImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> = StackImageFunctions.scalarMulImage<^T>
-let inline imageMulScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> = StackImageFunctions.imageMulScalar<^T>
-let div = StackImageFunctions.div
-let divPair = StackImageFunctions.divPair
-let inline scalarDivImage<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> = StackImageFunctions.scalarDivImage<^T>
-let inline imageDivScalar<^T when ^T: equality and ^T: (static member op_Explicit: ^T -> float)> = StackImageFunctions.imageDivScalar<^T>
-let maxOfPair = StackImageFunctions.maxOfPair
-let minOfPair = StackImageFunctions.minOfPair
-let getMinMax = StackImageFunctions.getMinMax
-let failTypeMismatch<'T> = StackCore.failTypeMismatch<'T>
-let toVectorImage<'T when 'T: equality> : Stage<Image<'T> * Image<'T>, Image<'T list>> = StackImageFunctions.toVectorImage<'T>
-let vectorElement<'T when 'T: equality> componentId : Stage<Image<'T list>, Image<'T>> = StackImageFunctions.vectorElement<'T> componentId
-let vectorRange<'T when 'T: equality> firstComponent componentCount : Stage<Image<'T list>, Image<'T list>> = StackImageFunctions.vectorRange<'T> firstComponent componentCount
-let vector3ToColor inputMinimum inputMaximum : Stage<Image<float list>, Image<uint8 list>> = StackImageFunctions.vector3ToColor inputMinimum inputMaximum
-let colorToVector3 outputMinimum outputMaximum : Stage<Image<uint8 list>, Image<float list>> = StackImageFunctions.colorToVector3 outputMinimum outputMaximum
-let appendVectorElement : Stage<Image<float list> * Image<float>, Image<float list>> = StackImageFunctions.appendVectorElement
-let vectorMapElements functionName : Stage<Image<float list>, Image<float list>> = StackImageFunctions.vectorMapElements functionName
-let vectorDot : Stage<Image<float list> * Image<float list>, Image<float>> = StackImageFunctions.vectorDot
-let vectorCross3D : Stage<Image<float list> * Image<float list>, Image<float list>> = StackImageFunctions.vectorCross3D
-let vectorAngleTo reference : Stage<Image<float list>, Image<float>> = StackImageFunctions.vectorAngleTo reference
-let Re : Stage<Image<System.Numerics.Complex>, Image<float>> = StackImageFunctions.Re
-let Im : Stage<Image<System.Numerics.Complex>, Image<float>> = StackImageFunctions.Im
-let modulus : Stage<Image<System.Numerics.Complex>, Image<float>> = StackImageFunctions.modulus
-let arg : Stage<Image<System.Numerics.Complex>, Image<float>> = StackImageFunctions.arg
-let conjugate : Stage<Image<System.Numerics.Complex>, Image<System.Numerics.Complex>> = StackImageFunctions.conjugate
-let toComplex : Stage<Image<float> * Image<float>, Image<System.Numerics.Complex>> = StackImageFunctions.toComplex
-let polarToComplex : Stage<Image<float> * Image<float>, Image<System.Numerics.Complex>> = StackImageFunctions.polarToComplex
-let FFT<'T when 'T: equality> chunkX chunkY chunkZ : Stage<Image<'T>, Image<System.Numerics.Complex>> = StackImageFunctions.FFT<'T> chunkX chunkY chunkZ
-let invFFT chunkX chunkY chunkZ : Stage<Image<System.Numerics.Complex>, Image<float>> = StackImageFunctions.invFFT chunkX chunkY chunkZ
-let shiftFFT chunkX chunkY chunkZ : Stage<Image<System.Numerics.Complex>, Image<System.Numerics.Complex>> = StackImageFunctions.shiftFFT chunkX chunkY chunkZ
-let abs<'T when 'T: equality>= StackImageFunctions.abs<'T>
-let acos<'T when 'T: equality>= StackImageFunctions.acos<'T>
-let asin<'T when 'T: equality>= StackImageFunctions.asin<'T>
-let atan<'T when 'T: equality>= StackImageFunctions.atan<'T>
-let cos<'T when 'T: equality>= StackImageFunctions.cos<'T>
-let sin<'T when 'T: equality>= StackImageFunctions.sin<'T>
-let tan<'T when 'T: equality>= StackImageFunctions.tan<'T>
-let exp<'T when 'T: equality>= StackImageFunctions.exp<'T>
-let log10<'T when 'T: equality>= StackImageFunctions.log10<'T>
-let log<'T when 'T: equality>= StackImageFunctions.log<'T>
-let round<'T when 'T: equality>= StackImageFunctions.round<'T>
-let sqrt<'T when 'T: equality>= StackImageFunctions.sqrt<'T>
-let sqrtWindowed<'T when 'T: equality> = StackImageFunctions.sqrtWindowed<'T>
-let square<'T when 'T: equality>= StackImageFunctions.square<'T>
-let clamp<'T when 'T: equality> lower upper : Stage<Image<'T>, Image<'T>> = StackImageFunctions.clamp<'T> lower upper
-let shiftScale<'T when 'T: equality> shift scale : Stage<Image<'T>, Image<'T>> = StackImageFunctions.shiftScale<'T> shift scale
-let intensityStretch<'T when 'T: equality> inputMinimum inputMaximum outputMinimum outputMaximum : Stage<Image<'T>, Image<'T>> = StackImageFunctions.intensityStretch<'T> inputMinimum inputMaximum outputMinimum outputMaximum
-let smoothWMedian<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> = StackImageFunctions.smoothWMedian<'T> radius winSz
-let smoothWBilateral<'T when 'T: equality> domainSigma rangeSigma winSz : Stage<Image<'T>, Image<'T>> = StackImageFunctions.smoothWBilateral<'T> domainSigma rangeSigma winSz
-let gradientMagnitude<'T when 'T: equality> winSz : Stage<Image<'T>, Image<'T>> = StackImageFunctions.gradientMagnitude<'T> winSz
-let gradient order winSz : Stage<Image<float>, Image<float list>> = StackImageFunctions.gradient order winSz
-let sobelEdge<'T when 'T: equality> winSz : Stage<Image<'T>, Image<'T>> = StackImageFunctions.sobelEdge<'T> winSz
-let laplacian<'T when 'T: equality> winSz : Stage<Image<'T>, Image<'T>> = StackImageFunctions.laplacian<'T> winSz
-let grayscaleErode<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> = StackImageFunctions.grayscaleErode<'T> radius winSz
-let grayscaleDilate<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> = StackImageFunctions.grayscaleDilate<'T> radius winSz
-let grayscaleOpening<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> = StackImageFunctions.grayscaleOpening<'T> radius winSz
-let grayscaleClosing<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> = StackImageFunctions.grayscaleClosing<'T> radius winSz
-let whiteTopHat<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> = StackImageFunctions.whiteTopHat<'T> radius winSz
-let blackTopHat<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> = StackImageFunctions.blackTopHat<'T> radius winSz
-let morphologicalGradient<'T when 'T: equality> radius winSz : Stage<Image<'T>, Image<'T>> = StackImageFunctions.morphologicalGradient<'T> radius winSz
-let binaryContour = StackImageFunctions.binaryContour
-let binaryMedian = StackImageFunctions.binaryMedian
-let equal<'T when 'T: equality> = StackImageFunctions.equal<'T>
-let notEqual<'T when 'T: equality> = StackImageFunctions.notEqual<'T>
-let greater<'T when 'T: equality> = StackImageFunctions.greater<'T>
-let greaterEqual<'T when 'T: equality> = StackImageFunctions.greaterEqual<'T>
-let less<'T when 'T: equality> = StackImageFunctions.less<'T>
-let lessEqual<'T when 'T: equality> = StackImageFunctions.lessEqual<'T>
-let maskAnd = StackImageFunctions.maskAnd
-let maskOr = StackImageFunctions.maskOr
-let maskXor = StackImageFunctions.maskXor
-let maskNot = StackImageFunctions.maskNot
-let labelContour<'T when 'T: equality> fullyConnected winSz : Stage<Image<'T>, Image<'T>> = StackImageFunctions.labelContour<'T> fullyConnected winSz
-let changeLabel<'T when 'T: equality> fromLabel toLabel : Stage<Image<'T>, Image<'T>> = StackImageFunctions.changeLabel<'T> fromLabel toLabel
-let marchingCubes<'T when 'T: equality> = StackMesh.marchingCubes<'T>
+type Point3D = StackMesh.Point3D
+type Triangle = StackMesh.Triangle
+type TriangleSet = StackMesh.TriangleSet
+let marchingCubes<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackMesh.marchingCubesChunk<'T>
 let surfaceArea = StackMesh.surfaceArea
-let dogKeypoints<'T when 'T: equality> = StackPoints.dogKeypoints<'T>
-let logBlobKeypoints<'T when 'T: equality> = StackPoints.logBlobKeypoints<'T>
-let hessianKeypoints<'T when 'T: equality> = StackPoints.hessianKeypoints<'T>
-let harris3DKeypoints<'T when 'T: equality> = StackPoints.harris3DKeypoints<'T>
-let forstner3DKeypoints<'T when 'T: equality> = StackPoints.forstner3DKeypoints<'T>
-let phaseCongruencyKeypoints<'T when 'T: equality> = StackPoints.phaseCongruencyKeypoints<'T>
-let siftKeypoints<'T when 'T: equality> = StackPoints.siftKeypoints<'T>
-let resize<'T when 'T: equality> = StackImageFunctions.resize<'T>
-let resample<'T when 'T: equality> = StackImageFunctions.resample<'T>
-let imHistogram = StackImageFunctions.imHistogram
-let imHistogramFixedBins = StackImageFunctions.imHistogramFixedBins
-let histogramEstimate<'T when 'T: equality and 'T: comparison> = StackImageFunctions.histogramEstimate<'T>
-let estimateHistogram<'T when 'T: equality and 'T: comparison> = StackImageFunctions.estimateHistogram<'T>
-let histogramEstimateMap<'T when 'T: comparison> = StackImageFunctions.histogramEstimateMap<'T>
-let histogramEqualization histogram = StackImageFunctions.histogramEqualization histogram
-let sumProjection<'T when 'T: equality> = StackImageFunctions.sumProjection<'T>
-let volume = StackImageFunctions.volume
-let fitBiasModel<'T when 'T: equality> = StackBias.fitBiasModel<'T>
-let fitBiasModelMasked<'T when 'T: equality> = StackBias.fitBiasModelMasked<'T>
-let correctBias<'T when 'T: equality> = StackBias.correctBias<'T>
-let correctBiasMasked<'T when 'T: equality> = StackBias.correctBiasMasked<'T>
+let writeMesh = StackMesh.writeMesh
+let meshFilePath = StackMesh.meshFilePath
+
+let dogKeypoints<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackPoints.dogKeypointsChunk<'T>
+let logBlobKeypoints<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackPoints.logBlobKeypointsChunk<'T>
+let hessianKeypoints<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackPoints.hessianKeypointsChunk<'T>
+let harris3DKeypoints<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackPoints.harris3DKeypointsChunk<'T>
+let forstner3DKeypoints<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackPoints.forstner3DKeypointsChunk<'T>
+let phaseCongruencyKeypoints<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackPoints.phaseCongruencyKeypointsChunk<'T>
+let siftKeypoints<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackPoints.siftKeypointsChunk<'T>
+
+type BiasPolynomialTerm = StackBias.BiasPolynomialTerm
+type BiasPolynomialModel = StackBias.BiasPolynomialModel
+let fitBiasModel<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackBias.fitBiasModelChunk<'T>
+let fitBiasModelMasked<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackBias.fitBiasModelChunkMasked<'T>
+let correctBias<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackBias.correctBiasChunk<'T>
+let correctBiasMasked<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackBias.correctBiasChunkMasked<'T>
+let serialPolynomialBiasCorrect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackBias.serialPolynomialBiasCorrectChunk<'T>
+
+type SerialSliceTransform = StackSerialSections.SerialSliceTransform
+type SerialSliceManifest = StackSerialSections.SerialSliceManifest
+type SerialVolumeGeometry = StackSerialSections.SerialVolumeGeometry
 let serialIdentityManifest = StackSerialSections.serialIdentityManifest
-let serialPolynomialBiasCorrect<'T when 'T: equality> = StackSerialSections.serialPolynomialBiasCorrect<'T>
-let serialEstTrans<'T when 'T: equality> = StackSerialSections.serialEstTrans<'T>
-let serialEstBoundingBox<'T when 'T: equality> = StackSerialSections.serialEstBoundingBox<'T>
-let serialApplyTrans<'T when 'T: equality> = StackSerialSections.serialApplyTrans<'T>
-let serialTransImage<'T when 'T: equality> = StackSerialSections.serialTransImage<'T>
-let serialTransManifest<'T when 'T: equality> = StackSerialSections.serialTransManifest<'T>
-let serialApplyManifestInBoundingBox<'T when 'T: equality> = StackSerialSections.serialApplyManifestInBoundingBox<'T>
-let quantiles = StackImageFunctions.quantiles
-let otsuThresholdFromHistogram = StackImageFunctions.otsuThresholdFromHistogram
-let momentsThresholdFromHistogram = StackImageFunctions.momentsThresholdFromHistogram
-let histogramCounts<'T when 'T: comparison> = StackImageFunctions.histogramCounts<'T>
-let inline histogram2pairs< ^T when ^T: comparison and ^T: (static member op_Explicit: ^T -> float) > = StackImageFunctions.histogram2pairs<'T>
-let inline map2pairs< ^T, ^S when ^T: comparison and ^T: (static member op_Explicit: ^T -> float) and  ^S: (static member op_Explicit: ^S -> float) > = StackImageFunctions.map2pairs<'T,'S>
-let inline pairs2floats< ^T, ^S when ^T: (static member op_Explicit: ^T -> float) and  ^S: (static member op_Explicit: ^S -> float) > = StackImageFunctions.pairs2floats<'T,'S>
-let inline pairs2ints< ^T, ^S when ^T: (static member op_Explicit: ^T -> int) and  ^S: (static member op_Explicit: ^S -> int) > = StackImageFunctions.pairs2ints<'T,'S>
-let computeStats = StackImageFunctions.computeStats
-let smoothWGauss = StackImageFunctions.smoothWGauss
-let createPadding<'T when 'T: equality> = StackImageFunctions.createPadding<'T>
-let crop<'T when 'T: equality> = StackImageFunctions.crop<'T>
-let convolve = StackImageFunctions.convolve
-let conv = StackImageFunctions.conv
-let finiteDiff = StackImageFunctions.finiteDiff
-let structureTensor sigma rho : Stage<Image<float>, Image<float list>> = StackImageFunctions.structureTensor sigma rho
-let PCA components : Stage<Image<float list>, Image<float list>> = StackImageFunctions.PCA components
-let selectGroupedOutput groupSize part : Stage<Image<'T>, Image<'T>> = StackImageFunctions.selectGroupedOutput groupSize part
-let identity<'T> : Stage<'T, 'T> = StackCore.identityStage "identity"
-let erode = StackImageFunctions.erode
-let dilate = StackImageFunctions.dilate
-let dilateZonohedral = StackImageFunctions.dilateZonohedral
-let erodeZonohedral = StackImageFunctions.erodeZonohedral
-let opening = StackImageFunctions.opening
-let openingZonohedral = StackImageFunctions.openingZonohedral
-let closing = StackImageFunctions.closing
-let closingZonohedral = StackImageFunctions.closingZonohedral
-let connectedComponents = StackImageFunctions.connectedComponents
-let connectedComponentsLabels = StackImageFunctions.connectedComponentsLabels
-let connectedComponentsFullVolumeMemoryBytes = StackImageFunctions.connectedComponentsFullVolumeMemoryBytes
-let connectedComponentsFullVolumeFits = StackImageFunctions.connectedComponentsFullVolumeFits
-let relabelComponents = StackImageFunctions.relabelComponents
-let signedDistanceBand = StackImageFunctions.signedDistanceBand
-let threshold = StackImageFunctions.threshold
-let slicesToSlabs<'T when 'T: equality> chunkDepth =
-    StackCore.window chunkDepth 0u chunkDepth --> StackCore.windowToSlab<'T>
-let windowToSlab<'T when 'T: equality> = StackCore.windowToSlab<'T>
-let windowToSlabWithRange<'T when 'T: equality> = StackCore.windowToSlabWithRange<'T>
-let mapSlabWithStage<'S, 'T when 'S: equality and 'T: equality> = StackCore.mapSlabWithStage<'S, 'T>
-let slabToWindow<'T when 'T: equality> = StackCore.slabToWindow<'T>
-let slabWithRangeToWindow<'T when 'T: equality> = StackCore.slabWithRangeToWindow<'T>
-let windowSkipTakeM outputStart outputCount = StackCore.windowSkipTakeM outputStart outputCount
-let slabSkipTakeM<'T when 'T: equality> = StackCore.slabSkipTakeM<'T>
-let windowedViaSlab<'S, 'T when 'S: equality and 'T: equality> = StackImageFunctions.windowedViaSlab<'S, 'T>
-let windowSlabRoundtrip<'T when 'T: equality> = StackImageFunctions.windowSlabRoundtrip<'T>
-let windowedCast<'S, 'T when 'S: equality and 'T: equality> = StackImageFunctions.windowedCast<'S, 'T>
-let windowedThreshold<'T when 'T: equality> = StackImageFunctions.windowedThreshold<'T>
-let addNormalNoise = StackImageFunctions.addNormalNoise
-let addSaltAndPepperNoise = StackImageFunctions.addSaltAndPepperNoise
-let addShotNoise = StackImageFunctions.addShotNoise
-let addSpeckleNoise = StackImageFunctions.addSpeckleNoise
-let show = StackImageFunctions.show
-let plot = StackImageFunctions.plot
-let print = StackImageFunctions.print
-let zero<'T when 'T: equality>= StackImageFunctions.zero<'T>
-let polygonMask = StackImageFunctions.polygonMask
-let repeat<'T when 'T: equality> = StackImageFunctions.repeat<'T>
-let repeatStage<'T when 'T: equality> = StackImageFunctions.repeatStage<'T>
-let euler2DTransformPath = StackImageFunctions.euler2DTransformPath
-let createByEuler2DTransformFromImage<'T when 'T: equality> = StackImageFunctions.createByEuler2DTransformFromImage<'T>
-let normalNoise<'T when 'T: equality> = StackImageFunctions.normalNoise<'T>
-let saltAndPepperNoise<'T when 'T: equality> = StackImageFunctions.saltAndPepperNoise<'T>
-let shotNoise<'T when 'T: equality> = StackImageFunctions.shotNoise<'T>
-let speckleNoise<'T when 'T: equality> = StackImageFunctions.speckleNoise<'T>
-let createByEuler2DTransform<'T when 'T: equality>= StackImageFunctions.createByEuler2DTransform<'T>
-let empty = StackImageFunctions.empty
-type ComponentStatistics = StackImageFunctions.ComponentStatistics
-type ConnectedComponentTranslationTable = StackImageFunctions.ConnectedComponentTranslationTable
-let makeConnectedComponentTranslationTable = StackImageFunctions.makeConnectedComponentTranslationTable
-let makeConnectedComponentLabelTranslationTable = StackImageFunctions.makeConnectedComponentLabelTranslationTable
-let updateConnectedComponents = StackImageFunctions.updateConnectedComponents
-let permuteAxes = StackImageFunctions.permuteAxes
+let serialEstTrans<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackSerialSections.serialEstTransChunk<'T>
+let serialEstBoundingBox<'T when 'T: equality> = StackSerialSections.serialEstBoundingBoxChunk<'T>
+let serialApplyTrans<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackSerialSections.serialApplyTransChunk<'T>
+let serialTrans<'T when 'T: equality> = StackSerialSections.serialTransChunk<'T>
+let serialTransManifest<'T when 'T: equality> = StackSerialSections.serialTransManifestChunk<'T>
+let serialApplyManifestInBoundingBox<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackSerialSections.serialApplyManifestInBoundingBoxChunk<'T>
+
+type ImageGeom = StackAffineResampler.ImageGeom
+let indexToPhysical = StackAffineResampler.indexToPhysical
+let physicalToContIndex = StackAffineResampler.physicalToContIndex
+let requiredChunksForSliceTrilinear = StackAffineResampler.requiredChunksForSliceTrilinear
+let resampleAffineSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackAffineResampler.resampleAffineChunkSlices<'T>
+let resampleAffine<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackAffineResampler.resampleAffineChunk<'T>

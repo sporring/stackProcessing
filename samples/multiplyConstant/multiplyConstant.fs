@@ -16,16 +16,16 @@ let main arg =
 
     let maskMaker = 
         src
-        |>  zero<uint8> width height depth
-        >=> imageAddScalar 1uy
-        >=> imageMulScalar 2uy
+        |> zero<uint8> width height depth
+        >=> addScalar 1uy
+        >=> mulScalar 2uy
 
     let imageMaker =
         src
         |> zero<uint8> width height depth
 
-    (imageMaker, maskMaker) ||> zip 
-    >>=> mulPair
+    (imageMaker, maskMaker) ||> zip
+    >=> mulPair<uint8>
     >=> write output ".tiff"
     |> sink
 

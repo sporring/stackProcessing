@@ -12,8 +12,9 @@ let main args =
         | _ -> "../tmp/forstner3DKeypoints"
 
     src
-    |> normalNoise<float> 64u 64u 64u 128.0 25.0
-    >=> forstner3DKeypoints<float> 3.0 1.5 0.1 16u
+    |> zero<float32> 64u 64u 64u
+    >=> addNormalNoise<float32> 128.0 25.0
+    >=> forstner3DKeypoints<float32> 3.0 1.5 0.1 16u
     >=> writePointSet output ".csv"
     |> sink
 

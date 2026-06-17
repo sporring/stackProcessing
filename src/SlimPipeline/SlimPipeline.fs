@@ -4,6 +4,7 @@ open System
 open System.Collections.Generic
 open System.Globalization
 open System.IO
+open System.Threading.Tasks
 open FSharp.Control
 open AsyncSeqExtensions
 
@@ -139,6 +140,18 @@ type Pipe<'S,'T> = {
     Apply: bool -> AsyncSeq<'S> -> AsyncSeq<'T>
     Profile: Profile
 }
+
+type MonoidFolder<'Item, 'State, 'Result> =
+    { Create: unit -> 'State
+      AddItemInto: 'State -> 'Item -> unit
+      MergeInto: 'State -> 'State -> unit
+      Finish: 'State -> 'Result
+      ReleaseItem: 'Item -> unit }
+
+module private ParallelValidation =
+    let windowSize value =
+        if value < 1 then
+            invalidArg "windowSize" $"Parallel stages require a positive window size, got {value}."
 
 module private Pipe =
     type TeeSide =
@@ -521,6 +534,131 @@ module private Pipe =
 
     let flattenWindow (name: string) : Pipe<Window<'T>, 'T> =
         collect name Window.emitItems
+
+    let parallelReduce
+        name
+        (windowSize: int)
+        (folder: MonoidFolder<'Item, 'State, 'Result>)
+        profile
+        : Pipe<'Item, 'Result>
+        =
+        ParallelValidation.windowSize windowSize
+        let workers = windowSize
+
+        let reducer debug (input: AsyncSeq<'Item>) =
+            async {
+                let locals = Array.init workers (fun _ -> folder.Create())
+                if workers = 1 then
+                    for item in input do
+                        try
+                            folder.AddItemInto locals[0] item
+                        finally
+                            folder.ReleaseItem item
+                else
+                    let windowPipe =
+                        window
+                            $"{name}.windows"
+                            (uint windowSize)
+                            0u
+                            (fun _ item -> item)
+                            (uint windowSize)
+
+                    let processWindow (items: 'Item list) =
+                        if items.Length > 0 then
+                            Parallel.For(
+                                0,
+                                workers,
+                                fun worker ->
+                                    let rec loop index remaining =
+                                        match remaining with
+                                        | [] -> ()
+                                        | item :: rest ->
+                                            if index % workers = worker then
+                                                try
+                                                    folder.AddItemInto locals[worker] item
+                                                finally
+                                                    folder.ReleaseItem item
+                                            loop (index + 1) rest
+
+                                    loop 0 items)
+                            |> ignore
+
+                    for window in windowPipe.Apply debug input do
+                        processWindow window.Items
+
+                for worker in 1 .. workers - 1 do
+                    folder.MergeInto locals[0] locals[worker]
+
+                return folder.Finish locals[0]
+            }
+
+        reduce name reducer profile
+
+    let parallelCollect
+        name
+        (windowSize: int)
+        (batchSize: int)
+        (stride: int)
+        (pad: int)
+        (zeroMaker: int -> 'S -> 'S)
+        (mapper: bool -> Window<'S> -> 'T list)
+        : Pipe<'S, 'T>
+        =
+        ParallelValidation.windowSize windowSize
+        ParallelValidation.windowSize batchSize
+        let workers = batchSize
+        if stride < 1 then
+            invalidArg "stride" $"Pipe.parallelCollect requires a positive stride, got {stride}."
+
+        let apply debug (input: AsyncSeq<'S>) =
+            asyncSeq {
+                let windowPipe = window name (uint windowSize) (uint pad) zeroMaker (uint stride)
+                if workers = 1 then
+                    for window in windowPipe.Apply debug input do
+                        yield! mapper debug window |> AsyncSeq.ofSeq
+                else
+                    let batch = ResizeArray<Window<'S>>(workers)
+
+                    let processBatch () =
+                        let windows = batch.ToArray()
+                        batch.Clear()
+                        let outputs = Array.zeroCreate<'T list> windows.Length
+                        Parallel.For(
+                            0,
+                            windows.Length,
+                            fun i -> outputs[i] <- mapper debug windows[i])
+                        |> ignore
+                        outputs |> Seq.collect (fun items -> items)
+
+                    for window in windowPipe.Apply debug input do
+                        batch.Add window
+                        if batch.Count = workers then
+                            yield! processBatch() |> AsyncSeq.ofSeq
+
+                    if batch.Count > 0 then
+                        yield! processBatch() |> AsyncSeq.ofSeq
+            }
+
+        create name apply Streaming
+
+    let parallelMap
+        name
+        (windowSize: int)
+        (batchSize: int)
+        (stride: int)
+        (pad: int)
+        (zeroMaker: int -> 'S -> 'S)
+        (mapper: bool -> Window<'S> -> 'T)
+        : Pipe<'S, 'T>
+        =
+        parallelCollect
+            name
+            windowSize
+            batchSize
+            stride
+            pad
+            zeroMaker
+            (fun debug window -> [ mapper debug window ])
 
     let ignore clean : Pipe<'T, unit> =
         let apply debug input =
@@ -1584,6 +1722,70 @@ module Stage =
         let build () = Pipe.create name apply Streaming
         let transition = ProfileTransition.create Streaming Streaming
         create name build transition memoryNeed id []// Type calculation needs to be updated!!!!
+
+    let parallelReduce
+        name
+        (windowSize: int)
+        (folder: MonoidFolder<'Item, 'State, 'Result>)
+        profile
+        memoryNeed
+        elementTransformation
+        : Stage<'Item, 'Result>
+        =
+        let build () = Pipe.parallelReduce name windowSize folder profile
+        let transition = ProfileTransition.create Streaming Constant
+        createWithModelAndSlice
+            name
+            build
+            transition
+            (StageMemoryModel.fromSinglePeak Reduce memoryNeed)
+            elementTransformation
+            (ReduceTo 1UL)
+            []
+
+    let parallelCollect
+        name
+        (windowSize: int)
+        (batchSize: int)
+        (stride: int)
+        (pad: int)
+        (zeroMaker: int -> 'S -> 'S)
+        (mapper: bool -> Window<'S> -> 'T list)
+        memoryNeed
+        elementTransformation
+        : Stage<'S, 'T>
+        =
+        let build () = Pipe.parallelCollect name windowSize batchSize stride pad zeroMaker mapper
+        let transition = ProfileTransition.create Streaming Streaming
+        createWithModel
+            name
+            build
+            transition
+            (StageMemoryModel.fromSinglePeak Map memoryNeed)
+            elementTransformation
+            []
+
+    let parallelMap
+        name
+        (windowSize: int)
+        (batchSize: int)
+        (stride: int)
+        (pad: int)
+        (zeroMaker: int -> 'S -> 'S)
+        (mapper: bool -> Window<'S> -> 'T)
+        memoryNeed
+        elementTransformation
+        : Stage<'S, 'T>
+        =
+        let build () = Pipe.parallelMap name windowSize batchSize stride pad zeroMaker mapper
+        let transition = ProfileTransition.create Streaming Streaming
+        createWithModel
+            name
+            build
+            transition
+            (StageMemoryModel.fromSinglePeak Map memoryNeed)
+            elementTransformation
+            []
 
 ////////////////////////////////////////////////////////////
 // Plan flow controler

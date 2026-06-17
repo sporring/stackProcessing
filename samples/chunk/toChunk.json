@@ -7,174 +7,45 @@
       "x": 67.63233284655495,
       "y": 100,
       "parameters": [
-        {
-          "key": "availableMemory",
-          "value": "2147483648UL",
-          "useInput": false
-        },
-        {
-          "key": "type",
-          "value": "UInt8",
-          "useInput": false
-        },
-        {
-          "key": "format",
-          "value": "Image stack",
-          "useInput": false
-        },
-        {
-          "key": "input",
-          "value": "../data/volume",
-          "useInput": false
-        },
-        {
-          "key": "suffix",
-          "value": ".tiff",
-          "useInput": false
-        },
-        {
-          "key": "slabDepth",
-          "value": "1",
-          "useInput": false
-        },
-        {
-          "key": "multiscaleIndex",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "datasetIndex",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "timepoint",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "channel",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "maxParallelChunks",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "datasetPath",
-          "value": "/entry/data/data",
-          "useInput": false
-        },
-        {
-          "key": "frameAxis",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "yAxis",
-          "value": "1",
-          "useInput": false
-        },
-        {
-          "key": "xAxis",
-          "value": "2",
-          "useInput": false
-        }
+        { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "input", "value": "../data/volume", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false },
+        { "key": "thickDepth", "value": "1", "useInput": false },
+        { "key": "multiscaleIndex", "value": "0", "useInput": false },
+        { "key": "datasetIndex", "value": "0", "useInput": false },
+        { "key": "timepoint", "value": "0", "useInput": false },
+        { "key": "channel", "value": "0", "useInput": false },
+        { "key": "maxParallelChunks", "value": "0", "useInput": false },
+        { "key": "datasetPath", "value": "/entry/data/data", "useInput": false },
+        { "key": "frameAxis", "value": "0", "useInput": false },
+        { "key": "yAxis", "value": "1", "useInput": false },
+        { "key": "xAxis", "value": "2", "useInput": false }
       ]
     },
     {
       "id": "node-2",
-      "functionId": "WriteChunks",
+      "functionId": "Write",
       "x": 232.36766715344504,
       "y": 100,
       "parameters": [
-        {
-          "key": "output",
-          "value": "../tmp/toChunk",
-          "useInput": false
-        },
-        {
-          "key": "suffix",
-          "value": ".mha",
-          "useInput": false
-        },
-        {
-          "key": "chunkX",
-          "value": "64",
-          "useInput": false
-        },
-        {
-          "key": "chunkY",
-          "value": "64",
-          "useInput": false
-        },
-        {
-          "key": "chunkZ",
-          "value": "16",
-          "useInput": false
-        }
-      ]
-    },
-    {
-      "id": "node-3",
-      "functionId": "Expand",
-      "x": 232.36766715344504,
-      "y": 220,
-      "parameters": []
-    },
-    {
-      "id": "node-4",
-      "functionId": "Print",
-      "x": 232.36766715344504,
-      "y": 330,
-      "parameters": [
-        {
-          "key": "format",
-          "value": "chunks={input1} size={input2} componentType={input3}",
-          "useInput": false
-        },
-        {
-          "key": "input1",
-          "value": "",
-          "useInput": true
-        },
-        {
-          "key": "input2",
-          "value": "",
-          "useInput": true
-        },
-        {
-          "key": "input3",
-          "value": "",
-          "useInput": true
-        },
-        {
-          "key": "input4",
-          "value": "",
-          "useInput": false
-        },
-        {
-          "key": "input5",
-          "value": "",
-          "useInput": false
-        },
-        {
-          "key": "input6",
-          "value": "",
-          "useInput": false
-        },
-        {
-          "key": "input7",
-          "value": "",
-          "useInput": false
-        },
-        {
-          "key": "input8",
-          "value": "",
-          "useInput": false
-        }
+        { "key": "format", "value": "OME-Zarr", "useInput": false },
+        { "key": "output", "value": "../tmp/toChunk.zarr", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false },
+        { "key": "name", "value": "image", "useInput": false },
+        { "key": "depth", "value": "32", "useInput": false },
+        { "key": "chunkX", "value": "64", "useInput": false },
+        { "key": "chunkY", "value": "64", "useInput": false },
+        { "key": "chunkZ", "value": "16", "useInput": false },
+        { "key": "physicalSizeX", "value": "1.0", "useInput": false },
+        { "key": "physicalSizeY", "value": "1.0", "useInput": false },
+        { "key": "physicalSizeZ", "value": "1.0", "useInput": false },
+        { "key": "maxConcurrentWrites", "value": "0", "useInput": false },
+        { "key": "datasetPath", "value": "/entry/data/data", "useInput": false },
+        { "key": "frameAxis", "value": "0", "useInput": false },
+        { "key": "yAxis", "value": "1", "useInput": false },
+        { "key": "xAxis", "value": "2", "useInput": false }
       ]
     }
   ],
@@ -186,38 +57,6 @@
       "toNode": "node-2",
       "toKind": "dataInput",
       "toPort": 0
-    },
-    {
-      "fromNode": "node-2",
-      "fromKind": "reducerOutput",
-      "fromPort": 0,
-      "toNode": "node-3",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "node-3",
-      "fromKind": "reducerOutput",
-      "fromPort": 0,
-      "toNode": "node-4",
-      "toKind": "parameterInput",
-      "toPort": 1
-    },
-    {
-      "fromNode": "node-3",
-      "fromKind": "reducerOutput",
-      "fromPort": 1,
-      "toNode": "node-4",
-      "toKind": "parameterInput",
-      "toPort": 2
-    },
-    {
-      "fromNode": "node-3",
-      "fromKind": "reducerOutput",
-      "fromPort": 2,
-      "toNode": "node-4",
-      "toKind": "parameterInput",
-      "toPort": 3
     }
   ]
 }

@@ -15,29 +15,27 @@ let main args =
 
     let model =
         src
-        |> readRange<float> 0u 1 255u input ".tiff"
-        >=> fitBiasModel<float> 2 256u
+        |> readRange<float32> 0u 1 255u input ".tiff"
+        >=> fitBiasModel<float32> 2 256u
         |> drain
 
     src
-    |> readRange<float> 0u 1 255u input ".tiff"
-    >=> correctBias<float> model
-    >=> intensityStretch<float> 0.0 255.0 0.0 255.0
-    >=> cast<float, uint8>
+    |> readRange<float32> 0u 1 255u input ".tiff"
+    >=> correctBias<float32> model
+    >=> cast<float32, uint8>
     >=> write (outputRoot + "/unmasked") ".tiff"
     |> sink
 
-    let image = src |> readRange<float> 0u 1 255u input ".tiff"
+    let image = src |> readRange<float32> 0u 1 255u input ".tiff"
     let maskStream = src |> read<uint8> mask ".tiff"
     let maskedModel =
         zip image maskStream
-        >=> fitBiasModelMasked<float> 2 256u
+        >=> fitBiasModelMasked<float32> 2 256u
         |> drain
 
     zip image maskStream
-    >=> correctBiasMasked<float> maskedModel
-    >=> intensityStretch<float> 0.0 255.0 0.0 255.0
-    >=> cast<float, uint8>
+    >=> correctBiasMasked<float32> maskedModel
+    >=> cast<float32, uint8>
     >=> write (outputRoot + "/masked") ".tiff"
     |> sink
 

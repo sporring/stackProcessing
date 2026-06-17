@@ -1,227 +1,31 @@
 {
   "version": 1,
   "nodes": [
-    {
-      "id": "node-1",
-      "functionId": "Read",
-      "x": 1265.69921875,
-      "y": 948.9993286132812,
+    { "id": "read", "functionId": "Read", "x": 80.0, "y": 120.0,
       "parameters": [
-        {
-          "key": "availableMemory",
-          "value": "1073741824UL",
-          "useInput": false
-        },
-        {
-          "key": "type",
-          "value": "UInt8",
-          "useInput": false
-        },
-        {
-          "key": "format",
-          "value": "Volume file",
-          "useInput": false
-        },
-        {
-          "key": "input",
-          "value": "../data/volumedata.tif",
-          "useInput": false
-        },
-        {
-          "key": "suffix",
-          "value": ".tiff",
-          "useInput": false
-        },
-        {
-          "key": "slabDepth",
-          "value": "1",
-          "useInput": false
-        },
-        {
-          "key": "multiscaleIndex",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "datasetIndex",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "timepoint",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "channel",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "maxParallelChunks",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "datasetPath",
-          "value": "/entry/data/data",
-          "useInput": false
-        },
-        {
-          "key": "frameAxis",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "yAxis",
-          "value": "1",
-          "useInput": false
-        },
-        {
-          "key": "xAxis",
-          "value": "2",
-          "useInput": false
-        }
-      ]
-    },
-    {
-      "id": "node-2",
-      "functionId": "Resize",
-      "x": 1480.69921875,
-      "y": 948.9993286132812,
+        { "key": "availableMemory", "value": "1073741824UL", "useInput": false },
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "format", "value": "Volume file", "useInput": false },
+        { "key": "input", "value": "../data/volumedata.tif", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] },
+    { "id": "mask", "functionId": "Threshold", "x": 300.0, "y": 120.0,
       "parameters": [
-        {
-          "key": "type",
-          "value": "UInt8",
-          "useInput": false
-        },
-        {
-          "key": "width",
-          "value": "64",
-          "useInput": false
-        },
-        {
-          "key": "height",
-          "value": "64",
-          "useInput": false
-        },
-        {
-          "key": "depth",
-          "value": "64",
-          "useInput": false
-        },
-        {
-          "key": "interpolation",
-          "value": "Linear",
-          "useInput": false
-        }
-      ]
-    },
-    {
-      "id": "node-3",
-      "functionId": "Write",
-      "x": 1695.69921875,
-      "y": 948.9993286132812,
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "lower", "value": "1", "useInput": false },
+        { "key": "upper", "value": "255", "useInput": false } ] },
+    { "id": "volume", "functionId": "Volume", "x": 520.0, "y": 120.0,
       "parameters": [
-        {
-          "key": "format",
-          "value": "Image stack",
-          "useInput": false
-        },
-        {
-          "key": "output",
-          "value": "../tmp/volume",
-          "useInput": false
-        },
-        {
-          "key": "suffix",
-          "value": ".tiff",
-          "useInput": false
-        },
-        {
-          "key": "name",
-          "value": "image",
-          "useInput": false
-        },
-        {
-          "key": "depth",
-          "value": "1",
-          "useInput": false
-        },
-        {
-          "key": "chunkX",
-          "value": "64",
-          "useInput": false
-        },
-        {
-          "key": "chunkY",
-          "value": "64",
-          "useInput": false
-        },
-        {
-          "key": "chunkZ",
-          "value": "8",
-          "useInput": false
-        },
-        {
-          "key": "physicalSizeX",
-          "value": "1.0",
-          "useInput": false
-        },
-        {
-          "key": "physicalSizeY",
-          "value": "1.0",
-          "useInput": false
-        },
-        {
-          "key": "physicalSizeZ",
-          "value": "1.0",
-          "useInput": false
-        },
-        {
-          "key": "maxConcurrentWrites",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "datasetPath",
-          "value": "/entry/data/data",
-          "useInput": false
-        },
-        {
-          "key": "frameAxis",
-          "value": "0",
-          "useInput": false
-        },
-        {
-          "key": "yAxis",
-          "value": "1",
-          "useInput": false
-        },
-        {
-          "key": "xAxis",
-          "value": "2",
-          "useInput": false
-        }
-      ]
-    }
+        { "key": "xUnit", "value": "1.0", "useInput": false },
+        { "key": "yUnit", "value": "1.0", "useInput": false },
+        { "key": "zUnit", "value": "1.0", "useInput": false } ] },
+    { "id": "print", "functionId": "Print", "x": 740.0, "y": 120.0,
+      "parameters": [
+        { "key": "format", "value": "Foreground volume: {Volume}", "useInput": false },
+        { "key": "input1", "value": "Volume", "useInput": true } ] }
   ],
   "edges": [
-    {
-      "fromNode": "node-1",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-2",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "node-2",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-3",
-      "toKind": "dataInput",
-      "toPort": 0
-    }
+    { "fromNode": "read", "fromKind": "dataOutput", "fromPort": 0, "toNode": "mask", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "mask", "fromKind": "dataOutput", "fromPort": 0, "toNode": "volume", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "volume", "fromKind": "reducerOutput", "fromPort": 0, "toNode": "print", "toKind": "parameterInput", "toPort": 1 }
   ]
 }

@@ -18,7 +18,7 @@ Options:
   --repeat-end N          Last repeat index to run. Defaults to --repeat.
   --backends LIST         Comma-separated baseline backends.
                           Defaults to stackprocessing,python-skimage-scipy,cpp-itk,matlab.
-                          Valid baseline backends: stackprocessing,stackprocessing-arraypool,stackprocessing-arraypool-slice,stackprocessing-arraypool-slice-reuse,stackprocessing-byte-slice-reuse,stackprocessing-byte-float32-slice-reuse,stackprocessing-zarr,python-skimage-scipy,cpp-itk,matlab.
+                          Valid baseline backends: stackprocessing,stackprocessing-arraypool,stackprocessing-arraypool-slice,stackprocessing-arraypool-slice-reuse,stackprocessing-byte-slice-reuse,stackprocessing-byte-float32-slice-reuse,stackprocessing-libtiff-direct-copy,stackprocessing-libtiff-direct-threshold,stackprocessing-libtiff-direct-threshold-intype,stackprocessing-libtiff-strip-copy,stackprocessing-libtiff-raw-strip-copy,stackprocessing-native-libtiff-raw-strip-copy,stackprocessing-tifflibrary-raw-strip-copy,stackprocessing-imagesharp-copy,stackprocessing-zarr,python-skimage-scipy,cpp-itk,matlab.
   --include-special       Also run StackProcessing-Zarr and python-dask-omezarr special cases.
   --cases PATH            Baseline cases CSV. Defaults to benchmarks/config/cases.csv.
   --special-cases PATH    Special cases CSV for OME-Zarr conversion and Dask. Defaults to benchmarks/config/cases.csv.
@@ -253,7 +253,7 @@ has_backend() {
 
 for backend in ${backend_array[@]+"${backend_array[@]}"}; do
   case "$backend" in
-    stackprocessing|stackprocessing-arraypool|stackprocessing-arraypool-slice|stackprocessing-arraypool-slice-reuse|stackprocessing-byte-slice-reuse|stackprocessing-byte-float32-slice-reuse|stackprocessing-zarr|python-skimage-scipy|cpp-itk|matlab)
+    stackprocessing|stackprocessing-arraypool|stackprocessing-arraypool-slice|stackprocessing-arraypool-slice-reuse|stackprocessing-byte-slice-reuse|stackprocessing-byte-float32-slice-reuse|stackprocessing-libtiff-direct-copy|stackprocessing-libtiff-direct-threshold|stackprocessing-libtiff-direct-threshold-intype|stackprocessing-libtiff-strip-copy|stackprocessing-libtiff-raw-strip-copy|stackprocessing-native-libtiff-raw-strip-copy|stackprocessing-tifflibrary-raw-strip-copy|stackprocessing-imagesharp-copy|stackprocessing-zarr|python-skimage-scipy|cpp-itk|matlab)
       ;;
     "")
       continue
@@ -266,8 +266,19 @@ for backend in ${backend_array[@]+"${backend_array[@]}"}; do
 done
 
 if [[ "$skip_builds" -eq 0 ]]; then
-  if [[ "$skip_inputs" -eq 0 ]] || has_backend stackprocessing || has_backend stackprocessing-zarr || has_backend stackprocessing-arraypool || has_backend stackprocessing-arraypool-slice || has_backend stackprocessing-arraypool-slice-reuse || has_backend stackprocessing-byte-slice-reuse || has_backend stackprocessing-byte-float32-slice-reuse; then
-    run_cmd dotnet build benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj --nologo
+  if [[ "$skip_inputs" -eq 0 ]] || has_backend stackprocessing || has_backend stackprocessing-zarr || has_backend stackprocessing-arraypool || has_backend stackprocessing-arraypool-slice || has_backend stackprocessing-arraypool-slice-reuse || has_backend stackprocessing-byte-slice-reuse || has_backend stackprocessing-byte-float32-slice-reuse || has_backend stackprocessing-libtiff-direct-copy || has_backend stackprocessing-libtiff-direct-threshold || has_backend stackprocessing-libtiff-direct-threshold-intype || has_backend stackprocessing-libtiff-strip-copy || has_backend stackprocessing-libtiff-raw-strip-copy || has_backend stackprocessing-native-libtiff-raw-strip-copy || has_backend stackprocessing-tifflibrary-raw-strip-copy || has_backend stackprocessing-imagesharp-copy; then
+    run_cmd dotnet build benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj -c Release --nologo --disable-build-servers -p:UseSharedCompilation=false
+  fi
+  if has_backend stackprocessing-native-libtiff-raw-strip-copy; then
+    case "$(uname -s)" in
+      Darwin|Linux)
+        run_cmd bash benchmarks/native-libtiff-shim/build-unix.sh "$(dirname "$stackprocessing_dll")"
+        ;;
+      *)
+        echo "run_all.sh: native libtiff shim auto-build is only wired for macOS/Linux. Build sp_libtiff_shim manually for this platform or pass --skip-builds." >&2
+        exit 2
+        ;;
+    esac
   fi
   if has_backend cpp-itk || [[ "$build_itk" -eq 1 ]]; then
     run_cmd cmake -S benchmarks/cpp-itk -B benchmarks/cpp-itk/build

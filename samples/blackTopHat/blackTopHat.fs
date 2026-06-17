@@ -1,4 +1,4 @@
-// Extract small dark structures with a black top-hat filter.
+// Extract small background holes with a binary zonohedral black top-hat filter.
 open StackProcessing
 
 [<EntryPoint>]
@@ -14,7 +14,8 @@ let main args =
 
     src
     |> read<uint8> input ".tiff"
-    >=> blackTopHat<uint8> 3u None
+    >=> thresholdRange<uint8> 1 255
+    >=> binaryBlackTopHat 3u
     >=> write output ".tiff"
     |> sink
 

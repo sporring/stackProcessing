@@ -508,12 +508,13 @@ let generatorSuite =
             Expect.stringContains code ">=> addShotNoise 2.0" "AddShotNoise should lower with scale."
             Expect.stringContains code ">=> addSpeckleNoise 0.5" "AddSpeckleNoise should lower with std."
 
-        testCase "chunk read and write boxes lower to chunk DSL functions" <| fun _ ->
+        testCase "slice read and chunk write boxes lower to chunk DSL functions" <| fun _ ->
             let read =
-                node "read" "ReadSlab"
+                node "read" "Read"
                     [ p "availableMemory" "1073741824" false
                       p "type" "UInt8" false
-                      p "input" "chunks" false
+                      p "format" "Image stack" false
+                      p "input" "input" false
                       p "suffix" ".mha" false ]
 
             let write =
@@ -528,7 +529,7 @@ let generatorSuite =
                 graph [ read; write ] [ edge "read" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code "|> readSlab<uint8> \"chunks\" \".mha\"" "ReadSlab should generate the slab reader."
+            Expect.stringContains code "|> read<uint8> \"input\" \".mha\"" "Read should generate the Chunk slice reader."
             Expect.stringContains code ">=> writeChunks \"chunks-out\" \".mha\" 12u 13u 14u" "WriteChunks should generate the chunk writer wrapper."
 
             let expand =
@@ -637,7 +638,7 @@ let generatorSuite =
                       p "type" "UInt16" false
                       p "format" "OME-Zarr" false
                       p "input" "input.zarr" false
-                      p "slabDepth" "8" false
+                      p "thickDepth" "8" false
                       p "multiscaleIndex" "0" false
                       p "datasetIndex" "1" false
                       p "timepoint" "2" false
@@ -667,8 +668,8 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "let ChunkInfo0 = getZarrInfo \"input.zarr\" 0 1" "GetZarrInfo should generate a metadata binding."
-            Expect.stringContains code "|> readZarrSlab<uint16> \"input.zarr\" 0 1 2 3 4" "Read with OME-Zarr format should generate the Zarr slab reader."
-            Expect.stringContains code ">=> writeZarr \"output.zarr\" ChunkInfo0.topLeftInfo.componentType 32u 16u 17u 8u 0.5 0.5 2.0 2" "Write with OME-Zarr target should accept linked Zarr metadata."
+            Expect.stringContains code "|> readZarrThick<uint16> 0u System.UInt32.MaxValue 8u \"input.zarr\" 0 1 2 3 4" "Read with OME-Zarr format should generate the thick Zarr reader."
+            Expect.stringContains code ">=> writeZarrThick \"output.zarr\" ChunkInfo0.topLeftInfo.componentType 32u 16u 17u 8u 0.5 0.5 2.0 2" "Write with OME-Zarr target should accept linked Zarr metadata."
             Expect.stringContains code "|> sink" "Terminal Zarr Write should be sunk."
 
         testCase "nexus boxes lower to nexus DSL functions" <| fun _ ->
@@ -687,7 +688,7 @@ let generatorSuite =
                       p "format" "NeXus/HDF5" false
                       p "input" "scan.h5" false
                       p "datasetPath" "/entry/data/data" false
-                      p "slabDepth" "8" false
+                      p "thickDepth" "8" false
                       p "frameAxis" "0" false
                       p "yAxis" "1" false
                       p "xAxis" "2" false ]
@@ -716,7 +717,7 @@ let generatorSuite =
 
             Expect.stringContains code "let ChunkInfo0 = getNexusInfo \"scan.h5\" \"/entry/data/data\" 0 1 2" "GetNexusInfo should generate a metadata binding."
             Expect.stringContains code "|> readNexusSlab<uint16> \"scan.h5\" \"/entry/data/data\" 0 1 2" "Read with NeXus/HDF5 format should generate the NeXus slab reader."
-            Expect.stringContains code ">=> writeZarr \"output.zarr\" \"converted\" ChunkInfo0.size[2] 16u 17u 8u 1.0 1.0 1.0 0" "Write with OME-Zarr target should accept linked NeXus metadata."
+            Expect.stringContains code ">=> writeZarrThick \"output.zarr\" \"converted\" ChunkInfo0.size[2] 16u 17u 8u 1.0 1.0 1.0 0" "Write with OME-Zarr target should accept linked NeXus metadata."
 
         testCase "write nexus target lowers to writeNexus" <| fun _ ->
             let read =
@@ -1466,10 +1467,6 @@ let generatorSuite =
                       p "input" "input" false
                       p "suffix" ".tiff" false ]
 
-            let relabel =
-                node "relabel" "RelabelComponents"
-                    [ p "minimumObjectSize" "10" false
-                      p "windowSize" "5" false ]
             let signed =
                 node "signed" "SignedDistanceBand"
                     [ p "bandRadius" "9" false
@@ -1481,14 +1478,12 @@ let generatorSuite =
 
             let code =
                 graph
-                    [ read; relabel; signed; write ]
-                    [ edge "read" "output" 0 "relabel" "input" 0
-                      edge "relabel" "output" 0 "signed" "input" 0
+                    [ read; signed; write ]
+                    [ edge "read" "output" 0 "signed" "input" 0
                       edge "signed" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> relabelComponents 10u (Some 5u)" "relabelComponents should lower with size threshold and window size."
-            Expect.stringContains code ">=> signedDistanceBand 9u 5u" "signedDistanceBand should lower with band radius and stride."
+            Expect.stringContains code ">=> chunkSignedDistanceBandNativeParallelCollect 9u 5u 1" "signedDistanceBand should lower with band radius and stride."
 
         testCase "convolve lowers to StackProcessing stage" <| fun _ ->
             let readImage =
@@ -1621,7 +1616,7 @@ let generatorSuite =
 
             Expect.equal (code.Split("|> readVolume<float32>").Length - 1) 1 "The shared readVolume source should be generated once."
             Expect.stringContains code ">=>> (identity" "The direct branch should use the public identity stage in shared fan-out."
-            Expect.stringContains code "serialPolynomialBiasCorrect<float32> 2" "The corrected branch should still include the bias correction stage."
+            Expect.stringContains code "chunkSerialPolynomialBiasCorrect<float32> 2" "The corrected branch should include the Chunk serial bias correction stage."
             Expect.stringContains code ">>=> subPair" "The two branches should be combined by the pair operation."
 
         testCase "unary image function lowers selected function to stage" <| fun _ ->
@@ -1808,7 +1803,7 @@ let generatorSuite =
             let colorCode =
                 graph
                     [ read "source" "source"
-                      node "tensor" "StructureTensor" [ p "sigma" "1.0" false; p "rho" "2.0" false ]
+                      node "tensor" "StructureTensor" [ p "sigma" "1.0" false; p "radius" "7" false; p "rho" "2.0" false; p "rhoRadius" "7" false; p "workers" "4" false ]
                       node "range" "VectorRange" [ p "firstComponent" "3" false; p "componentCount" "3" false ]
                       node "color" "Vector3ToColor" [ p "inputMinimum" "-1.0" false; p "inputMaximum" "1.0" false ]
                       node "vector" "ColorToVector3" [ p "outputMinimum" "-1.0" false; p "outputMaximum" "1.0" false ]
@@ -1820,8 +1815,8 @@ let generatorSuite =
                       edge "vector" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains colorCode ">=> vectorRange<float> 3u 3u" "VectorRange should lower with start and count."
-            Expect.stringContains colorCode ">=> vector3ToColor -1.0 1.0" "Vector3ToColor should lower with its input range."
+            Expect.stringContains colorCode ">=> chunkVectorRange<float32> 3u 3u" "VectorRange should lower with start, count, and the inferred Float32 vector type."
+            Expect.stringContains colorCode ">=> chunkVector3ToColorFloat32 (float32 (-1.0)) (float32 (1.0))" "Vector3ToColor should lower with its input range and the inferred Float32 vector type."
             Expect.stringContains colorCode ">=> colorToVector3 -1.0 1.0" "ColorToVector3 should lower with its output range."
 
             let gradientCode =
@@ -1854,13 +1849,13 @@ let generatorSuite =
             let structureTensorCode =
                 graph
                     [ read "source" "source"
-                      node "tensor" "StructureTensor" [ p "sigma" "1.0" false; p "rho" "2.0" false ]
+                      node "tensor" "StructureTensor" [ p "sigma" "1.0" false; p "radius" "7" false; p "rho" "2.0" false; p "rhoRadius" "7" false; p "workers" "4" false ]
                       write ]
                     [ edge "source" "output" 0 "tensor" "input" 0
                       edge "tensor" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains structureTensorCode ">=> structureTensor 1.0 2.0" "StructureTensor should lower with sigma and rho."
+            Expect.stringContains structureTensorCode ">=> chunkStructureTensorNativeParallelCollect 1.0 7 2.0 7 4" "StructureTensor should lower to the Chunk-native parallel collect stage."
             Expect.isFalse (structureTensorCode.Contains("selectGroupedOutput 4u")) "StructureTensor now emits one vectorized eigensystem stream."
 
             let pcaCode =
@@ -2057,7 +2052,7 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code ">=> grayscaleErode<float> 2u (Some 5u)" "Grayscale morphology should lower with type, radius, and window size."
-            Expect.stringContains code ">=> binaryContour true (Some 3u)" "Binary contour should lower with connectivity and window size."
+            Expect.stringContains code ">=> chunkBinaryContourZonohedralParallel true 3" "Binary contour should lower to the Chunk zonohedral contour stage."
             Expect.stringContains code ">=> removeSmallObjects 11UL ObjectConnectivity.TwentySix" "removeSmallObjects should lower with maximum volume and connectivity."
             Expect.stringContains code ">=> fillSmallHoles 13UL ObjectConnectivity.Six" "fillSmallHoles should lower with maximum volume and connectivity."
 
@@ -2111,7 +2106,7 @@ let generatorSuite =
             Expect.stringContains code ">=> openingZonohedral 2u None" "Zonohedral binary opening should lower with radius and optional window size."
             Expect.stringContains code ">=> closingZonohedral 2u None" "Zonohedral binary closing should lower with radius and optional window size."
 
-        testCase "connected component pair stream writes chunk labels through teeFst before reducing" <| fun _ ->
+        testCase "connected components lower to direct Chunk label slices" <| fun _ ->
             let read =
                 node "read" "Read"
                     [ p "availableMemory" "1024" false
@@ -2122,27 +2117,22 @@ let generatorSuite =
             let connected =
                 node "connected" "ConnectedComponents" [ p "windowSize" "15" false ]
 
-            let writeSlabSlices =
-                node "writeSlabSlices" "WriteSlabSlices"
-                    [ p "output" "tmp" false
-                      p "suffix" ".mha" false
-                      p "windowSize" "15" false ]
-
-            let table =
-                node "table" "ComponentTranslationTable" [ p "windowSize" "15" false ]
+            let cast =
+                node "cast" "Cast"
+                    [ p "sourceType" "UInt32" false
+                      p "targetType" "UInt8" false ]
 
             let code =
                 graph
-                    [ read; connected; writeSlabSlices; table ]
+                    [ read; connected; cast ]
                     [ edge "read" "output" 0 "connected" "input" 0
-                      edge "connected" "output" 0 "writeSlabSlices" "input" 0
-                      edge "writeSlabSlices" "output" 0 "table" "input" 0 ]
+                      edge "connected" "output" 0 "cast" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> connectedComponents (Some 15u)" "Connected components should produce label/count pairs."
-            Expect.stringContains code ">=> teeFst (writeSlabSlices \"tmp\" \".mha\" 15u)" "Slab-slice writing should be an explicit tee over the first tuple element."
-            Expect.stringContains code ">=> makeConnectedComponentTranslationTable (Some 15u)" "Translation table should consume the pair stream."
-            Expect.stringContains code "|> drain" "The reducer should be drained."
+            Expect.stringContains code ">=> connectedComponentsUInt32Windowed 15 System.Environment.ProcessorCount" "Connected components should produce compact Chunk label slices directly."
+            Expect.stringContains code ">=> cast<uint32,uint8>" "Label slices should feed regular image stages."
+            Expect.isFalse (code.Contains "writeSlabSlices") "Connected components should not need slab temp writes."
+            Expect.isFalse (code.Contains "makeConnectedComponentTranslationTable") "Connected components should not need a second translation-table reducer."
 
         testCase "tap connected to print becomes tapIt lambda with stream value name" <| fun _ ->
             let read =

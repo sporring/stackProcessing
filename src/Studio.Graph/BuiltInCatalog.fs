@@ -14,6 +14,8 @@ module BuiltInCatalog =
   let imageFloat32 = PortType.Image NumericType.Float32
   let imageFloat64 = PortType.Image NumericType.Float64
   let imageComplex = PortType.Image NumericType.Complex
+  let imageComplex64 = PortType.Image NumericType.Complex64
+  let vectorImageFloat32 = PortType.Custom "VectorImageFloat32"
   let vectorImageFloat64 = PortType.Custom "VectorImageFloat64"
   let colorImage = PortType.Custom "ColorImage"
   let translationTable = PortType.Custom "TranslationTable"
@@ -26,7 +28,7 @@ module BuiltInCatalog =
   let serialVolumeGeometry = PortType.Custom "SerialVolumeGeometry"
   let record = PortType.Custom "Record"
   let imageStats = PortType.Custom "ImageStats"
-  let stackInfo = PortType.Custom "StackInfo"
+  let imageInfo = PortType.Custom "ImageInfo"
   let chunkInfo = PortType.Custom "ChunkInfo"
   let serialTransPair = PortType.Tuple(imageAny, serialSliceManifest)
   let streamedObjects = PortType.Custom "StreamedObjects"
@@ -45,11 +47,16 @@ module BuiltInCatalog =
         DefaultValue = defaultValue
         Type = parameterType }
 
-  let private stackInfoOutputs =
-      [ makePort "Dimensions: UInt32" (Scalar(BasicType.Numeric UInt32))
+  let private imageInfoOutputs =
+      [ makePort "Format: String" (Scalar BasicType.String)
+        makePort "Dimensions: UInt32" (Scalar(BasicType.Numeric UInt32))
         makePort "Size: UInt64 list" (Custom "UInt64List")
         makePort "ComponentType: String" (Scalar BasicType.String)
         makePort "NumberOfComponents: UInt32" (Scalar(BasicType.Numeric UInt32))
+        makePort "Chunks: int list" intList
+        makePort "ChunkX: Int32" (Scalar(BasicType.Numeric Int32))
+        makePort "ChunkY: Int32" (Scalar(BasicType.Numeric Int32))
+        makePort "ChunkZ: Int32" (Scalar(BasicType.Numeric Int32))
         makePort "Width: UInt64" (Scalar(BasicType.Numeric UInt64))
         makePort "Height: UInt64" (Scalar(BasicType.Numeric UInt64))
         makePort "Depth: UInt64" (Scalar(BasicType.Numeric UInt64)) ]
@@ -86,7 +93,7 @@ module BuiltInCatalog =
       match portType with
       | Custom "ImageStats" -> imageStatsOutputs
       | Custom "ObjectSizeStats" -> objectSizeStatsOutputs
-      | Custom "StackInfo" -> stackInfoOutputs
+      | Custom "ImageInfo" -> imageInfoOutputs
       | Custom "ChunkInfo" -> chunkInfoOutputs
       | _ -> []
 
@@ -108,20 +115,17 @@ module BuiltInCatalog =
   let private readFormatParameter =
       makeParameter "format" "Source" "Image stack" BasicType.String
 
-  let private readSlabFormatParameter =
-      makeParameter "format" "Source" "Chunked stack" BasicType.String
-
   let private writeFormatParameter =
       makeParameter "format" "Target" "Image stack" BasicType.String
 
   let private writeFormatDescription =
-      "Writes image data from a slice stream. Target selects whether output is an image stack directory, one volume file, an OME-Zarr store, or a NeXus/HDF5 detector dataset. File type selects the on-disk image format where that applies. The selected target controls which image types can be connected: TIFF stack/volume output supports 8/16-bit integer and Float32 scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; OME-Zarr currently supports UInt8 and UInt16; NeXus/HDF5 supports the scalar numeric set used by Studio. Cast before write when a target cannot store the current image type."
+      "Writes image data from a slice stream. Target selects whether output is an image stack directory, one volume file, an OME-Zarr store, or a NeXus/HDF5 detector dataset. File type selects the on-disk image format where that applies. The selected target controls which image types can be connected: TIFF stack/volume output supports 8/16-bit integer and Float32 scalar images; PNG supports UInt8 and UInt16; JPEG and BMP support UInt8; OME-Zarr supports UInt8, UInt16, Float32, Float64, and Complex64 from Studio; NeXus/HDF5 supports the scalar numeric set used by Studio. Cast before write when a target cannot store the current image type."
 
   let private chunkWriteFormatDescription =
       "Writes a stack as 3D chunk files for later chunked reading. The selected format controls which image types can be connected to the input pin, using the same constraints as write. MetaImage (.mha) is usually faster than TIFF for 3D chunks because each chunk is saved as a small volume rather than a stack of image pages."
 
   let private zarrFormatDescription =
-      "Reads or writes an OME-Zarr volume through ZarrNET. The current native .NET implementation is used here for UInt8 and UInt16 scalar images. readZarrSlab serves 2D slices from a selected timepoint/channel/resolution; writeZarr writes a single timepoint/channel volume and exposes chunk sizes and physical voxel spacing so Studio can be used as a stack-to-Zarr converter."
+      "Reads or writes an OME-Zarr volume through ZarrNET. The native .NET implementation supports UInt8, UInt16, Float32, Float64, Complex64, and Complex128 in StackProcessing; Studio exposes Complex64 by default to keep memory pressure low. readZarrThick serves full-width Chunk groups from a selected timepoint/channel/resolution; writeZarrThick writes a single timepoint/channel volume and exposes chunk sizes and physical voxel spacing so Studio can be used as a stack-to-Zarr converter."
 
   let private nexusFormatDescription =
       "Reads a rank-3 NeXus/HDF5 detector stack through PureHDF using an explicit dataset path and axis mapping. This covers common MAX IV and ESRF detector-stack layouts while keeping streaming slice reads larger-than-memory friendly. Compressed detector files that use external HDF5 filters may require a later native/plugin fallback."
@@ -229,13 +233,7 @@ module BuiltInCatalog =
       "Changes the shape of a UInt8 binary mask using a spherical local neighborhood.\n\nBinary morphology expects a 0/1 UInt8 image: 0 is background and 1 is foreground. Erode removes foreground pixels near object boundaries and can break thin connections. Dilate expands foreground regions and can close small gaps. Opening is erosion followed by dilation and tends to remove small foreground objects. Closing is dilation followed by erosion and tends to fill small background gaps.\n\nThe radius controls the sphere size."
 
   let private connectedComponentsDescription =
-      "Labels connected foreground regions in a binary mask.\n\nThe output image stores an integer label for each component, with background left as zero. The count output reports how many local components were found before any later global relabeling.\n\nUse componentTranslationTable and collapseComponentLabels when labels need to be made consistent across streamed slabs."
-
-  let private relabelComponentsDescription =
-      "Renumbers connected-component labels and removes components below a chosen size.\n\nThis is used after connectedComponents when small labeled objects should be discarded and the remaining labels should be compacted. The minimum object size is measured in voxels.\n\nFor direct cleanup of binary masks, removeSmallObjects is usually the simpler box."
-
-  let private collapseLabelsDescription =
-      "Applies a connected-component translation table to a labeled image stream.\n\nUse it after componentTranslationTable to turn slab-local labels into consistent whole-stack labels. Background remains zero, while labels that belong to the same physical object are mapped to the same final value.\n\nThis is part of the connected-component workflow for larger-than-memory stacks."
+      "Labels connected foreground regions in a UInt8 binary mask with the streaming SAUF implementation.\n\nThe output image stores UInt32 labels, with background left as zero. Use the optional window size when the stack should be processed in bounded z-windows."
 
   let private permuteAxesDescription =
       "Reorders the x, y, and z axes of a stack.\n\nUse this when detector data or intermediate results need a different orientation, for example turning z into x or swapping x and y. Axis permutation can require chunked access because changing the z-axis changes which pixels belong to each output slice.\n\nTile size controls the working block size used during the transpose."
@@ -250,7 +248,7 @@ module BuiltInCatalog =
       "Linearly maps an input intensity range to an output intensity range using the same shift/scale semantics as shiftScale. Values are not clipped: pixels outside the input range continue linearly outside the output range. This is useful with computeStats or quantiles when the source min/max or robust quantile limits are estimated in an earlier reducer pass."
 
   let private histogramEqualizationDescription =
-      "Applies 3D histogram equalization from a histogram map estimated over the connected stack or a representative sample. The stage streams slices and emits Float64 values in the range 0..1. Histogram bins are treated as an empirical cumulative distribution, with interpolation between sampled bin keys so readRandom estimates can still be used on continuous-valued images."
+      "Applies 3D histogram equalization from a dense, sparse exact, or fixed-bin Chunk histogram estimated over the connected stack or a representative sample. The stage streams chunks and preserves the selected pixel type."
 
   let private quantilesDescription =
       "Estimates quantile values from a histogram map. q1 is always emitted. q2, q3, q4, and q5 are optional output slots controlled by the corresponding enabled parameters. Each q value must be between 0 and 1. The result is based on the cumulative histogram counts, so accuracy depends on the histogram key resolution."
@@ -301,6 +299,7 @@ module BuiltInCatalog =
       | Float32 -> "1.0"
       | Float64
       | Number -> "1.0"
+      | Complex64 -> "1.0"
       | Complex -> "1.0"
 
   let private scalarDefaultValue tp =
@@ -391,14 +390,14 @@ module BuiltInCatalog =
       Inputs = []
       Outputs =
           [ makePort "Float64" imageFloat64
-            makePort "StackInfo" stackInfo ]
+            makePort "ImageInfo" imageInfo ]
       Parameters =
           [ availableMemoryParameter
             makeParameter "type" "Type" "Float64" BasicType.String
             readFormatParameter
             makeParameter "input" "Input" "input" BasicType.String
             readSuffixParameter ".tiff"
-            makeParameter "slabDepth" "Slab depth" "8" (BasicType.Numeric UInt32)
+            makeParameter "thickDepth" "Thick depth" "8" (BasicType.Numeric UInt32)
             makeParameter "multiscaleIndex" "Multiscale index" "0" (BasicType.Numeric Int32)
             makeParameter "datasetIndex" "Dataset index" "0" (BasicType.Numeric Int32)
             makeParameter "timepoint" "Timepoint" "0" (BasicType.Numeric Int32)
@@ -419,7 +418,7 @@ module BuiltInCatalog =
       Inputs = []
       Outputs =
           [ makePort "Float64" imageFloat64
-            makePort "StackInfo" stackInfo ]
+            makePort "ImageInfo" imageInfo ]
       Parameters =
           [ availableMemoryParameter
             makeParameter "type" "Type" "Float64" BasicType.String
@@ -470,7 +469,7 @@ module BuiltInCatalog =
       Inputs = []
       Outputs =
           [ makePort "Float64" imageFloat64
-            makePort "StackInfo" stackInfo ]
+            makePort "ImageInfo" imageInfo ]
       Parameters =
           [ availableMemoryParameter
             makeParameter "type" "Type" "Float64" BasicType.String
@@ -480,34 +479,6 @@ module BuiltInCatalog =
             makeParameter "last" "Last" "0" (BasicType.Numeric UInt32)
             makeParameter "input" "Input" "input" BasicType.String
             readSuffixParameter ".tiff"
-            makeParameter "multiscaleIndex" "Multiscale index" "0" (BasicType.Numeric Int32)
-            makeParameter "datasetIndex" "Dataset index" "0" (BasicType.Numeric Int32)
-            makeParameter "timepoint" "Timepoint" "0" (BasicType.Numeric Int32)
-            makeParameter "channel" "Channel" "0" (BasicType.Numeric Int32)
-            makeParameter "maxParallelChunks" "Max parallel chunks" "0" (BasicType.Numeric Int32)
-            makeParameter "datasetPath" "Dataset path" "/entry/data/data" BasicType.String
-            makeParameter "frameAxis" "Frame axis" "0" (BasicType.Numeric Int32)
-            makeParameter "yAxis" "Y axis" "1" (BasicType.Numeric Int32)
-            makeParameter "xAxis" "X axis" "2" (BasicType.Numeric Int32) ] }
-
-  let makeGenericReadSlab () =
-    { Id = "ReadSlab"
-      DisplayName = "readSlab"
-      Category = "Sources / Sinks"
-      Summary = "Read chunked stack files as a normal 2D slice stream."
-      Description = "Reads chunk files produced by writeChunks, then serves their 2D slices to the pipeline. Use the same format and suffix that were used when writing the chunk files; chunk filenames encode x/y/z chunk positions."
-      Aliases = [ "slab"; "chunks"; "input"; "tiff"; "file"; "UInt8"; "Float64"; "type" ]
-      Inputs = []
-      Outputs =
-          [ makePort "Float64" imageFloat64
-            makePort "ChunkInfo" chunkInfo ]
-      Parameters =
-          [ availableMemoryParameter
-            makeParameter "type" "Type" "Float64" BasicType.String
-            readSlabFormatParameter
-            makeParameter "input" "Input" "input" BasicType.String
-            suffixParameter ".tiff"
-            makeParameter "slabDepth" "Slab depth" "8" (BasicType.Numeric UInt32)
             makeParameter "multiscaleIndex" "Multiscale index" "0" (BasicType.Numeric Int32)
             makeParameter "datasetIndex" "Dataset index" "0" (BasicType.Numeric Int32)
             makeParameter "timepoint" "Timepoint" "0" (BasicType.Numeric Int32)
@@ -746,8 +717,6 @@ module BuiltInCatalog =
 
         makeGenericReadRange()
 
-        makeGenericReadSlab()
-
         { Id = "ReadPointSet"
           DisplayName = "readPointSet"
           Category = "Sources / Sinks"
@@ -893,10 +862,10 @@ module BuiltInCatalog =
           DisplayName = "serialPolynomialBiasCorrect"
           Category = "Serial Sections"
           Summary = "Fit and subtract a 2D polynomial bias field independently per slice."
-          Description = serialSectionsDescription
+          Description = "Fits a 2D polynomial bias field independently on each Chunk slice, subtracts it, and emits the corrected Chunk slice."
           Aliases = [ "serial"; "slice"; "slicewise"; "bias"; "polynomial"; "section"; "illumination" ]
           Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Float64" imageFloat64 ]
+          Outputs = [ makePort "Number" imageAny ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "order" "Order" "2" (BasicType.Numeric Int32) ] }
@@ -947,7 +916,7 @@ module BuiltInCatalog =
           Description = writeFormatDescription
           Aliases = [ "output"; "save"; "tiff"; "file"; "volume"; "zarr"; "nexus"; "hdf5" ]
           Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "StackInfo" stackInfo ]
+          Outputs = [ makePort "ImageInfo" imageInfo ]
           Parameters =
               [ writeFormatParameter
                 makeParameter "output" "Output" "output" BasicType.String
@@ -965,19 +934,6 @@ module BuiltInCatalog =
                 makeParameter "frameAxis" "Frame axis" "0" (BasicType.Numeric Int32)
                 makeParameter "yAxis" "Y axis" "1" (BasicType.Numeric Int32)
                 makeParameter "xAxis" "X axis" "2" (BasicType.Numeric Int32) ] }
-
-        { Id = "WriteSlabSlices"
-          DisplayName = "writeSlabSlices"
-          Category = "Sources / Sinks"
-          Summary = "Write connected-component label slabs slice-by-slice and pass labels plus object counts through unchanged."
-          Description = "Writes connected-component label slabs slice-by-slice and passes the labels plus object counts onward. MetaImage (.mha/.mhd) is the safest default for label data because it supports large integer scalar images."
-          Aliases = [ "output"; "save"; "slabs"; "labels"; "connected"; "components"; "side effect" ]
-          Inputs = [ makePort "Labels + count" connectedComponentLabels ]
-          Outputs = [ makePort "Labels + count" connectedComponentLabels ]
-          Parameters =
-              [ makeParameter "output" "Output" "tmp" BasicType.String
-                suffixParameter ".mha"
-                makeParameter "windowSize" "Window size" "8" (BasicType.Numeric UInt32) ] }
 
         { Id = "WriteChunks"
           DisplayName = "writeChunks"
@@ -1091,7 +1047,7 @@ module BuiltInCatalog =
           DisplayName = "expand"
           Category = "Sources / Sinks"
           Summary = "Expose record fields as scalar outputs."
-          Description = "Expands record-like values, such as ImageStats, StackInfo, or ChunkInfo, into scalar fields that can be connected to print or other parameter inputs. The output ports adapt to the connected record type."
+          Description = "Expands record-like values, such as ImageStats, ImageInfo, or ChunkInfo, into scalar fields that can be connected to print or other parameter inputs. The output ports adapt to the connected record type."
           Aliases = [ "info"; "metadata"; "record"; "expand"; "stats"; "mean"; "width"; "height"; "depth"; "size"; "component" ]
           Inputs = [ makePort "Record" record ]
           Outputs = []
@@ -1113,10 +1069,10 @@ module BuiltInCatalog =
           DisplayName = "getZarrInfo"
           Category = "Sources / Sinks"
           Summary = "Inspect an OME-Zarr dataset and expose chunk layout and image dimensions."
-          Description = "Reads metadata from a selected OME-Zarr multiscale dataset. Chunks reports the storage chunk shape, Size is the x/y/z image size, and ComponentType maps to the Zarr dtype used by readZarrSlab/writeZarr."
+          Description = "Reads metadata from a selected OME-Zarr multiscale dataset. Chunks reports the storage chunk shape, Size is the x/y/z image size, and ComponentType maps to the Zarr dtype used by readZarrThick/writeZarrThick."
           Aliases = [ "info"; "metadata"; "zarr"; "ome-zarr"; "chunk"; "chunks"; "width"; "height"; "depth"; "size"; "component" ]
           Inputs = []
-          Outputs = chunkInfoOutputs
+          Outputs = imageInfoOutputs
           Parameters =
               [ makeParameter "input" "Name" "input.zarr" BasicType.String
                 makeParameter "multiscaleIndex" "Multiscale index" "0" (BasicType.Numeric Int32)
@@ -1129,7 +1085,7 @@ module BuiltInCatalog =
           Description = nexusFormatDescription
           Aliases = [ "info"; "metadata"; "nexus"; "hdf5"; "h5"; "chunk"; "chunks"; "width"; "height"; "depth"; "size"; "component" ]
           Inputs = []
-          Outputs = chunkInfoOutputs
+          Outputs = imageInfoOutputs
           Parameters =
               [ makeParameter "input" "Name" "scan.h5" BasicType.String
                 makeParameter "datasetPath" "Dataset path" "/entry/data/data" BasicType.String
@@ -1323,30 +1279,30 @@ module BuiltInCatalog =
         { Id = "ComplexFromReIm"
           DisplayName = "toComplex"
           Category = "Complex Images"
-          Summary = "Compose real and imaginary Float64 image streams into a native complex image stream."
-          Description = "Combines synchronized Float64 real and imaginary images into one native ComplexFloat64 image stream."
+          Summary = "Compose real and imaginary Float64 image streams into a complex64 Chunk stream."
+          Description = "Combines synchronized Float64 real and imaginary images into a compact complex64-interleaved Float32 Chunk stream."
           Aliases = [ "complex"; "real"; "imaginary"; "compose"; "toComplex"; "fourier" ]
           Inputs = [ makePort "Re: Float64" imageFloat64; makePort "Im: Float64" imageFloat64 ]
-          Outputs = [ makePort "Complex" imageComplex ]
+          Outputs = [ makePort "Complex64" imageComplex64 ]
           Parameters = [] }
 
         { Id = "ComplexPolar"
           DisplayName = "polarToComplex"
           Category = "Complex Images"
-          Summary = "Compose modulus and argument Float64 image streams into a native complex image stream."
-          Description = "Combines synchronized modulus and angle images into one native ComplexFloat64 image stream using polar coordinates."
+          Summary = "Compose modulus and argument Float64 image streams into a complex64 Chunk stream."
+          Description = "Combines synchronized modulus and angle images into one compact complex64-interleaved Float32 Chunk stream using polar coordinates."
           Aliases = [ "complex"; "polar"; "modulus"; "argument"; "phase"; "angle"; "fourier" ]
           Inputs = [ makePort "Modulus: Float64" imageFloat64; makePort "Arg: Float64" imageFloat64 ]
-          Outputs = [ makePort "Complex" imageComplex ]
+          Outputs = [ makePort "Complex64" imageComplex64 ]
           Parameters = [] }
 
         { Id = "ComplexRe"
           DisplayName = "Re"
           Category = "Complex Images"
           Summary = "Extract the real part of a complex image stream."
-          Description = "Extracts the real component from each native complex pixel and emits a Float64 image stream."
+          Description = "Extracts the real component from each complex64-interleaved Chunk pixel and emits a Float64 image stream."
           Aliases = [ "complex"; "real"; "re"; "fourier" ]
-          Inputs = [ makePort "Complex" imageComplex ]
+          Inputs = [ makePort "Complex64" imageComplex64 ]
           Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters = [] }
 
@@ -1354,9 +1310,9 @@ module BuiltInCatalog =
           DisplayName = "Im"
           Category = "Complex Images"
           Summary = "Extract the imaginary part of a complex image stream."
-          Description = "Extracts the imaginary component from each native complex pixel and emits a Float64 image stream."
+          Description = "Extracts the imaginary component from each complex64-interleaved Chunk pixel and emits a Float64 image stream."
           Aliases = [ "complex"; "imaginary"; "im"; "fourier" ]
-          Inputs = [ makePort "Complex" imageComplex ]
+          Inputs = [ makePort "Complex64" imageComplex64 ]
           Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters = [] }
 
@@ -1366,7 +1322,7 @@ module BuiltInCatalog =
           Summary = "Compute the modulus of a complex image stream."
           Description = "Computes the complex modulus at each pixel and emits a Float64 image stream."
           Aliases = [ "complex"; "abs"; "absolute"; "magnitude"; "modulus"; "fourier" ]
-          Inputs = [ makePort "Complex" imageComplex ]
+          Inputs = [ makePort "Complex64" imageComplex64 ]
           Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters = [] }
 
@@ -1376,7 +1332,7 @@ module BuiltInCatalog =
           Summary = "Compute the argument angle of a complex image stream."
           Description = "Computes the complex phase angle at each pixel and emits a Float64 image stream."
           Aliases = [ "complex"; "arg"; "argument"; "phase"; "angle"; "fourier" ]
-          Inputs = [ makePort "Complex" imageComplex ]
+          Inputs = [ makePort "Complex64" imageComplex64 ]
           Outputs = [ makePort "Float64" imageFloat64 ]
           Parameters = [] }
 
@@ -1384,22 +1340,22 @@ module BuiltInCatalog =
           DisplayName = "conjugate"
           Category = "Complex Images"
           Summary = "Compute the complex conjugate of a complex image stream."
-          Description = "Keeps the real part and negates the imaginary part of each native complex pixel."
+          Description = "Keeps the real part and negates the imaginary part of each complex64-interleaved Chunk pixel."
           Aliases = [ "complex"; "conjugate"; "fourier" ]
-          Inputs = [ makePort "Complex" imageComplex ]
-          Outputs = [ makePort "Complex" imageComplex ]
+          Inputs = [ makePort "Complex64" imageComplex64 ]
+          Outputs = [ makePort "Complex64" imageComplex64 ]
           Parameters = [] }
 
         { Id = "FFT"
           DisplayName = "FFT"
           Category = "Fourier"
-          Summary = "Compute a chunk-backed 3D FFT from a scalar image stack."
-          Description = "Streams scalar slices into a temporary chunk workspace, computes slice-wise XY FFT followed by a z-direction FFT, and emits native complex frequency-domain slices."
-          Aliases = [ "fft"; "fourier"; "frequency"; "3d"; "chunk"; "spectrum" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Complex" imageComplex ]
+          Summary = "Compute a native Chunk XY FFT from a Float32 image stack."
+          Description = "Applies the current native FFTW-backed XY FFT to each Float32 Chunk slice and emits compact complex64-interleaved Float32 Chunk slices. Chunk-size parameters are retained for graph compatibility while the current XY backend ignores them."
+          Aliases = [ "fft"; "fourier"; "frequency"; "xy"; "chunk"; "spectrum" ]
+          Inputs = [ makePort "Float32" imageFloat32 ]
+          Outputs = [ makePort "Complex64" imageComplex64 ]
           Parameters =
-            [ makeParameter "type" "Type" "Float64" BasicType.String
+            [ makeParameter "type" "Type" "Float32" BasicType.String
               makeParameter "chunkX" "Chunk X" "64" (BasicType.Numeric UInt32)
               makeParameter "chunkY" "Chunk Y" "64" (BasicType.Numeric UInt32)
               makeParameter "chunkZ" "Chunk Z" "16" (BasicType.Numeric UInt32) ] }
@@ -1407,11 +1363,11 @@ module BuiltInCatalog =
         { Id = "InvFFT"
           DisplayName = "invFFT"
           Category = "Fourier"
-          Summary = "Compute the inverse chunk-backed 3D FFT."
-          Description = "Streams complex frequency-domain slices through a temporary chunk workspace, applies the inverse z transform and inverse XY transforms, and emits real Float64 slices."
-          Aliases = [ "ifft"; "inverse"; "fourier"; "frequency"; "3d"; "chunk" ]
-          Inputs = [ makePort "Complex" imageComplex ]
-          Outputs = [ makePort "Float64" imageFloat64 ]
+          Summary = "Compute the inverse native Chunk XY FFT."
+          Description = "Applies the native FFTW-backed inverse XY FFT to compact complex64-interleaved Float32 Chunk slices and emits real Float32 slices. Chunk-size parameters are retained for graph compatibility while the current XY backend ignores them."
+          Aliases = [ "ifft"; "inverse"; "fourier"; "frequency"; "xy"; "chunk" ]
+          Inputs = [ makePort "Complex64" imageComplex64 ]
+          Outputs = [ makePort "Float32" imageFloat32 ]
           Parameters =
             [ makeParameter "chunkX" "Chunk X" "64" (BasicType.Numeric UInt32)
               makeParameter "chunkY" "Chunk Y" "64" (BasicType.Numeric UInt32)
@@ -1420,11 +1376,11 @@ module BuiltInCatalog =
         { Id = "ShiftFFT"
           DisplayName = "shiftFFT"
           Category = "Fourier"
-          Summary = "Shift the zero-frequency component to the center of a complex spectrum."
-          Description = "Streams complex frequency-domain slices through a temporary chunk workspace and circularly shifts each axis by half its size."
-          Aliases = [ "fftshift"; "shift"; "fourier"; "frequency"; "center"; "spectrum" ]
-          Inputs = [ makePort "Complex" imageComplex ]
-          Outputs = [ makePort "Complex" imageComplex ]
+          Summary = "Shift the zero-frequency component to the center of a complex64 Chunk spectrum."
+          Description = "Circularly shifts x and y inside each complex64-interleaved Float32 Chunk slice, then performs the z shift by spilling slice chunks to temporary files and emitting them in rotated order. Chunk-size parameters are retained for graph compatibility."
+          Aliases = [ "fftshift"; "shift"; "fourier"; "frequency"; "center"; "spectrum"; "chunk" ]
+          Inputs = [ makePort "Complex64" imageComplex64 ]
+          Outputs = [ makePort "Complex64" imageComplex64 ]
           Parameters =
             [ makeParameter "chunkX" "Chunk X" "64" (BasicType.Numeric UInt32)
               makeParameter "chunkY" "Chunk Y" "64" (BasicType.Numeric UInt32)
@@ -1542,44 +1498,48 @@ module BuiltInCatalog =
         { Id = "Gradient"
           DisplayName = "gradient"
           Category = "Vector Images"
-          Summary = "Compute a 3-component finite-difference gradient field."
-          Description = "Computes finite-difference derivatives along x, y, and z and emits them as three-component vector-valued pixels ordered as dx, dy, dz."
-          Aliases = [ "gradient"; "derivative"; "finite"; "difference"; "vector"; "field" ]
-          Inputs = [ makePort "Float64" imageFloat64 ]
-          Outputs = [ makePort "Vector Float64" vectorImageFloat64 ]
+          Summary = "Compute a smoothed 3-component Chunk gradient field."
+          Description = "Smooths Float32 scalar chunks with a separable Gaussian, computes finite-difference derivatives along x, y, and z, and emits three-component Float32 vector chunks ordered as dx, dy, dz."
+          Aliases = [ "gradient"; "derivative"; "finite"; "difference"; "vector"; "field"; "chunk" ]
+          Inputs = [ makePort "Float32" imageFloat32 ]
+          Outputs = [ makePort "Vector Float32" vectorImageFloat32 ]
           Parameters =
-            [ makeParameter "order" "Order" "1" (BasicType.Numeric UInt32)
-              makeParameter "windowSize" "Window size" "None" BasicType.String ] }
+            [ makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
+              makeParameter "radius" "Radius" "7" (BasicType.Numeric Int32)
+              makeParameter "workers" "Workers" "4" (BasicType.Numeric Int32) ] }
 
         { Id = "StructureTensor"
           DisplayName = "structureTensor"
           Category = "Vector Images"
           Summary = "Compute the structure-tensor eigensystem as a vectorized 3x4 matrix."
-          Description = "Pre-smooths the scalar image with sigma, computes the finite-difference gradient, forms the six unique components of the symmetric exterior product, smooths those tensor components with rho, and emits one 12-component vector image per slice. The 12 components encode a 3x4 eigensystem matrix: components 0..2 are the sorted eigenvalues; components 3..5 are eigenvector 0; components 6..8 are eigenvector 1; components 9..11 are eigenvector 2. Use vectorRange to extract a 3-component eigenvector stream before colorizing or writing a scalar component."
+          Description = "Pre-smooths Float32 scalar chunks with sigma, computes the finite-difference gradient, forms the six unique components of the symmetric exterior product, smooths those tensor components with rho, and emits one 12-component Float32 vector chunk per slice. The 12 components encode a 3x4 eigensystem matrix: components 0..2 are the sorted eigenvalues; components 3..5 are eigenvector 0; components 6..8 are eigenvector 1; components 9..11 are eigenvector 2. Use vectorRange to extract a 3-component eigenvector stream before colorizing or writing a scalar component."
           Aliases = [ "structure"; "tensor"; "eigen"; "orientation"; "gradient"; "matrix" ]
-          Inputs = [ makePort "Float64" imageFloat64 ]
-          Outputs = [ makePort "Eigensystem 3x4" vectorImageFloat64 ]
+          Inputs = [ makePort "Float32" imageFloat32 ]
+          Outputs = [ makePort "Eigensystem 3x4 Float32" vectorImageFloat32 ]
           Parameters =
             [ makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
-              makeParameter "rho" "Rho" "2.0" (BasicType.Numeric Float64) ] }
+              makeParameter "radius" "Sigma radius" "7" (BasicType.Numeric Int32)
+              makeParameter "rho" "Rho" "2.0" (BasicType.Numeric Float64)
+              makeParameter "rhoRadius" "Rho radius" "7" (BasicType.Numeric Int32)
+              makeParameter "workers" "Workers" "4" (BasicType.Numeric Int32) ] }
 
         { Id = "PCA"
           DisplayName = "PCA"
           Category = "Vector Images"
           Summary = "Reduce vector images to a principal-component eigensystem."
-          Description = "Computes principal component analysis over all vector pixels in the input stream. Components selects the vector dimensionality, from 2 to 8 in Studio. The reducer emits singleton vector streams: eigenvalues followed by one eigenvector stream per component, sorted by descending eigenvalue."
+          Description = "Computes principal component analysis over all Float32 vector pixels in the input stream. Components selects the vector dimensionality, from 2 to 8 in Studio. The reducer emits singleton Float32 vector streams: eigenvalues followed by one eigenvector stream per component, sorted by descending eigenvalue."
           Aliases = [ "pca"; "principal"; "component"; "covariance"; "eigen"; "vector"; "reducer" ]
-          Inputs = [ makePort "Vector Float64" vectorImageFloat64 ]
+          Inputs = [ makePort "Vector Float32" vectorImageFloat32 ]
           Outputs =
-            [ makePort "Eigenvalues" vectorImageFloat64
-              makePort "Eigenvector 0" vectorImageFloat64
-              makePort "Eigenvector 1" vectorImageFloat64
-              makePort "Eigenvector 2" vectorImageFloat64
-              makePort "Eigenvector 3" vectorImageFloat64
-              makePort "Eigenvector 4" vectorImageFloat64
-              makePort "Eigenvector 5" vectorImageFloat64
-              makePort "Eigenvector 6" vectorImageFloat64
-              makePort "Eigenvector 7" vectorImageFloat64 ]
+            [ makePort "Eigenvalues" vectorImageFloat32
+              makePort "Eigenvector 0" vectorImageFloat32
+              makePort "Eigenvector 1" vectorImageFloat32
+              makePort "Eigenvector 2" vectorImageFloat32
+              makePort "Eigenvector 3" vectorImageFloat32
+              makePort "Eigenvector 4" vectorImageFloat32
+              makePort "Eigenvector 5" vectorImageFloat32
+              makePort "Eigenvector 6" vectorImageFloat32
+              makePort "Eigenvector 7" vectorImageFloat32 ]
           Parameters = [ makeParameter "components" "Components" "3" (BasicType.Numeric UInt32) ] }
 
         { Id = "SmoothWGauss"
@@ -1670,7 +1630,7 @@ module BuiltInCatalog =
           Description = histogramEqualizationDescription
           Aliases = [ "intensity"; "histogram"; "equalize"; "equalization"; "contrast"; "cdf"; "3d" ]
           Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Float64" imageFloat64 ]
+          Outputs = [ makePort "Number" imageAny ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "histogram" "Histogram" "" BasicType.Map ] }
@@ -1859,49 +1819,46 @@ module BuiltInCatalog =
 
         { Id = "WhiteTopHat"
           DisplayName = "whiteTopHat"
-          Category = "Grayscale Morphology"
-          Summary = "Extract small bright grayscale details."
-          Description = grayscaleMorphologyDescription
-          Aliases = [ "grayscale"; "morphology"; "white"; "top"; "hat"; "bright"; "filter" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Number" imageAny ]
+          Category = "Binary Morphology"
+          Summary = "Extract small foreground binary details."
+          Description = "Binary white top-hat computes mask minus zonohedral opening. It expects UInt8 0/1 masks and preserves UInt8 output."
+          Aliases = [ "binary"; "morphology"; "white"; "top"; "hat"; "foreground"; "zonohedral" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters =
-              [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+              [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
                 makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "BlackTopHat"
           DisplayName = "blackTopHat"
-          Category = "Grayscale Morphology"
-          Summary = "Extract small dark grayscale details."
-          Description = grayscaleMorphologyDescription
-          Aliases = [ "grayscale"; "morphology"; "black"; "top"; "hat"; "dark"; "filter" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Number" imageAny ]
+          Category = "Binary Morphology"
+          Summary = "Extract small background binary holes."
+          Description = "Binary black top-hat computes zonohedral closing minus mask. It expects UInt8 0/1 masks and preserves UInt8 output."
+          Aliases = [ "binary"; "morphology"; "black"; "top"; "hat"; "background"; "holes"; "zonohedral" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters =
-              [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+              [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
                 makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "MorphologicalGradient"
           DisplayName = "morphologicalGradient"
-          Category = "Grayscale Morphology"
-          Summary = "Compute local grayscale morphological contrast."
-          Description = grayscaleMorphologyDescription
-          Aliases = [ "grayscale"; "morphology"; "gradient"; "edge"; "contrast"; "filter" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Number" imageAny ]
+          Category = "Binary Morphology"
+          Summary = "Compute a binary zonohedral boundary band."
+          Description = "Binary morphological gradient computes zonohedral dilation minus zonohedral erosion. It expects UInt8 0/1 masks and preserves UInt8 output."
+          Aliases = [ "binary"; "morphology"; "gradient"; "edge"; "boundary"; "zonohedral" ]
+          Inputs = [ makePort "UInt8" imageUInt8 ]
+          Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters =
-              [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
+              [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32)
                 makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "BinaryContour"
           DisplayName = "binaryContour"
           Category = "Binary Morphology"
-          Summary = "Extract the contour of a binary UInt8 mask."
-          Description = binaryMorphologyDescription
-          Aliases = [ "morphology"; "binary"; "contour"; "edge"; "mask" ]
+          Summary = "Extract the inner contour of a binary UInt8 mask."
+          Description = "Binary contour computes mask minus a radius-1 zonohedral erosion. It expects UInt8 0/1 masks and preserves UInt8 output."
+          Aliases = [ "morphology"; "binary"; "contour"; "edge"; "mask"; "zonohedral" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters =
@@ -1959,45 +1916,6 @@ module BuiltInCatalog =
                 makeParameter "lower" "Lower" "128.0" (BasicType.Numeric Float64)
                 makeParameter "upper" "Upper" "infinity" (BasicType.Numeric Float64) ] }
 
-        { Id = "WindowSlabRoundtrip"
-          DisplayName = "windowSlabRoundtrip"
-          Category = "Windowing"
-          Summary = "Pass an image stream through explicit window-to-slab and slab-to-window conversion."
-          Description = "Diagnostic/probing stage for measuring explicit window, slab, and flatten costs around z-agnostic image operations."
-          Aliases = [ "window"; "slab"; "roundtrip"; "identity"; "probe" ]
-          Inputs = [ makePort "Float64" imageFloat64 ]
-          Outputs = [ makePort "Float64" imageFloat64 ]
-          Parameters =
-              [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "windowSize" "Window size" "5u" (BasicType.Numeric UInt32) ] }
-
-        { Id = "WindowedCast"
-          DisplayName = "windowedCast"
-          Category = "Windowing"
-          Summary = "Cast an image stream while explicitly passing through a z-window slab."
-          Description = "Diagnostic/probing stage for comparing z-agnostic cast execution on slabs against slice-wise execution."
-          Aliases = [ "window"; "slab"; "cast"; "probe" ]
-          Inputs = [ makePort "Float64" imageFloat64 ]
-          Outputs = [ makePort "UInt8" imageUInt8 ]
-          Parameters =
-              [ makeParameter "sourceType" "Source type" "Float64" BasicType.String
-                makeParameter "targetType" "Target type" "UInt8" BasicType.String
-                makeParameter "windowSize" "Window size" "5u" (BasicType.Numeric UInt32) ] }
-
-        { Id = "WindowedThreshold"
-          DisplayName = "windowedThreshold"
-          Category = "Windowing"
-          Summary = "Threshold an image stream while explicitly passing through a z-window slab."
-          Description = "Diagnostic/probing stage for comparing z-agnostic threshold execution on slabs against slice-wise execution."
-          Aliases = [ "window"; "slab"; "threshold"; "probe" ]
-          Inputs = [ makePort "Float64" imageFloat64 ]
-          Outputs = [ makePort "UInt8" imageUInt8 ]
-          Parameters =
-              [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "lower" "Lower" "128.0" (BasicType.Numeric Float64)
-                makeParameter "upper" "Upper" "infinity" (BasicType.Numeric Float64)
-                makeParameter "windowSize" "Window size" "5u" (BasicType.Numeric UInt32) ] }
-
         { Id = "Erode"
           DisplayName = "erode"
           Category = "Binary Morphology"
@@ -2019,10 +1937,10 @@ module BuiltInCatalog =
           Parameters = [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32) ] }
 
         { Id = "DilateZonohedral"
-          DisplayName = "dilateZonohedral"
+          DisplayName = "binaryDilate"
           Category = "Binary Morphology"
-          Summary = "Dilate a binary UInt8 image using a streaming zonohedral approximation."
-          Description = "Approximate spherical binary dilation by composing 1D line dilations from a zonohedral decomposition. The implementation uses z-windows and only emits valid center slices, which avoids materializing whole slabs for the dilation step."
+          Summary = "Dilate a binary UInt8 image using a streaming spherical approximation."
+          Description = "Dilates foreground regions in a UInt8 binary mask. The implementation uses z-windows and only emits valid center slices."
           Aliases = [ "morphology"; "binary"; "mask"; "zonohedral"; "streaming"; "VHGW" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
@@ -2031,10 +1949,10 @@ module BuiltInCatalog =
                 makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "ErodeZonohedral"
-          DisplayName = "erodeZonohedral"
+          DisplayName = "binaryErode"
           Category = "Binary Morphology"
-          Summary = "Erode a binary UInt8 image using a streaming zonohedral approximation."
-          Description = "Approximate spherical binary erosion by composing 1D line erosions from a zonohedral decomposition. This follows the same streaming line-stage structure as dilateZonohedral."
+          Summary = "Erode a binary UInt8 image using a streaming spherical approximation."
+          Description = "Erodes foreground regions in a UInt8 binary mask using the same bounded z-window policy as binaryDilate."
           Aliases = [ "morphology"; "binary"; "mask"; "zonohedral"; "streaming"; "VHGW" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
@@ -2053,10 +1971,10 @@ module BuiltInCatalog =
           Parameters = [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32) ] }
 
         { Id = "OpeningZonohedral"
-          DisplayName = "openingZonohedral"
+          DisplayName = "binaryOpening"
           Category = "Binary Morphology"
-          Summary = "Open a binary UInt8 image using streaming zonohedral morphology."
-          Description = "Approximate spherical binary opening by composing erodeZonohedral followed by dilateZonohedral."
+          Summary = "Open a binary UInt8 image using streaming morphology."
+          Description = "Opens a UInt8 binary mask by eroding and then dilating with the same radius."
           Aliases = [ "morphology"; "binary"; "mask"; "zonohedral"; "streaming"; "VHGW" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
@@ -2075,10 +1993,10 @@ module BuiltInCatalog =
           Parameters = [ makeParameter "radius" "Radius" "1" (BasicType.Numeric UInt32) ] }
 
         { Id = "ClosingZonohedral"
-          DisplayName = "closingZonohedral"
+          DisplayName = "binaryClosing"
           Category = "Binary Morphology"
-          Summary = "Close a binary UInt8 image using streaming zonohedral morphology."
-          Description = "Approximate spherical binary closing by composing dilateZonohedral followed by erodeZonohedral."
+          Summary = "Close a binary UInt8 image using streaming morphology."
+          Description = "Closes a UInt8 binary mask by dilating and then eroding with the same radius."
           Aliases = [ "morphology"; "binary"; "mask"; "zonohedral"; "streaming"; "VHGW" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
@@ -2093,7 +2011,7 @@ module BuiltInCatalog =
           Description = connectedComponentsDescription
           Aliases = [ "components"; "labels"; "segmentation" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
-          Outputs = [ makePort "Labels + count" connectedComponentLabels ]
+          Outputs = [ makePort "UInt32 labels" (PortType.Image UInt32) ]
           Parameters = [ makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "StreamConnectedObjects"
@@ -2158,18 +2076,6 @@ module BuiltInCatalog =
           Inputs = [ makePort "Objects" streamedObjects ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters = [] }
-
-        { Id = "RelabelComponents"
-          DisplayName = "relabelComponents"
-          Category = "Binary Morphology"
-          Summary = "Relabel connected-component labels and remove small components."
-          Description = relabelComponentsDescription
-          Aliases = [ "components"; "labels"; "relabel"; "size"; "filter" ]
-          Inputs = [ makePort "UInt64" imageUInt64 ]
-          Outputs = [ makePort "UInt64" imageUInt64 ]
-          Parameters =
-              [ makeParameter "minimumObjectSize" "Minimum object size" "1" (BasicType.Numeric UInt32)
-                makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
         { Id = "MarchingCubes"
           DisplayName = "marchingCubes"
@@ -2326,28 +2232,6 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "histogram" "Histogram" "" BasicType.Map ] }
 
-        { Id = "ComponentTranslationTable"
-          DisplayName = "componentTranslationTable"
-          Category = "Binary Morphology"
-          Summary = "Reduce connected-component label slabs to a translation table with streaming component statistics."
-          Description = "Consumes connected-component label slabs and their local object counts. It records label equivalences across slab boundaries, accumulates per-slab voxel counts and bounding boxes on the fly, then reduces both the label mapping and statistics to the final whole-stack component labels. The resulting table can be used by collapseComponentLabels and also contains global component statistics."
-          Aliases = [ "connected"; "components"; "translation"; "table"; "statistics"; "stats"; "reducer"; "labels" ]
-          Inputs = [ makePort "Labels + count" connectedComponentLabels ]
-          Outputs = [ makePort "TranslationTable" translationTable ]
-          Parameters = [ makeParameter "windowSize" "Window size" "None" BasicType.String ] }
-
-        { Id = "CollapseComponentLabels"
-          DisplayName = "collapseComponentLabels"
-          Category = "Binary Morphology"
-          Summary = "Collapse chunk-local component labels using a translation table."
-          Description = collapseLabelsDescription
-          Aliases = [ "connected"; "components"; "translation"; "table"; "update"; "labels" ]
-          Inputs = [ makePort "UInt64" imageUInt64 ]
-          Outputs = [ makePort "UInt64" imageUInt64 ]
-          Parameters =
-              [ makeParameter "windowSize" "Window size" "None" BasicType.String
-                makeParameter "translationTable" "Translation table" "" BasicType.String ] }
-
         { Id = "LabelContour"
           DisplayName = "labelContour"
           Category = "Segmentation"
@@ -2430,8 +2314,8 @@ module BuiltInCatalog =
         { Id = "ResampleAffine"
           DisplayName = "resampleAffine"
           Category = "Geometry"
-          Summary = "Reslice an image stack with affine trilinear interpolation."
-          Description = "Streams the input stack into an internal chunk workspace, reads the chunks in the requested output slicing direction, and emits resampled slices. Geometry, affine transform, interpolation, and background are raw F# expressions."
+          Summary = "Reslice a Chunk stack with affine trilinear interpolation."
+          Description = "Resamples Chunk slices with trilinear interpolation and emits Chunk slices in the requested output geometry. Geometry, affine transform, interpolation, and background are raw F# expressions."
           Aliases = [ "resample"; "affine"; "trilinear"; "chunks"; "geometry"; "transform" ]
           Inputs = [ makePort "Image" imageAny ]
           Outputs = [ makePort "Image" imageAny ]

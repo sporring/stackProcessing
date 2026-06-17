@@ -14,7 +14,7 @@
         },
         {
           "key": "type",
-          "value": "Float64",
+          "value": "Float32",
           "useInput": false
         },
         {

@@ -14,9 +14,7 @@ let main args =
 
     src
     |> read<uint8> input ".tiff"
-    >=> imageDivScalar<uint8> 255uy
-    >=> signedDistanceBand 8u 4u
-    >=> cast<float, float32>
+    >=> signedDistanceBand 8u 4u 4
     >=> write output ".tiff"
     |> sink
 

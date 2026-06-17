@@ -38,7 +38,7 @@
           "useInput": false
         },
         {
-          "key": "slabDepth",
+          "key": "thickDepth",
           "value": "1",
           "useInput": false
         },

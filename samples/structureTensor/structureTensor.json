@@ -13,8 +13,23 @@
           "useInput": false
         },
         {
+          "key": "radius",
+          "value": "7",
+          "useInput": false
+        },
+        {
           "key": "rho",
-          "value": "0.0",
+          "value": "1.0",
+          "useInput": false
+        },
+        {
+          "key": "rhoRadius",
+          "value": "7",
+          "useInput": false
+        },
+        {
+          "key": "workers",
+          "value": "4",
           "useInput": false
         }
       ]
@@ -156,7 +171,7 @@
         },
         {
           "key": "type",
-          "value": "Float64",
+          "value": "Float32",
           "useInput": false
         },
         {

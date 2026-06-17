@@ -1,4 +1,5 @@
-// Computes the structure tensor eigensystem and writes the first eigenvector as an RGB image stack.
+// Computes the Chunk structure tensor eigensystem and writes the first eigenvector
+// as RGB color chunk slices.
 open StackProcessing
 open System.IO
 
@@ -15,12 +16,12 @@ let main args =
         | _ -> "../data/volume", "../tmp/structureTensorEigenvector0Color"
 
     src
-    |> read<float> input ".tiff"
-    >=> structureTensor 1.0 0.0
-    >=> vectorRange<float> 3u 3u
-    >=> vector3ToColor -1.0 1.0
-    >=> write output ".tiff"
+    |> read<float32> input ".tiff"
+    >=> structureTensor 1.0 7 1.0 7 4
+    >=> vectorRange<float32> 3u 3u
+    >=> vector3ToColorFloat32 -1.0f 1.0f
+    >=> writeColor output ".tiff"
     |> sink
 
-    printfn "Wrote the first structure-tensor eigenvector as RGB color to %s" (Path.GetFullPath output)
+    printfn "Wrote the first structure-tensor eigenvector color slices to %s" (Path.GetFullPath output)
     0

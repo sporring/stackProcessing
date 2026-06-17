@@ -30,7 +30,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/Image/Image.fsproj" />
     <ProjectReference Include="../../src/StackProcessing/StackProcessing.fsproj" />
     <ProjectReference Include="../../src/StackProcessing.Core/StackProcessing.Core.fsproj" />
   </ItemGroup>

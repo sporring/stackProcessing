@@ -30,3 +30,17 @@ benchmarks/results/old3.csv
 benchmarks/results/raw.before-remove-cpp-itk-20260528_215418.csv
 /notes/LMIP_Optimiser_and_Studio
 notes/LMIP_Optimiser_and_Studio.zip
+benchmarks/results/raw.before-chunk-convolve-explicit-float32.csv
+benchmarks/results/raw.before-chunk-convolve-no-workers-1024-mainplots.csv
+benchmarks/results/raw.before-chunk-convolve-no-workers-mainplots.csv
+benchmarks/results/raw.before-chunk-copy-threshold-mainplots.csv
+benchmarks/results/raw.before-chunk-dilate-mainplots.csv
+benchmarks/results/raw.before-clean-chunk-dilate-mainplots.csv
+benchmarks/results/raw.before-matlab-convolve-rerun.csv
+benchmarks/results/raw.before-matlab-convolve-random-kernel.csv
+benchmarks/results/raw.before-matlab-convolve-uniform-materialized-double.csv
+benchmarks/results/summary.before-uint8-workers3-update.csv
+tmp.m
+benchmarks/results/raw.before-connectedcomponents-dedup.csv
+benchmarks/results/raw.before-chunk-sauf-parallelcollect.csv
+slow

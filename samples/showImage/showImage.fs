@@ -1,7 +1,6 @@
 ﻿// To run, remember to:
 // export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net10.0
 open StackProcessing
-open Plotly.NET
 
 [<EntryPoint>]
 let main arg =
@@ -14,16 +13,9 @@ let main arg =
         else
             "../data/volume"
 
-    // Plotly.Net plot function
-    let plt (I: Image<uint8>) = 
-        let img = ImageFunctions.toSeqSeq I
-        Chart.Heatmap(img)
-        |> Chart.withTitle "An Image"
-        |> Chart.show
-
     src
     |> readRandom<uint8> 1u input ".tiff"
-    >=> show plt 
+    >=> show (fun chunk -> showChunkWithLabels<uint8> "Viridis" "An Image" "" "" chunk)
     |> sink
 
     0

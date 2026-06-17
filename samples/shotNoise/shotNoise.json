@@ -4,14 +4,14 @@
     { "id": "noise", "functionId": "ShotNoise", "x": 100.0, "y": 120.0,
       "parameters": [
         { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
-        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "type", "value": "Float32", "useInput": false },
         { "key": "width", "value": "64", "useInput": false },
         { "key": "height", "value": "64", "useInput": false },
         { "key": "depth", "value": "64", "useInput": false },
         { "key": "scale", "value": "2.0", "useInput": false } ] },
     { "id": "cast", "functionId": "Cast", "x": 320.0, "y": 120.0,
       "parameters": [
-        { "key": "sourceType", "value": "Float64", "useInput": false },
+        { "key": "sourceType", "value": "Float32", "useInput": false },
         { "key": "targetType", "value": "UInt8", "useInput": false } ] },
     { "id": "write", "functionId": "Write", "x": 500.0, "y": 120.0,
       "parameters": [

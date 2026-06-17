@@ -18,14 +18,17 @@
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         <TargetPath>libSimpleITKCSharpNative.dll</TargetPath>
       </None>
+      <None Include="../../lib/spnth.dll" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
     <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
       <None Include="../../lib/libSimpleITKCSharpNative.so" CopyToOutputDirectory="PreserveNewest" />
+      <None Include="../../lib/libspnth.so" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
     <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
       <None Include="../../lib/libSimpleITKCSharpNative.dylib" CopyToOutputDirectory="PreserveNewest" />
+      <None Include="../../lib/libspnth.dylib" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
     <ItemGroup>
@@ -34,14 +37,21 @@
         <PackageReference Include="Plotly.NET" Version="5.1.0" />
         <PackageReference Include="PureHDF" Version="2.1.1" />
         <ProjectReference Include="../../../Zarr.NET/Zarr.NET.csproj" />
+        <ProjectReference Include="../../../SharpFFTW/SharpFFTW/SharpFFTW.csproj" />
+        <ProjectReference Include="../Chunk/Chunk.Core.fsproj" />
         <ProjectReference Include="../TinyLinAlg/TinyLinAlg.fsproj" />
-        <ProjectReference Include="../Image/Image.fsproj" />
         <ProjectReference Include="../SlimPipeline/SlimPipeline.fsproj" />
         <ProjectReference Include="../StackProcessing.Cost/StackProcessing.Cost.fsproj" />
     </ItemGroup>
 
     <ItemGroup>
         <Compile Include="StackCore.fs" />
+        <Compile Include="StackMedian.fs" />
+        <Compile Include="StackBinaryMorphology.fs" />
+        <Compile Include="StackConvolve.fs" />
+        <Compile Include="StackFFT.fs" />
+        <Compile Include="StackConnectedComponents.fs" />
+        <Compile Include="StackChunk.fs" />
         <Compile Include="StackOptimizer.fs" />
         <Compile Include="StackCharts.fs" />
         <Compile Include="StackIO.fs" />
@@ -49,10 +59,8 @@
         <Compile Include="StackRegistration.fs" />
         <Compile Include="StackRansac.fs" />
         <Compile Include="StackManifest.fs" />
-        <Compile Include="StackStitching.fs" />
         <Compile Include="StackObjects.fs" />
         <Compile Include="StackMesh.fs" />
-        <Compile Include="StackImageFunctions.fs" />
         <Compile Include="StackBias.fs" />
         <Compile Include="StackSerialSections.fs" />
         <Compile Include="StackAffineResampler.fs" />

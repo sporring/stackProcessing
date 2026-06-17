@@ -5,11 +5,12 @@
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
     </PropertyGroup>
 
-    <PropertyGroup>
+    <!-- Signature generation can be re-enabled by setting EnableSigGeneration=true. -->
+    <PropertyGroup Condition="'$(EnableSigGeneration)'=='true'">
         <SigFile>$(MSBuildThisFileDirectory)StackProcessing.fsi</SigFile>
     </PropertyGroup>
- 
-    <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+
+    <PropertyGroup Condition="'$(EnableSigGeneration)'=='true' and '$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
         <DefineConstants>TRACE</DefineConstants>
         <PlatformTarget>AnyCPU</PlatformTarget>
         <OtherFlags>--sig:"$(SigFile)"</OtherFlags>
@@ -33,20 +34,23 @@
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         <TargetPath>libSimpleITKCSharpNative.dll</TargetPath>
       </None>
+      <None Include="../../lib/spnth.dll" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
     
     <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
       <None Include="../../lib/libSimpleITKCSharpNative.so"
         CopyToOutputDirectory="PreserveNewest" />
+      <None Include="../../lib/libspnth.so" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
     <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
       <None Include="../../lib/libSimpleITKCSharpNative.dylib"
         CopyToOutputDirectory="PreserveNewest" />
+      <None Include="../../lib/libspnth.dylib" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
     
     <ItemGroup>
-        <ProjectReference Include="../Image/Image.fsproj" />
+        <ProjectReference Include="../Chunk/Chunk.Core.fsproj" />
         <ProjectReference Include="../SlimPipeline/SlimPipeline.fsproj" />
         <ProjectReference Include="../StackProcessing.Core/StackProcessing.Core.fsproj" />
 <!--

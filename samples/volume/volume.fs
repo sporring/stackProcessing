@@ -1,4 +1,4 @@
-// Resize the sample volume file to a small image stack.
+// Measure foreground volume from a thresholded volume file using Chunk stages.
 open StackProcessing
 
 [<EntryPoint>]
@@ -6,15 +6,18 @@ let main args =
     let availableMemory = 1UL * 1024UL * 1024UL * 1024UL
     let src, args = commandLineSource availableMemory args
 
-    let input, output =
+    let input =
         match args with
-        | [| input; output |] -> input, output
-        | _ -> "../data/volumedata.tif", "../tmp/volume"
+        | [| input |] -> input
+        | _ -> "../data/volumedata.tif"
 
-    src
-    |> readVolume<uint8> (volumeFilePath input ".tiff")
-    |> resize<uint8> 64u 64u 64u "Linear"
-    >=> write output ".tiff"
-    |> sink
+    let voxelVolume =
+        src
+        |> readVolume<uint8> (volumeFilePath input ".tiff")
+        >=> thresholdRange<uint8> 1 255
+        >=> volume 1.0 1.0 1.0
+        |> drain
+
+    printfn "Foreground volume: %.3f" voxelVolume
 
     0

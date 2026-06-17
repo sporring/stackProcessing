@@ -1,130 +1,27 @@
 module StackCore
 
-open SlimPipeline // Core processing model
+open SlimPipeline
 open System
 open System.Runtime.InteropServices
 
-// Whole-slice stages should do their pixel work in managed arrays and cross
-// the ITK boundary once per slice. Per-pixel Image.Get/setter calls are kept
-// for sparse/random access paths where bulk transport would be the wrong cost.
+module ChunkPrimitive = Chunk
 
 type Stage<'S,'T> = SlimPipeline.Stage<'S,'T>
 type Profile = SlimPipeline.Profile
 type ProfileTransition = SlimPipeline.ProfileTransition
 type ResourceOps<'T> = SlimPipeline.ResourceOps<'T>
 type Window<'T> = SlimPipeline.Window<'T>
-//type Slice<'S when 'S: equality> = Slice.Slice<'S>
-type Image<'S when 'S: equality> = Image.Image<'S>
 
-type Slab<'T when 'T: equality> =
-    { Image: Image<'T>
-      EmitRange: uint * uint }
-
-type ChunkIndex = int * int * int
-
-type ChunkLayout =
-    { VolumeSize: uint64 * uint64 * uint64
-      ChunkSize: uint64 * uint64 * uint64
-      ChunkCounts: int * int * int
-      PixelType: string
-      Components: uint }
-
-type ChunkStorage<'T when 'T: equality> =
-    { Bytes: byte[]
-      ByteLength: int
-      Release: unit -> unit }
-
-type Chunk<'T when 'T: equality> =
-    { Index: ChunkIndex
-      Origin: uint64 * uint64 * uint64
-      Size: uint64 * uint64 * uint64
-      BufferSize: uint64 * uint64 * uint64
-      Storage: ChunkStorage<'T> }
-
-module Chunk =
-    let inline private volume (width, height, depth) =
-        width * height * depth
-
-    let private elementBytes<'T>() =
-        Image.getBytesPerComponent typeof<'T> |> uint64
-
-    let createOwnedBytes<'T when 'T: equality> index origin size bufferSize (bytes: byte[]) release : Chunk<'T> =
-        let expected = volume bufferSize * elementBytes<'T>()
-        if uint64 bytes.LongLength < expected then
-            invalidArg "bytes" $"Chunk byte buffer length was {bytes.LongLength}, expected at least {expected} for {typeof<'T>.Name}."
-
-        { Index = index
-          Origin = origin
-          Size = size
-          BufferSize = bufferSize
-          Storage = { Bytes = bytes; ByteLength = int expected; Release = release } }
-
-    let createBytes<'T when 'T: equality> index origin size bufferSize (bytes: byte[]) : Chunk<'T> =
-        createOwnedBytes<'T> index origin size bufferSize bytes ignore
-
-    let createOwned index origin size bufferSize (data: 'T[]) release : Chunk<'T> =
-        let byteCount = data.LongLength * int64 (elementBytes<'T>())
-        let bytes = Array.zeroCreate<byte> (int byteCount)
-        Buffer.BlockCopy(data, 0, bytes, 0, bytes.Length)
-        createOwnedBytes<'T> index origin size bufferSize bytes release
-
-    let create index origin size bufferSize (data: 'T[]) : Chunk<'T> =
-        createOwned index origin size bufferSize data ignore
-
-    let bytes chunk =
-        if chunk.Storage.ByteLength = chunk.Storage.Bytes.Length then
-            chunk.Storage.Bytes
-        else
-            chunk.Storage.Bytes[0 .. chunk.Storage.ByteLength - 1]
-
-    let memory chunk =
-        chunk.Storage.Bytes.AsMemory(0, chunk.Storage.ByteLength)
-
-    let span<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
-        MemoryMarshal.Cast<byte, 'T>(chunk.Storage.Bytes.AsSpan(0, chunk.Storage.ByteLength))
-
-    let data<'T when 'T: equality> (chunk: Chunk<'T>) =
-        let elementBytes = elementBytes<'T>() |> int
-        let data = Array.zeroCreate<'T> (chunk.Storage.ByteLength / elementBytes)
-        Buffer.BlockCopy(chunk.Storage.Bytes, 0, data, 0, chunk.Storage.ByteLength)
-        data
-
-    let release chunk =
-        chunk.Storage.Release()
-
-    let validElementCount chunk =
-        volume chunk.Size
-
-    let bufferElementCount chunk =
-        volume chunk.BufferSize
-
-    let inline flatIndex (width: int) (height: int) (x: int) (y: int) (z: int) =
-        (z * height + y) * width + x
-
-    let inline flatIndexInBuffer chunk x y z =
-        let width, height, _depth = chunk.BufferSize
-        flatIndex (int width) (int height) x y z
-
-    let map (f: 'T -> 'U) (chunk: Chunk<'T>) =
-        let input = data chunk
-        let output = Array.zeroCreate<'U> input.Length
-
-        let mutable i = 0
-        while i < input.Length do
-            output[i] <- f input[i]
-            i <- i + 1
-
-        create chunk.Index chunk.Origin chunk.Size chunk.BufferSize output
-
-    let copy chunk =
-        let copied = data chunk |> Array.copy
-        create chunk.Index chunk.Origin chunk.Size chunk.BufferSize copied
-
-type Point2D =
-    { X: float
-      Y: float }
-
-type Polygon2D = Point2D list
+type ChunkLayout = ChunkPrimitive.ChunkLayout
+type ChunkIndex = ChunkPrimitive.ChunkIndex
+type Chunk<'T when 'T: equality> = ChunkPrimitive.Chunk<'T>
+type LocatedChunk<'T when 'T: equality> = ChunkPrimitive.LocatedChunk<'T>
+type EncodedLocatedChunk = ChunkPrimitive.EncodedLocatedChunk
+type VectorChunk<'T when 'T: equality> = ChunkPrimitive.VectorChunk<'T>
+type SpectralLayout = ChunkPrimitive.SpectralLayout
+type SpectralChunk = ChunkPrimitive.SpectralChunk
+type DenseUInt32UnionFind = ChunkPrimitive.DenseUInt32UnionFind
+type ChunkStats = ChunkPrimitive.ChunkStats
 
 type HistogramBinning =
     | FixedEdges of firstLeftEdge: float * lastLeftEdge: float * bins: uint32
@@ -133,6 +30,23 @@ type HistogramBinning =
 type Histogram<'T when 'T: comparison> =
     { Counts: Map<'T, uint64>
       Binning: HistogramBinning option }
+
+type ImageStats =
+    { NumPixels: uint64
+      Mean: float
+      Std: float
+      Min: float
+      Max: float
+      Sum: float
+      Var: float }
+
+module NativeSp =
+    let ensureAvailable () = ChunkPrimitive.NativeSp.ensureAvailable ()
+    let fftwfComplexXYInplace(interleaved, width, height, inverse) =
+        ChunkPrimitive.NativeSp.fftwfComplexXYInplace(interleaved, width, height, inverse)
+    let fftwfComplexZInplace(interleaved, width, height, depth, inverse) =
+        ChunkPrimitive.NativeSp.fftwfComplexZInplace(interleaved, width, height, depth, inverse)
+    let checkStatus operation status = ChunkPrimitive.NativeSp.checkStatus operation status
 
 module Histogram =
     let ofMap counts =
@@ -147,229 +61,145 @@ module Histogram =
         { Counts = counts
           Binning = Some(FixedWidth binWidth) }
 
-let getMem () =
-    System.GC.Collect()
-    System.GC.WaitForPendingFinalizers()
-    System.GC.Collect()
+module Chunk =
+    let create<'T when 'T: equality> = ChunkPrimitive.create<'T>
+    let setDebugLevel = ChunkPrimitive.ChunkStats.setDebugLevel
+    let resetStats = ChunkPrimitive.ChunkStats.reset
+    let stats = ChunkPrimitive.ChunkStats.snapshot
+    let formatStats = ChunkPrimitive.ChunkStats.format
+    let span<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
+        ChunkPrimitive.span<'T> chunk
+    let incRef = ChunkPrimitive.incRef
+    let decRef = ChunkPrimitive.decRef
+    let vectorSpan<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (vector: VectorChunk<'T>) =
+        ChunkPrimitive.vectorSpan<'T> vector
+    let toVectorImage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkPrimitive.toVectorImage<'T>
+    let vectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkPrimitive.vectorElement<'T>
+    let appendVectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkPrimitive.appendVectorElement<'T>
+    let mapVectorElements = ChunkPrimitive.mapVectorElements
+    let vectorDot = ChunkPrimitive.vectorDot
+    let vectorMagnitude = ChunkPrimitive.vectorMagnitude
+    let vectorCross3D = ChunkPrimitive.vectorCross3D
+    let vectorAngleTo = ChunkPrimitive.vectorAngleTo
+    let mapVectorElementsFloat32 = ChunkPrimitive.mapVectorElementsFloat32
+    let vectorDotFloat32 = ChunkPrimitive.vectorDotFloat32
+    let vectorMagnitudeFloat32 = ChunkPrimitive.vectorMagnitudeFloat32
+    let vector3ToColorFloat32 = ChunkPrimitive.vector3ToColorFloat32
+    let vectorAngleToFloat32 = ChunkPrimitive.vectorAngleToFloat32
+    let inline toIndex width height x y z = ChunkPrimitive.toIndex width height x y z
+    let inline ofIndex width height index = ChunkPrimitive.ofIndex width height index
+    let iter f chunk = ChunkPrimitive.iter f chunk
+    let iteri f chunk = ChunkPrimitive.iteri f chunk
+    let mapInto f input output = ChunkPrimitive.mapInto f input output
+    let map f chunk = ChunkPrimitive.map f chunk
+    let mapi f chunk = ChunkPrimitive.mapi f chunk
+    let fold folder state chunk = ChunkPrimitive.fold folder state chunk
+    let foldi folder state chunk = ChunkPrimitive.foldi folder state chunk
 
-let imageResourceOps<'S when 'S: equality> : ResourceOps<Image<'S>> =
-    { Retain = fun image -> image.incRefCount()
-      Release = fun image -> image.decRefCount()
-      MemoryOf = fun image -> Image<'S>.memoryEstimateSItk image.Image |> uint64 |> Some }
+type Point2D =
+    { X: float
+      Y: float }
 
-let releaseAfterWith (ops: ResourceOps<'S>) (f: 'S -> 'T) (value: 'S) =
-    try
-        f value
-    finally
-        ops.Release value
+type Polygon2D = Point2D list
 
-let liftUnary name =
-    Stage.liftReleaseUnary name ignore
-
-let liftUnaryReleaseAfter (name: string) (f: Image<'S> -> Image<'T>) (memoryNeed: MemoryNeed) (elementTransformation: ElementTransformation) =
-    Stage.liftResourceUnary name imageResourceOps f memoryNeed elementTransformation
+let (>=>) = Plan.(>=>)
+let (-->) = Stage.(-->)
+let (>>=>) = Plan.(>>=>)
+let (>>=>>) = Plan.(>>=>>)
+let teeFst = Stage.teeFst
+let teeSnd = Stage.teeSnd
 
 let identityStage name =
     Stage.map name (fun _ value -> value) id id
 
-let incIfImage x =
-    match box x with
-    | :? Image<uint8> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<int8> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<uint16> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<int16> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<uint> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<int> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<uint64> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<int64> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<float32> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<float> as im -> im.incRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<System.Numerics.Complex> as im -> im.incRefCount()
-    | _ -> ()
-    x
+let map f = Stage.map "map" f id id
+let flattenList () = Stage.flatten "flatten"
 
-let private copyIfImageForPadding index x =
-    let copyImage (image: Image<'T>) =
-        image.copy($"padding[{index}]", index) :> obj |> unbox
+let mapWindow (name: string) (f: bool -> Window<'T> -> 'S) memoryNeed elementTransformation =
+    Stage.map name (fun debug (window: Window<'T>) -> f debug window) memoryNeed elementTransformation
 
-    match box x with
-    | :? Image<uint8> as im -> copyImage im
-    | :? Image<int8> as im -> copyImage im
-    | :? Image<uint16> as im -> copyImage im
-    | :? Image<int16> as im -> copyImage im
-    | :? Image<uint> as im -> copyImage im
-    | :? Image<int> as im -> copyImage im
-    | :? Image<uint64> as im -> copyImage im
-    | :? Image<int64> as im -> copyImage im
-    | :? Image<float32> as im -> copyImage im
-    | :? Image<float> as im -> copyImage im
-    | :? Image<System.Numerics.Complex> as im -> copyImage im
-    | _ -> x
+let mapWindowItems (name: string) (f: bool -> 'T list -> 'S) memoryNeed elementTransformation =
+    Stage.map name (fun debug (window: Window<'T>) -> f debug window.Items) memoryNeed elementTransformation
 
-let incRef () =
-    Stage.map "incRefCountOp" (fun _ -> incIfImage) id id
-let decIfImage x =
-    match box x with
-    | :? Image<uint8> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<int8> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<uint16> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<int16> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<uint> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<int> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<uint64> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<int64> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<float32> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<float> as im -> im.decRefCount()   // or img.incNRefCount(1) if it takes an int
-    | :? Image<System.Numerics.Complex> as im -> im.decRefCount()
-    | _ -> ()
-    x
-let decRef () =
-    Stage.map "decRefCountOp" (fun _ -> decIfImage) id id
-let releaseAfter (f: Image<'S>->'T) (I: Image<'S>) = 
-    releaseAfterWith imageResourceOps f I
-let releaseAfter2 (f: Image<'S>->Image<'S>->'T) (I: Image<'S>) (J: Image<'S>) = 
-    try
-        f I J
-    finally
-        imageResourceOps.Release I
-        imageResourceOps.Release J
+let windowSkipTakeMReleaseAfterWithMemory outputStart outputCount releaseItem memoryNeed : Stage<Window<'T>, 'T list> =
+    let mapper (_debug: bool) (window: Window<'T>) =
+        let emitStart, emitCount = window.EmitRange
+        let requestedEnd = outputStart + outputCount
+        let emitEnd = emitStart + emitCount
+        let effectiveStart = max outputStart emitStart
+        let effectiveEnd = min requestedEnd emitEnd
+        let effectiveCount = if effectiveEnd > effectiveStart then effectiveEnd - effectiveStart else 0u
 
-let liftRelease2 f I J =
-    releaseAfter2 (fun a b -> f a b) I J
-
-let memNeeded<'T> nTimes nElems =
-    3UL * nElems * nTimes * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
-
-let failTypeMismatch<'T> name supportedTypes =
-    let t = typeof<'T>
-    if supportedTypes |> List.exists ((=) t) |> not then
-        let names = List.map (fun (t: Type) -> t.Name) supportedTypes
-        failwith $"[{name}] wrong type. Type {t} must be one of {names}"
-
-let isInteractiveProcess () =
-    AppDomain.CurrentDomain.FriendlyName.IndexOf("fsi", StringComparison.OrdinalIgnoreCase) >= 0
-    || Environment.GetCommandLineArgs()
-       |> Array.exists (fun arg -> arg.IndexOf("fsi", StringComparison.OrdinalIgnoreCase) >= 0)
-
-let stopWithConfigurationError message =
-    if isInteractiveProcess () then
-        invalidOp message
-    else
-        Console.Error.WriteLine(message)
-        Environment.ExitCode <- 2
-        Environment.Exit 2
-        failwith message
-
-let trd (_, _, c) = c
-(*
-let releaseNAfter (n: int) (f: Image<'S> list->'T list) (sLst: Image<'S> list) : 'T list =
-    let tLst = f sLst;
-    sLst |> List.take (int n) |> List.map (decIfImage >> ignore) |> ignore
-    tLst 
-*)
-
-let private rssKb () =
-    MemoryProbe.currentRssBytes() / 1024UL
-
-let private sampleVolRssProbe enabled label startKb previousKb =
-    if enabled then
-        let currentKb = rssKb()
-        let stepDelta = int64 currentKb - int64 previousKb
-        let totalDelta = int64 currentKb - int64 startKb
-        printfn $"[rss:vol] {label}: RSS {currentKb} KB, step %+d{stepDelta} KB, total %+d{totalDelta} KB"
-        currentKb, stepDelta
-    else
-        previousKb, 0L
-
-let private printVolRssSummary enabled startKb finalKb stackDelta releaseInputsDelta volumeFunctionDelta disposeStackDelta unstackDelta disposeVolumeDelta =
-    if enabled then
-        let totalDelta = int64 finalKb - int64 startKb
-        printfn $"[rss:vol-summary] stack %+d{stackDelta} KB, releaseInputs %+d{releaseInputsDelta} KB, volumeFunction %+d{volumeFunctionDelta} KB, disposeStack %+d{disposeStackDelta} KB, unstack %+d{unstackDelta} KB, disposeVolume %+d{disposeVolumeDelta} KB, total %+d{totalDelta} KB"
-
-let private releaseAllImages (images: Image<'S> list) =
-    images |> List.iter (fun image -> image.decRefCount())
-
-let private releaseConsumedImages (window: Window<Image<'S>>) =
-    window.Items
-    |> List.take (min (int window.ReleaseCount) window.Items.Length)
-    |> List.iter (fun image -> image.decRefCount())
-
-let volFctToWindowFctReleaseAfterDebug
-        (debug: bool)
-        (f: Image<'S> -> Image<'T>)
-        (requiredInputDepth: uint)
-        (outputStart: uint)
-        (outputCount: uint)
-        (window: Window<Image<'S>>)
-        : Image<'T> list =
-    let _, windowEmitCount = window.EmitRange
-    let effectiveOutputCount = min outputCount windowEmitCount
-
-    if uint window.Items.Length < requiredInputDepth then
-        releaseAllImages window.Items
-        []
-    else
-        if effectiveOutputCount = 0u then
-            releaseAllImages window.Items
+        if effectiveCount = 0u || int effectiveStart >= window.Items.Length then
+            window.Items |> List.iter releaseItem
             []
         else
-        match window.Items with
-        | [ image ] when requiredInputDepth <= 1u ->
-            if outputStart = 0u then
-                let result =
-                    try
-                        f image
-                    finally
-                        releaseConsumedImages window
-                [ result ]
-            else
-                releaseConsumedImages window
-                []
-        | _ ->
-            let rssDebug = debug && DebugLevel.rssEnabled()
-            let startKb = if rssDebug then rssKb() else 0UL
-            let mutable previousKb, _ = sampleVolRssProbe rssDebug "start" startKb startKb
-            let stack = ImageFunctions.stack window.Items
-            let currentKb, stackDelta = sampleVolRssProbe rssDebug "after stack" startKb previousKb
-            previousKb <- currentKb
-            releaseConsumedImages window
-            let currentKb, releaseInputsDelta = sampleVolRssProbe rssDebug "after release input slices" startKb previousKb
-            previousKb <- currentKb
-            let vol = f stack
-            let currentKb, volumeFunctionDelta = sampleVolRssProbe rssDebug "after volume function" startKb previousKb
-            previousKb <- currentKb
-            stack.decRefCount ()
-            let currentKb, disposeStackDelta = sampleVolRssProbe rssDebug "after dispose stack" startKb previousKb
-            previousKb <- currentKb
-            let depth = vol.GetDepth()
-            let result =
-                if outputStart >= depth then
-                    []
-                else
-                    let count = min effectiveOutputCount (depth - outputStart)
-                    ImageFunctions.unstackSkipNTakeM outputStart count vol
-            let currentKb, unstackDelta = sampleVolRssProbe rssDebug "after unstack" startKb previousKb
-            previousKb <- currentKb
-            vol.decRefCount ()
-            let currentKb, disposeVolumeDelta = sampleVolRssProbe rssDebug "after dispose volume" startKb previousKb
-            previousKb <- currentKb
-            printVolRssSummary rssDebug startKb previousKb stackDelta releaseInputsDelta volumeFunctionDelta disposeStackDelta unstackDelta disposeVolumeDelta
-            result
+            let selected =
+                window.Items
+                |> List.skip (int effectiveStart)
+                |> List.take (min (int effectiveCount) (max 0 (window.Items.Length - int effectiveStart)))
 
-let volFctToWindowFctReleaseAfter (f: Image<'S> -> Image<'T>) requiredInputDepth outputStart outputCount window =
-    volFctToWindowFctReleaseAfterDebug false f requiredInputDepth outputStart outputCount window
+            window.Items
+            |> List.filter (fun item ->
+                selected
+                |> List.exists (fun selectedItem -> Object.ReferenceEquals(box selectedItem, box item))
+                |> not)
+            |> List.iter releaseItem
 
-let volFctToLstFctReleaseAfterDebug (debug: bool) (f: Image<'S> -> Image<'T>) (pad: uint) (stride: uint) (images: Image<'S> list) : Image<'T> list =
-    let requiredInputDepth =
-        if pad = 0u then 1u else 2u * pad + 1u
-    let window = Window.create pad stride images
-    volFctToWindowFctReleaseAfterDebug debug f requiredInputDepth pad stride window
+            selected
 
-let volFctToLstFctReleaseAfter (f: Image<'S>->Image<'T>) pad stride images =
-    volFctToLstFctReleaseAfterDebug false f pad stride images
+    Stage.map "windowSkipTakeM" mapper memoryNeed id
 
-let (>=>) = Plan.(>=>)
-let (-->) = Stage.(-->)
+let windowSkipTakeMReleaseAfter outputStart outputCount releaseItem : Stage<Window<'T>, 'T list> =
+    let memoryNeed nElements = nElements * uint64 (max 1u outputCount)
+    windowSkipTakeMReleaseAfterWithMemory outputStart outputCount releaseItem memoryNeed
+
+let windowSkipTakeM outputStart outputCount : Stage<Window<'T>, 'T list> =
+    windowSkipTakeMReleaseAfter outputStart outputCount ignore
+
+let windowItems () : Stage<Window<'T>, 'T list> =
+    Stage.map "windowItems" (fun _ (window: Window<'T>) -> window.Items) id id
+
+let zeroMaker (_index: int) (_example: 'T) : 'T =
+    Unchecked.defaultof<'T>
+
+let inline flatIndex2 width x y =
+    y * width + x
+
+let inline flatIndex3 width height x y z =
+    (z * height + y) * width + x
+
+let window windowSize pad stride =
+    Stage.window "window" windowSize pad zeroMaker stride
+
+let flatten () = Stage.flattenWindow "flatten"
+
+let fork (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Stage<'S, 'U * 'V> =
+    Stage.fork (stage1, stage2)
+
+let (-->>) (stage: Stage<'S, 'T>) (stage1: Stage<'T, 'U>, stage2: Stage<'T, 'V>) : Stage<'S, 'U * 'V> =
+    stage --> fork (stage1, stage2)
+
+let (>=>>) (pl: Plan<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Plan<'In, 'U * 'V> =
+    Plan.(>=>>) pl (stage1, stage2)
+
+let ignoreSingles () : Stage<_,unit> = Stage.ignore ignore
+let ignorePairs () : Stage<_,unit> = Stage.ignorePairs (ignore, ignore)
+
+let sinkOp (pl: Plan<unit,unit>) : unit =
+    Plan.sink pl
+    if pl.debug && pl.debugLevel >= 2u then
+        printfn $"[chunkStats] {Chunk.stats() |> Chunk.formatStats}"
+
+let sink (pl: Plan<unit,'T>) : unit =
+    let pl = pl >=> ignoreSingles ()
+    Plan.sink pl
+    if pl.debug && pl.debugLevel >= 2u then
+        printfn $"[chunkStats] {Chunk.stats() |> Chunk.formatStats}"
+
+let sinkList (plLst: Plan<unit,unit> list) : unit = Plan.sinkList plLst
+let drain pl = Plan.drainSingle "drainSingle" pl
+
 let private tryParseBool value =
     match value |> string |> fun v -> v.Trim().ToLowerInvariant() with
     | "1" | "true" | "yes" | "y" | "on" -> Some true
@@ -377,7 +207,7 @@ let private tryParseBool value =
     | _ -> None
 
 let optimizerEnabled () =
-    match System.Environment.GetEnvironmentVariable "STACKPROCESSING_OPTIMIZE" with
+    match Environment.GetEnvironmentVariable "STACKPROCESSING_OPTIMIZE" with
     | null | "" -> true
     | value ->
         tryParseBool value
@@ -385,6 +215,7 @@ let optimizerEnabled () =
             failwith $"STACKPROCESSING_OPTIMIZE must be true/false, 1/0, yes/no, or on/off; got '{value}'")
 
 let sourceWithOptimizer optimize availableMemory =
+    Chunk.setDebugLevel 0u
     Plan.sourceWithOptimizer optimize availableMemory
 
 let source availableMemory =
@@ -392,7 +223,9 @@ let source availableMemory =
 
 let debug level optimize availableMemory =
     let level = max 1u level
-    Image.Image<_>.setDebugLevel (if level > 1u then level - 1u else 0u)
+    Chunk.setDebugLevel level
+    if level >= 2u then
+        Chunk.resetStats()
     Plan.debug level optimize availableMemory
 
 let debugDefault level availableMemory =
@@ -404,7 +237,7 @@ let commandLineSource availableMemory (args: string array) =
         | [] -> debugLevel, optimize, costDiscrepancies, costFlags, costModel, kept |> List.rev |> List.toArray
         | "-d" :: value :: rest
         | "--debug-level" :: value :: rest ->
-            match System.UInt32.TryParse value with
+            match UInt32.TryParse value with
             | true, level -> parse (Some level) optimize costDiscrepancies costFlags costModel rest kept
             | false, _ -> failwith $"Expected unsigned integer debug level after -d, got '{value}'"
         | ("--no-optimize" | "--no-optimizer") :: rest ->
@@ -443,307 +276,30 @@ let commandLineSource availableMemory (args: string array) =
         | None -> plan |> Plan.withCostDiscrepancyReporting costDiscrepancies
 
     plan, rest
- 
+
 let zip = Plan.zip
 
-(*
-let inline isExactlyImage<'T> () =
+let memNeeded<'T> nTimes nElems =
+    nElems * nTimes * uint64 (Marshal.SizeOf(typeof<'T>))
+
+let failTypeMismatch<'T> name supportedTypes =
     let t = typeof<'T>
-    t.IsGenericType && t.GetGenericTypeDefinition() = typedefof<Image<_>>
-*)
-let (>=>>) (pl: Plan<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Plan<'In, 'U * 'V> = 
-    let stream2Window winSz pad stride (stg: Stage<'T,'Out>) : Stage<'T,'Out> =
-        let zeroMaker index item =
-            copyIfImageForPadding index item
-        Stage.window "makeWindow: window" winSz pad zeroMaker stride
-        --> Stage.map "makeWindow: select delayed emit range"
-                (fun _ window ->
-                    let start = 0
-                    let count = 1
-                    let result =
-                        window.Items
-                        |> List.skip start
-                        |> List.take (min count (max 0 (window.Items.Length - start)))
-                    result |> List.iter (incIfImage >> ignore)
-                    window.Items |> List.take (min (int stride) window.Items.Length) |> List.iter (decIfImage >> ignore)
-                    result)
-                id
-                id
-        --> Stage.flatten "makeWindow: flatten"
-        --> stg
+    if supportedTypes |> List.exists ((=) t) |> not then
+        let names = List.map (fun (t: Type) -> t.Name) supportedTypes
+        failwith $"[{name}] wrong type. Type {t} must be one of {names}"
 
-    let stg1,stg2 =
-        match stage1.Transition.From, stage2.Transition.From with
-        | Streaming, Streaming -> stage1, stage2
-        | Window (a1,b1,c1,d1,e1), Window (a2,b2,c2,d2,e2) when a1=a2 && b1=b2 && c1=c2 && d1=d2 && e1=e2 -> stage1, stage2
-        | Streaming, Window (winSz, stride, pad, emitStart, emitCount) -> 
-            if pl.debug && DebugLevel.current() >= 2u then printfn "left is promoted"
-            stream2Window winSz pad stride stage1, stage2 
-        | Window (winSz, stride, pad, emitStart, emitCount), Streaming -> 
-            if pl.debug && DebugLevel.current() >= 2u then printfn "right is promoted"
-            stage1, stream2Window winSz pad stride stage2
-        | _,_ -> failwith $"[>=>>] does not know how to combine the stage-profiles: {stage1.Transition.From} vs {stage2.Transition.From}"
+let isInteractiveProcess () =
+    AppDomain.CurrentDomain.FriendlyName.IndexOf("fsi", StringComparison.OrdinalIgnoreCase) >= 0
+    || Environment.GetCommandLineArgs()
+       |> Array.exists (fun arg -> arg.IndexOf("fsi", StringComparison.OrdinalIgnoreCase) >= 0)
 
-    Plan.(>=>>) (pl >=> incRef ()) (stg1, stg2)
+let stopWithConfigurationError message =
+    if isInteractiveProcess () then
+        invalidOp message
+    else
+        Console.Error.WriteLine(message)
+        Environment.ExitCode <- 2
+        Environment.Exit 2
+        failwith message
 
-let private alignForkStages name debug (stage1: Stage<'S, 'U>) (stage2: Stage<'S, 'V>) =
-    let stream2Window winSz pad stride (stg: Stage<'T,'Out>) : Stage<'T,'Out> =
-        let zeroMaker index item =
-            copyIfImageForPadding index item
-        Stage.window "makeWindow: window" winSz pad zeroMaker stride
-        --> Stage.map "makeWindow: select delayed emit range"
-                (fun _ window ->
-                    let start = 0
-                    let count = 1
-                    let result =
-                        window.Items
-                        |> List.skip start
-                        |> List.take (min count (max 0 (window.Items.Length - start)))
-                    result |> List.iter (incIfImage >> ignore)
-                    window.Items |> List.take (min (int stride) window.Items.Length) |> List.iter (decIfImage >> ignore)
-                    result)
-                id
-                id
-        --> Stage.flatten "makeWindow: flatten"
-        --> stg
-
-    match stage1.Transition.From, stage2.Transition.From with
-    | Streaming, Streaming -> stage1, stage2
-    | Window (a1,b1,c1,d1,e1), Window (a2,b2,c2,d2,e2) when a1=a2 && b1=b2 && c1=c2 && d1=d2 && e1=e2 -> stage1, stage2
-    | Streaming, Window (winSz, stride, pad, _, _) ->
-        if debug && DebugLevel.current() >= 2u then printfn $"{name}: left is promoted"
-        stream2Window winSz pad stride stage1, stage2
-    | Window (winSz, stride, pad, _, _), Streaming ->
-        if debug && DebugLevel.current() >= 2u then printfn $"{name}: right is promoted"
-        stage1, stream2Window winSz pad stride stage2
-    | _,_ -> failwith $"[{name}] does not know how to combine the stage-profiles: {stage1.Transition.From} vs {stage2.Transition.From}"
-
-let fork (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Stage<'S, 'U * 'V> =
-    let stg1, stg2 = alignForkStages "fork" false stage1 stage2
-    incRef () --> Stage.fork (stg1, stg2)
-
-let (-->>) (stage: Stage<'S, 'T>) (stage1: Stage<'T, 'U>, stage2: Stage<'T, 'V>) : Stage<'S, 'U * 'V> =
-    stage --> fork (stage1, stage2)
-
-let (>>=>) = Plan.(>>=>)
-let (>>=>>) = Plan.(>>=>>)
-let teeFst = Stage.teeFst
-let teeSnd = Stage.teeSnd
-let ignoreSingles () : Stage<_,unit> = Stage.ignore (decIfImage>>ignore)
-let ignorePairs () : Stage<_,unit> = Stage.ignorePairs ((decIfImage>>ignore),(decIfImage>>ignore))
-let zeroMaker (index: int) (ex: Image<'S>) : Image<'S> =
-    new Image<'S>(ex.GetSize(), ex.GetNumberOfComponentsPerPixel(), "padding", index)
-
-let window windowSize pad stride = Stage.window "window" windowSize pad zeroMaker stride
-let flatten () = Stage.flattenWindow "flatten"
-let flattenList () = Stage.flatten "flatten"
-let releaseWindowItems (items: Image<'T> list) =
-    items |> List.iter (fun image -> image.decRefCount())
-
-let releaseConsumedWindowItems (window: Window<Image<'T>>) =
-    window.Items
-    |> List.take (min (int window.ReleaseCount) window.Items.Length)
-    |> releaseWindowItems
-
-let windowToSlab<'T when 'T: equality> : Stage<Window<Image<'T>>, Image<'T>> =
-    let mapper (_debug: bool) (window: Window<Image<'T>>) =
-        match window.Items with
-        | [] ->
-            invalidOp "windowToSlab requires a non-empty window."
-        | images ->
-            let slab = ImageFunctions.stack images
-            releaseConsumedWindowItems window
-            slab
-
-    let memoryNeed nPixels =
-        2UL * nPixels * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
-
-    Stage.map "windowToSlab" mapper memoryNeed id
-
-let windowToSlabWithRange<'T when 'T: equality> : Stage<Window<Image<'T>>, Slab<'T>> =
-    let mapper (_debug: bool) (window: Window<Image<'T>>) =
-        match window.Items with
-        | [] ->
-            invalidOp "windowToSlabWithRange requires a non-empty window."
-        | images ->
-            let slab = ImageFunctions.stack images
-            releaseConsumedWindowItems window
-            { Image = slab
-              EmitRange = window.EmitRange }
-
-    let memoryNeed nPixels =
-        2UL * nPixels * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
-
-    Stage.map "windowToSlabWithRange" mapper memoryNeed id
-
-let mapSlabWithStage<'S, 'T when 'S: equality and 'T: equality> (stage: Stage<Image<'S>, Image<'T>>) : Stage<Slab<'S>, Slab<'T>> =
-    let mapper debug (slab: Slab<'S>) =
-        match Stage.runSingletonToList debug slab.Image stage with
-        | [ image ] ->
-            { Image = image
-              EmitRange = slab.EmitRange }
-        | [] ->
-            invalidOp $"mapSlabWithStage expected stage '{stage.Name}' to emit one slab image, but it emitted none."
-        | many ->
-            many |> List.iter (fun image -> image.decRefCount())
-            invalidOp $"mapSlabWithStage expected stage '{stage.Name}' to emit one slab image, but it emitted {many.Length}."
-
-    let memoryNeed nPixels =
-        stage.MemoryNeed (SlimPipeline.Single nPixels)
-        |> SingleOrPair.sum
-        |> SingleOrPair.fst
-
-    Stage.map $"mapSlabWithStage ({stage.Name})" mapper memoryNeed id
-
-let slabToWindowAlong<'T when 'T: equality> axis : Stage<Image<'T>, Window<Image<'T>>> =
-    let mapper (_debug: bool) (slab: Image<'T>) =
-        let items =
-            try
-                if slab.GetDimensions() <= axis then
-                    slab.incRefCount()
-                    [ slab ]
-                else
-                    ImageFunctions.unstack axis slab
-            finally
-                slab.decRefCount()
-
-        items
-        |> List.iteri (fun offset item -> item.index <- slab.index + offset)
-
-        Window.create 0u (uint items.Length) items
-
-    let memoryNeed nPixels = 2UL * nPixels * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
-    Stage.map "slabToWindow" mapper memoryNeed id
-
-let slabToWindow<'T when 'T: equality> : Stage<Image<'T>, Window<Image<'T>>> =
-    slabToWindowAlong<'T> 2u
-
-let slabWithRangeToWindowAlong<'T when 'T: equality> axis : Stage<Slab<'T>, Window<Image<'T>>> =
-    let mapper (_debug: bool) (slab: Slab<'T>) =
-        let items =
-            try
-                if slab.Image.GetDimensions() <= axis then
-                    slab.Image.incRefCount()
-                    [ slab.Image ]
-                else
-                    ImageFunctions.unstack axis slab.Image
-            finally
-                slab.Image.decRefCount()
-
-        items
-        |> List.iteri (fun offset item -> item.index <- slab.Image.index + offset)
-
-        let _, emitCount = slab.EmitRange
-        let boundedEmitCount = min emitCount (uint items.Length)
-        Window.create (fst slab.EmitRange) boundedEmitCount items
-
-    let memoryNeed nPixels = 2UL * nPixels * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
-    Stage.map "slabWithRangeToWindow" mapper memoryNeed id
-
-let slabWithRangeToWindow<'T when 'T: equality> : Stage<Slab<'T>, Window<Image<'T>>> =
-    slabWithRangeToWindowAlong<'T> 2u
-
-let windowSkipTakeMReleaseAfterWithMemory outputStart outputCount releaseItem memoryNeed : Stage<Window<'T>, 'T list> =
-    let mapper (_debug: bool) (window: Window<'T>) =
-        let emitStart, emitCount = window.EmitRange
-        let requestedStart = outputStart
-        let requestedEnd = outputStart + outputCount
-        let emitEnd = emitStart + emitCount
-        let effectiveStart = max requestedStart emitStart
-        let effectiveEnd = min requestedEnd emitEnd
-        let effectiveCount = if effectiveEnd > effectiveStart then effectiveEnd - effectiveStart else 0u
-
-        if effectiveCount = 0u || int effectiveStart >= window.Items.Length then
-            window.Items |> List.iter releaseItem
-            []
-        else
-            let selected =
-                window.Items
-                |> List.skip (int effectiveStart)
-                |> List.take (min (int effectiveCount) (max 0 (window.Items.Length - int effectiveStart)))
-
-            window.Items
-            |> List.filter (fun image ->
-                selected
-                |> List.exists (fun selectedImage -> Object.ReferenceEquals(selectedImage, image))
-                |> not)
-            |> List.iter releaseItem
-
-            selected
-
-    Stage.map "windowSkipTakeM" mapper memoryNeed id
-
-let windowSkipTakeMReleaseAfter outputStart outputCount releaseItem : Stage<Window<'T>, 'T list> =
-    let memoryNeed nElements = nElements * uint64 (max 1u outputCount)
-    windowSkipTakeMReleaseAfterWithMemory outputStart outputCount releaseItem memoryNeed
-
-let windowSkipTakeM outputStart outputCount : Stage<Window<'T>, 'T list> =
-    windowSkipTakeMReleaseAfter outputStart outputCount ignore
-
-let windowItems () : Stage<Window<'T>, 'T list> =
-    Stage.map "windowItems" (fun _ (window: Window<'T>) -> window.Items) id id
-
-let slabSkipTakeM<'T when 'T: equality> outputStart outputCount : Stage<Window<Image<'T>>, Image<'T> list> =
-    let memoryNeed nPixels =
-        2UL * nPixels * uint64 (max 1u outputCount) * (typeof<'T> |> Image.getBytesPerComponent |> uint64)
-    windowSkipTakeMReleaseAfterWithMemory outputStart outputCount (fun (image: Image<'T>) -> image.decRefCount()) memoryNeed
-
-let mapWindow (name: string) (f: bool -> Window<'T> -> 'S) memoryNeed elementTransformation =
-    Stage.map name (fun debug (window: Window<'T>) -> f debug window) memoryNeed elementTransformation
-let mapWindowItems (name: string) (f: bool -> 'T list -> 'S) memoryNeed elementTransformation =
-    Stage.map name (fun debug (window: Window<'T>) -> f debug window.Items) memoryNeed elementTransformation
-
-let liftWindowedUnaryReleaseAfter
-    (name: string)
-    (windowSize: uint)
-    (f: Image<'S> -> Image<'T>)
-    (memoryNeed: MemoryNeed)
-    (elementTransformation: ElementTransformation)
-    : Stage<Image<'S>, Image<'T>> =
-    let win = max 1u windowSize
-    let mapper debug =
-        volFctToWindowFctReleaseAfterDebug debug f 1u 0u win
-    let stg = mapWindow name mapper memoryNeed elementTransformation
-    (window win 0u win) --> stg --> flattenList ()
-
-let requireWindowSize<'T when 'T: equality> requiredInputDepth : Stage<Window<Image<'T>>, Window<Image<'T>>> =
-    Stage.filter
-        "requireWindowSize"
-        (fun _ window -> uint window.Items.Length >= requiredInputDepth)
-        (fun window -> releaseWindowItems window.Items)
-
-let liftSlabReleaseAfter<'S, 'T when 'S: equality and 'T: equality> name f memoryNeed elementTransformation : Stage<Image<'S>, Image<'T>> =
-    liftUnaryReleaseAfter name f memoryNeed elementTransformation
-
-let windowedViaSlabRequired<'S, 'T when 'S: equality and 'T: equality>
-    (windowSize: uint)
-    (pad: uint)
-    (stride: uint)
-    (requiredInputDepth: uint)
-    (outputStart: uint)
-    (outputCount: uint)
-    (stage: Stage<Image<'S>, Image<'T>>)
-    : Stage<Image<'S>, Image<'T>> =
-    (window windowSize pad stride)
-    --> requireWindowSize requiredInputDepth
-    --> windowToSlabWithRange<'S>
-    --> mapSlabWithStage stage
-    --> slabWithRangeToWindow<'T>
-    --> slabSkipTakeM outputStart outputCount
-    --> flattenList ()
-
-let map f = Stage.map "map" f id id
-let sinkOp (pl: Plan<unit,unit>) : unit = 
-    Plan.sink pl
-let sink (pl: Plan<unit,'T>) : unit =
-    pl >=> ignoreSingles () |> Plan.sink
-let sinkList (plLst: Plan<unit,unit> list) : unit = Plan.sinkList plLst
-//let combineIgnore = Plan.combineIgnore
-let drain pl = Plan.drainSingle "drainSingle" pl
-let drainList pl = Plan.drainList "drainList" pl
-let drainLast pl = Plan.drainLast "drainLast" pl
-//let tap str = incRefCountOp () --> (Stage.tap str)
-
-let tap = Stage.tap
-//let tap str = Stage.tap str --> incRef()// tap and tapIt neither realeases after nor increases number of references
-let tapIt = Stage.tapIt
+let trd (_, _, c) = c

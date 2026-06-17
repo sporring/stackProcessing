@@ -14,11 +14,11 @@ let main arg =
             "../data/volume", "../tmp/finiteDiff3D"
 
     src
-    |> read<float> input ".tiff"
+    |> read<float32> input ".tiff"
     >=> tap "tap: For finiteDiff"
-    >=> finiteDiff 2u 1u
+    >=> finiteDiffZ<float32> 2u 4
     >=> tap "tap: For cast"
-    >=> cast<float,uint8>
+    >=> cast<float32,uint8>
     >=> tap "tap: For write"
     >=> write output ".tiff"
     |> sink

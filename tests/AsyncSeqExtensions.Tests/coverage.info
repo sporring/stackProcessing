@@ -1,20 +1,20 @@
 SF:/Users/jrh630/repositories/stackProcessing/src/AsyncSeqExtensions/AsyncSeqExtensions.fs
 FN:6,System.Collections.Generic.IAsyncEnumerable`1<T> AsyncSeqExtensions::ofAsync(Microsoft.FSharp.Control.FSharpAsync`1<T>)
-FNDA:1,System.Collections.Generic.IAsyncEnumerable`1<T> AsyncSeqExtensions::ofAsync(Microsoft.FSharp.Control.FSharpAsync`1<T>)
-DA:7,1
+FNDA:0,System.Collections.Generic.IAsyncEnumerable`1<T> AsyncSeqExtensions::ofAsync(Microsoft.FSharp.Control.FSharpAsync`1<T>)
+DA:7,0
 FN:12,System.Collections.Generic.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions::zipConcurrent(System.Collections.Generic.IAsyncEnumerable`1<U>,System.Collections.Generic.IAsyncEnumerable`1<V>)
-FNDA:7,System.Collections.Generic.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions::zipConcurrent(System.Collections.Generic.IAsyncEnumerable`1<U>,System.Collections.Generic.IAsyncEnumerable`1<V>)
-DA:13,7
+FNDA:0,System.Collections.Generic.IAsyncEnumerable`1<System.Tuple`2<U,V>> AsyncSeqExtensions::zipConcurrent(System.Collections.Generic.IAsyncEnumerable`1<U>,System.Collections.Generic.IAsyncEnumerable`1<V>)
+DA:13,0
 FN:8,System.Collections.Generic.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@9-1::Invoke(T)
-FNDA:1,System.Collections.Generic.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@9-1::Invoke(T)
-DA:9,1
+FNDA:0,System.Collections.Generic.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@9-1::Invoke(T)
+DA:9,0
 FN:7,System.Collections.Generic.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@9::Invoke(Microsoft.FSharp.Core.Unit)
-FNDA:1,System.Collections.Generic.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@9::Invoke(Microsoft.FSharp.Core.Unit)
-DA:8,1
+FNDA:0,System.Collections.Generic.IAsyncEnumerable`1<T> AsyncSeqExtensions/ofAsync@9::Invoke(Microsoft.FSharp.Core.Unit)
+DA:8,0
 LF:4
-LH:4
+LH:0
 BRF:0
 BRH:0
 FNF:4
-FNH:4
+FNH:0
 end_of_record

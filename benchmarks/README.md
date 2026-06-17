@@ -18,6 +18,35 @@ Each backend should measure the same user-visible task, with the same input stac
 - `matlab`: MATLAB script using Image Processing Toolbox, invoked as `matlab -batch`.
 - `python-dask-omezarr`: special-case chunk-native Dask/OME-Zarr implementation.
 
+There is also a deliberately narrow `stackprocessing-libtiff-direct-copy`
+backend for copy-only TIFF IO tests. It bypasses the normal streaming stage
+stack, requires uncompressed scalar TIFF slices, rents one page buffer with
+`ArrayPool<byte>`, lets LibTiff decode scanlines into that buffer when possible,
+and writes uncompressed TIFF output. Use it to compare the lower bound of
+StackProcessing-owned LibTiff slice IO against `python-skimage-scipy` copy.
+The sibling `stackprocessing-libtiff-strip-copy` backend is stricter and faster:
+it requires one uncompressed strip per slice and uses LibTiff
+`ReadEncodedStrip`/`WriteEncodedStrip` to move a whole slice at a time.
+The `stackprocessing-libtiff-raw-strip-copy` variant is narrower still: it
+requires native-endian uncompressed stripped scalar TIFFs and uses
+`ReadRawStrip`/`WriteRawStrip`, bypassing LibTiff's decoded pixel staging path.
+The `stackprocessing-native-libtiff-raw-strip-copy` backend tests native
+`libtiff` through a tiny fixed-signature C shim in `native-libtiff-shim/`.
+`run_all.sh` builds that shim automatically on macOS/Linux when `pkg-config
+libtiff-4` is available. Windows should use the same shim idea via a proper
+CMake/vcpkg or per-RID native asset path before this graduates beyond
+benchmarking.
+The `stackprocessing-tifflibrary-raw-strip-copy` backend tests the MIT-licensed
+managed TiffLibrary package. It uses TiffLibrary's low-level content reader and
+writer APIs with a rented `ArrayPool<byte>` page buffer, bypassing decoded pixel
+conversion for the same uncompressed scalar raw-copy case.
+The `stackprocessing-imagesharp-copy` backend tests ImageSharp's high-level TIFF
+load/save path with no compression for UInt8 and UInt16 grayscale slices. It is
+included as a compatibility-oriented managed baseline, not as an ArrayPool/raw
+buffer path. ImageSharp uses the Six Labors Split License; ImageSharp 4.0 and
+newer direct dependencies also require a Six Labors license at build time, so
+this benchmark currently pins a 3.x package.
+
 ## Initial Operation Set
 
 The first benchmark set avoids operations that demonstrate StackProcessing-specific mechanics directly. It focuses on common image-analysis tasks:
@@ -47,7 +76,7 @@ The initial benchmark intentionally focuses on TIFF only. Format-specific behavi
 
 The fairness rule is that a case should read the same stack type, use the simplest native 3D operator available in that environment, and write the same output type across all backends. All generated inputs are deterministic ramps over the same value range `0..255`, regardless of storage type. `threshold` uses an inclusive lower threshold (`input >= 128`). `dilate` and `connectedComponents` are defined only for `UInt8` source stacks and use `input >= 128` to form their binary masks.
 
-`convolve` is represented in StackProcessing by constructing a Float64 uniform kernel, casting typed benchmark inputs into the operation, and casting back to the requested output type. `copy`, `convolve`, and `median` write the same pixel type they read (`UInt8`, `UInt16`, or `Float32`). `threshold`, `dilate`, and `connectedComponents` write `UInt8` mask/label-style outputs for all backends. `dilate` is kept to `UInt8` because the operation is binary morphology, not gray-value morphology over `UInt16` or `Float32` intensities. The dilation implementations are not identical internally: StackProcessing uses its streaming zonohedral/VHGW line approximation, Python/scikit-image/SciPy uses scikit-image's decomposed 3D ball sequence, MATLAB uses `strel("sphere", r)` with MATLAB's structuring-element decomposition machinery, and C++/ITK currently remains the exact binary-ball baseline. `connectedComponents` is included because it is an important dependency-sensitive operation. The semantic target for all TIFF-stack backends is 3D component labelling: StackProcessing may stream internally, while MATLAB, Python/scikit-image/SciPy, and C++/ITK read the full stack into a volume before processing.
+`convolve` is represented in StackProcessing by the Chunk-native fixed-kernel convolution path with `Float32` kernels. Typed integer chunks stay in their storage type across the DSL stage; the native hot loop reads the source type, accumulates in `Float32`, and clamps/rounds back to the same output type. `copy`, `convolve`, and `median` write the same pixel type they read (`UInt8`, `UInt16`, or `Float32`). The `UInt8` median row uses the current StackProcessing policy path, while `UInt16` and `Float32` median rows use the Chunk-native C++ `nth_element` implementation. `threshold` and `dilate` write `UInt8` masks. `connectedComponents` writes `UInt32` labels for the StackProcessing rows and is plotted as a label-producing operation rather than as a byte mask. `dilate` is kept to `UInt8` because the operation is binary morphology, not gray-value morphology over `UInt16` or `Float32` intensities. The dilation implementations are not identical internally: StackProcessing uses its streaming zonohedral/VHGW line approximation, Python/scikit-image/SciPy uses scikit-image's decomposed 3D ball sequence, MATLAB uses `strel("sphere", r)` with MATLAB's structuring-element decomposition machinery, and C++/ITK currently remains the exact binary-ball baseline. `connectedComponents` is included because it is an important dependency-sensitive operation. The semantic target for all TIFF-stack backends is 3D component labelling: StackProcessing may stream internally, while MATLAB, Python/scikit-image/SciPy, and C++/ITK read the full stack into a volume before processing.
 
 The StackProcessing backend deliberately runs with the StackProcessing optimiser disabled. This keeps the benchmark focused on the current streaming implementation and avoids mixing benchmark results with experimental optimiser choices.
 
@@ -82,6 +111,56 @@ bash benchmarks/run_all.sh --repeat 3
 source .venv-benchmarks/bin/activate
 ```
 
+For the LMIP note PDFs, use the report wrapper. It rebuilds the native and
+managed benchmark binaries, reruns the main TIFF matrix, reruns the
+StackProcessing-only Chunk worker sweeps, regenerates summaries and figures,
+and copies the generated PDFs into `notes/LMIP_Optimiser_and_Studio/figures`:
+
+```bash
+bash benchmarks/run_lmip_pdf_benchmarks.sh
+```
+
+Use `--dry-run` to inspect the full command sequence without starting the long
+measurements.
+
+The focused Zarr chunk-size comparison is split from the main wrapper. Run the
+fast-filesystem version locally:
+
+```bash
+bash benchmarks/run_zarr_chunk_comparison_fast.sh
+```
+
+It compares StackProcessing and Python/Dask/scikit-image on a fixed
+`1024x1024x1024` `UInt8` uncompressed Zarr input with chunk sizes `64^3`,
+`128^3`, and `256^3`. The operation grid is copy, one-way Zarr-to-TIFF
+conversion, one-way TIFF-to-Zarr conversion, threshold, and convolution with
+kernel sizes 3, 5, and 7. The TIFF conversion interface is an ordinary
+full-width/full-height thin slice stack; internally, both implementations group
+slices in depth-`n` thick chunks so that Zarr sub-volumes are not repeatedly accessed.
+The script writes:
+
+```text
+benchmarks/results/raw.zarr-chunk-fast.csv
+benchmarks/results/summary.zarr-chunk-fast.csv
+benchmarks/results/figures/zarr-chunk-fast-internal.pdf
+benchmarks/results/figures/zarr-chunk-fast-peak.pdf
+```
+
+and copies the figures into `notes/LMIP_Optimiser_and_Studio/figures`.
+
+The slow-filesystem Zarr comparison is intentionally not part of the PDF
+wrapper. Mount the slow filesystem yourself and run it separately while
+supervising the mount:
+
+```bash
+SLOW_ROOT=/path/to/slow bash benchmarks/run_zarr_chunk_comparison_slow.sh
+```
+
+It uses the same operation grid, places both input and output data below
+`$SLOW_ROOT`, writes `benchmarks/results/raw.zarr-chunk-slow.csv` and
+`benchmarks/results/summary.zarr-chunk-slow.csv`, and copies
+`zarr-chunk-slow-internal.pdf` into the LMIP figure directory.
+
 `run_all.sh` prebuilds compiled benchmark backends before generating inputs or measuring cases. It builds the F# benchmark project when StackProcessing is selected, or when TIFF inputs need to be generated, and it configures/builds `cpp-itk` when that backend is selected. These build steps are outside the measured commands. StackProcessing benchmark commands then execute the already-built benchmark DLL with `dotnet`, avoiding the SDK/project-runner overhead from `dotnet run`. Use `--skip-builds` only when you intentionally want to trust existing binaries.
 
 The runner also removes stale `benchmark-internal-*.txt` files in the results directory at the start and end of a non-dry run. Those files are temporary handoff files for backend-reported internal timing and normally disappear immediately.
@@ -100,14 +179,69 @@ benchmarks/results/summary.csv
 Generate paper-oriented PDF figures from the summary table:
 
 ```bash
-python3 -m pip install matplotlib
+.venv-benchmarks/bin/python -m pip install matplotlib
 
-python3 benchmarks/tools/plot_results.py \
+.venv-benchmarks/bin/python benchmarks/tools/plot_results.py \
   --input benchmarks/results/summary.csv \
   --output-dir benchmarks/results/figures
 ```
 
 The figure script writes tight-bounding-box PDFs for runtime scaling by image size, runtime scaling by neighbourhood complexity, runtime versus peak memory, and internal-versus-wall-time overhead.
+
+## FFT Roundtrip Comparison
+
+The FFT roundtrip benchmark is kept separate from the regular TIFF-stack
+operation matrix because full-volume FFT has a very different memory shape from
+local stencil operations. It compares:
+
+```text
+C++/ITK:          read TIFF slices -> full-volume FFT3D -> inverse FFT3D -> write TIFF slices
+StackProcessing: read TIFF slices -> real-to-complex FFTW XY -> compact spectral Zarr
+                 -> FFTW Z -> compact spectral Zarr
+                 -> inverse FFTW Z -> compact spectral Zarr
+                 -> complex-to-real inverse FFTW XY -> write TIFF slices
+```
+
+Build both binaries once:
+
+```bash
+dotnet build benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj -c Release
+cmake --build benchmarks/cpp-itk/build --config Release
+```
+
+Run through the normal measurement harness:
+
+```bash
+python3 benchmarks/tools/run_manifest.py \
+  --cases benchmarks/config/fft-roundtrip-cases.csv \
+  --backend stackprocessing \
+  --stackprocessing-dll benchmarks/StackProcessing.Benchmarks/bin/Release/net10.0/StackProcessing.Benchmarks.dll \
+  --results benchmarks/results/raw.fft-roundtrip.csv \
+  --repeat 1
+
+python3 benchmarks/tools/run_manifest.py \
+  --cases benchmarks/config/fft-roundtrip-cases.csv \
+  --backend cpp-itk \
+  --itk-exe benchmarks/cpp-itk/build/benchmark_itk \
+  --results benchmarks/results/raw.fft-roundtrip.csv \
+  --repeat 1
+```
+
+For a direct smoke/manual run, use:
+
+```bash
+benchmarks/cpp-itk/build/benchmark_itk \
+  --operation fftRoundtrip \
+  --pixel-type Float32 \
+  --input tmp/benchmarks/input/Float32_128x128x128 \
+  --output tmp/benchmarks/output/cpp-itk/fftRoundtrip_Float32_128x128x128_none_r01
+
+dotnet benchmarks/StackProcessing.Benchmarks/bin/Release/net10.0/StackProcessing.Benchmarks.dll \
+  run-chunk-fft3d-zarr-roundtrip-io \
+  --shape 128x128x128 \
+  --input tmp/benchmarks/input/Float32_128x128x128 \
+  --output tmp/benchmarks/output/stackprocessing/fftRoundtrip_Float32_128x128x128_none_r01
+```
 
 Use `--dry-run` to print the exact commands without executing them:
 
@@ -122,6 +256,17 @@ bash benchmarks/run_all.sh \
   --repeat 3 \
   --backends python-skimage-scipy \
   --pixel-types UInt8
+```
+
+For the direct uncompressed LibTiff copy baseline against Python:
+
+```bash
+bash benchmarks/run_all.sh \
+  --repeat 3 \
+  --backends stackprocessing-libtiff-raw-strip-copy,python-skimage-scipy \
+  --operations copy \
+  --pixel-types UInt8,UInt16,Float32 \
+  --shapes 256x256x256
 ```
 
 The pixel-type filter is comma-separated, for example `--pixel-types UInt8,Float32`.
@@ -250,19 +395,12 @@ python3 benchmarks/tools/run_manifest.py \
 
 Use `--dry-run` to print the exact commands without executing them.
 
-Run the Dask/OME-Zarr special cases by converting the TIFF inputs to OME-Zarr stores, then using `config/special-cases.csv`:
+Run the focused StackProcessing-vs-Dask Zarr comparison with the dedicated
+chunk-size scripts:
 
 ```bash
-python3 benchmarks/tools/tiff_stack_to_omezarr.py \
-  --input tmp/benchmarks/input/UInt8_512x512x64 \
-  --output tmp/benchmarks/input-omezarr/UInt8_512x512x64 \
-  --shape 512x512x64 --pixel-type UInt8
-
-python3 benchmarks/tools/run_manifest.py \
-  --cases benchmarks/config/special-cases.csv \
-  --backend python-dask-omezarr \
-  --input-root tmp/benchmarks/input-omezarr \
-  --repeat 3
+bash benchmarks/run_zarr_chunk_comparison_fast.sh
+SLOW_ROOT=/path/to/slow bash benchmarks/run_zarr_chunk_comparison_slow.sh
 ```
 
 The C++/ITK backend is built separately:
@@ -272,29 +410,47 @@ cmake -S benchmarks/cpp-itk -B benchmarks/cpp-itk/build
 cmake --build benchmarks/cpp-itk/build --config Release
 ```
 
-For the report-facing OME-Zarr figures, the current Zarr special case uses
-uncompressed Zarr v3 chunks (`bytes` codec only) to stress raw chunk IO and halo
-layout rather than compression. The combined raw and summary files are:
+The report-facing Zarr figures use uncompressed Zarr v3 chunks (`bytes` codec
+only) to stress raw chunk IO, task overhead, file-system behaviour, and stencil
+work rather than compression. The fast-filesystem raw and summary files are:
 
 ```text
-benchmarks/results/raw.zarr-none.csv
-benchmarks/results/summary.zarr-none.csv
+benchmarks/results/raw.zarr-chunk-fast.csv
+benchmarks/results/summary.zarr-chunk-fast.csv
 ```
 
-The corresponding figures are generated with:
+The corresponding figures are generated by the fast script. To regenerate only
+the figures from an existing summary:
 
 ```bash
-python3 benchmarks/tools/plot_zarr_results.py \
-  --summary benchmarks/results/summary.zarr-none.csv \
+python3 benchmarks/tools/plot_zarr_chunk_comparison.py \
+  --summary benchmarks/results/summary.zarr-chunk-fast.csv \
   --output-dir benchmarks/results/figures \
-  --latex-dir notes/LMIP_Optimiser_and_Studio/figures
-
-python3 benchmarks/tools/run_zarr_halo_comparison.py --codec none
-python3 benchmarks/tools/plot_zarr_halo_comparison.py \
-  --input tmp/zarr-halo-comparison-none.csv \
-  --output-dir benchmarks/results/figures \
-  --latex-dir notes/LMIP_Optimiser_and_Studio/figures
+  --latex-dir notes/LMIP_Optimiser_and_Studio/figures \
+  --prefix zarr-chunk-fast \
+  --metrics internal,peak
 ```
+
+The report-facing wrapper reruns the StackProcessing Chunk worker sweeps after
+the main TIFF matrix. It also regenerates summaries and copies the main report
+PDFs into `notes/LMIP_Optimiser_and_Studio/figures`. Prefer the wrapper over
+manual CSV replacement or dated refresh recipes for the non-Zarr figures:
+
+```bash
+bash benchmarks/run_lmip_pdf_benchmarks.sh
+```
+
+Useful options:
+
+```bash
+bash benchmarks/run_lmip_pdf_benchmarks.sh --dry-run
+bash benchmarks/run_lmip_pdf_benchmarks.sh --repeat 1 --parallel-repeat 2 --convolve-repeat 1
+```
+
+The wrapper removes and recreates the active report result files before the run.
+Per-case output directories and FFT/Zarr temporaries are pre-cleaned outside
+the wall-clock timer used by `tools/measure.py`, so `wallSeconds` includes
+process/runtime warmup plus the benchmark work, not directory deletion.
 
 ## Notes on Fairness
 

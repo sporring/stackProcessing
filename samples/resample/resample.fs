@@ -12,7 +12,8 @@ let main args =
         | _ -> "../tmp/resample"
 
     src
-    |> normalNoise<float32> 64u 64u 64u 128.0 25.0
+    |> zero<float32> 64u 64u 64u
+    >=> addNormalNoise<float32> 128.0 25.0
     |> resample<float32> 1.5 1.5 1.5 "Linear"
     >=> cast<float32, uint8>
     >=> write output ".tiff"

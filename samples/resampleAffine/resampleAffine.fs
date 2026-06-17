@@ -35,7 +35,6 @@ let main args =
     |> read<float32> input ".tiff"
     >=> resampleAffine
             (fun a b t -> a + (b - a) * t)
-            None
             inputGeometry
             outputGeometry
             affine

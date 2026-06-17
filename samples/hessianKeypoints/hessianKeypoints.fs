@@ -12,8 +12,9 @@ let main args =
         | _ -> "../tmp/hessianKeypoints"
 
     src
-    |> normalNoise<float> 64u 64u 64u 128.0 25.0
-    >=> hessianKeypoints<float> 3.0 "Blob" 0.1 16u
+    |> zero<float32> 64u 64u 64u
+    >=> addNormalNoise<float32> 128.0 25.0
+    >=> hessianKeypoints<float32> 3.0 "Blob" 0.1 16u
     >=> writePointSet output ".csv"
     |> sink
 

@@ -26,7 +26,7 @@ let main arg =
     let movingMask transformName =
         src
         |> repeat mask 1u
-        >=> createByEuler2DTransformFromImage<uint8> depth (euler2DTransformPath width height depth transformName)
+        >=> createByEuler2DTransform<uint8> depth (euler2DTransformPath width height depth transformName)
 
     let diagonal =
         movingMask "Diagonal"
@@ -38,9 +38,9 @@ let main arg =
         movingMask "AntiDiagonal"
 
     (
-        (diagonal, topDown) ||> zip >>=> maxOfPair >=> tap "first",
+        (diagonal, topDown) ||> zip >=> maxOfPair<uint8> >=> tap "first",
         antiDiagonal >=> tap "second"
-    ) ||> zip >>=> maxOfPair
+    ) ||> zip >=> maxOfPair<uint8>
     >=> write output ".tiff"
     |> sink
 

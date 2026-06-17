@@ -14,7 +14,7 @@ let main args =
 
     src
     |> read<uint8> input ".tiff"
-    >=> dilate 2u
+    >=> binaryDilate 2u
     >=> write output ".tiff"
     |> sink
 

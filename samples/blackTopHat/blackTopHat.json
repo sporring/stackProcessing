@@ -8,13 +8,24 @@
         { "key": "format", "value": "Image stack", "useInput": false },
         { "key": "input", "value": "../data/volume", "useInput": false },
         { "key": "suffix", "value": ".tiff", "useInput": false } ] },
-    { "id": "op", "functionId": "BlackTopHat", "x": 300.0, "y": 120.0,
-      "parameters": [ { "key": "type", "value": "UInt8", "useInput": false }, { "key": "radius", "value": "3", "useInput": false }, { "key": "windowSize", "value": "None", "useInput": false } ] },
-    { "id": "write", "functionId": "Write", "x": 520.0, "y": 120.0,
-      "parameters": [ { "key": "format", "value": "Image stack", "useInput": false }, { "key": "output", "value": "../tmp/blackTopHat", "useInput": false }, { "key": "suffix", "value": ".tiff", "useInput": false } ] }
+    { "id": "mask", "functionId": "Threshold", "x": 300.0, "y": 120.0,
+      "parameters": [
+        { "key": "type", "value": "UInt8", "useInput": false },
+        { "key": "lower", "value": "1", "useInput": false },
+        { "key": "upper", "value": "255", "useInput": false } ] },
+    { "id": "op", "functionId": "BlackTopHat", "x": 520.0, "y": 120.0,
+      "parameters": [
+        { "key": "radius", "value": "3", "useInput": false },
+        { "key": "windowSize", "value": "None", "useInput": false } ] },
+    { "id": "write", "functionId": "Write", "x": 740.0, "y": 120.0,
+      "parameters": [
+        { "key": "format", "value": "Image stack", "useInput": false },
+        { "key": "output", "value": "../tmp/blackTopHat", "useInput": false },
+        { "key": "suffix", "value": ".tiff", "useInput": false } ] }
   ],
   "edges": [
-    { "fromNode": "read", "fromKind": "dataOutput", "fromPort": 0, "toNode": "op", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "read", "fromKind": "dataOutput", "fromPort": 0, "toNode": "mask", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "mask", "fromKind": "dataOutput", "fromPort": 0, "toNode": "op", "toKind": "dataInput", "toPort": 0 },
     { "fromNode": "op", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 }
   ]
 }

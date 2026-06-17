@@ -15,3 +15,19 @@ SimpleITKCSharpNative.dll
 
 On MACOS (e.g., https://github.com/SimpleITK/SimpleITK/releases/tag/v2.5.3), you probably have to move the library out of quarantine by:
 xattr -dr com.apple.quarantine libSimpleITKCSharpNative.dylib
+
+StackProcessing also uses a small native median helper for C++ std::nth_element slab kernels.
+Build it from the repository root with:
+
+native/StackProcessing.NativeMedian/build.sh
+
+The build writes the platform-specific library into this directory. Expected names are:
+
+[LINUX]
+libspnth.so
+
+[MACOSX]
+libspnth.dylib
+
+[WINDOWS]
+spnth.dll

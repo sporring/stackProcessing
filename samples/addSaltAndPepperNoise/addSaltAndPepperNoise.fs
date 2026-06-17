@@ -13,7 +13,7 @@ let main args =
 
     src
     |> zero<uint8> 64u 64u 64u
-    >=> addSaltAndPepperNoise 0.02
+    >=> addSaltAndPepperNoise<uint8> 0.02
     >=> write output ".tiff"
     |> sink
 

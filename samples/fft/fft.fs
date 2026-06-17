@@ -12,10 +12,12 @@ let main args =
         | _ -> "../tmp/fft"
 
     src
-    |> normalNoise<float> 64u 64u 64u 128.0 25.0
-    >=> FFT<float> 16u 16u 8u
-    >=> invFFT 16u 16u 8u
-    >=> cast<float,float32>
+    |> zero<float32> 8u 8u 4u
+    >=> addNormalNoise<float32> 128.0 25.0
+    >=> fft
+    >=> fftShift3D
+    >=> fftShift3D
+    >=> invFft
     >=> write output ".tiff"
     |> sink
 

@@ -1,5 +1,6 @@
 ﻿// To run, remember to:
 // export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net10.0
+open System
 open StackProcessing
 
 [<EntryPoint>]
@@ -13,26 +14,15 @@ let main arg =
             n, n, n, "../data/rotatingBoxes", "../tmp/connectedComponents"
         else
             64u, 64u, 64u, "../data/rotatingBoxes", "../tmp/connectedComponents"
-    let tmp = "../tmp/connectedComponents-labels"
     let suffix = ".tiff"
-    let tmpSuffix = ".mha"
 
-    let wsz = Some (depth/8u)
-    let slabWindow = wsz |> Option.defaultValue 1u
-
-    let transTbl =
-        src
-        |> read<uint8> input suffix
-        >=> connectedComponents wsz
-        >=> teeFst (writeSlabSlices tmp tmpSuffix slabWindow)
-        >=> makeConnectedComponentTranslationTable wsz
-        |> drain
-    printfn "Translation Table drain:\n%A" transTbl
+    let windowSize = max 1 (int (depth / 8u))
+    let workers = max 1 (min Environment.ProcessorCount windowSize)
 
     src
-    |> read<uint64> tmp tmpSuffix
-    >=> updateConnectedComponents wsz transTbl
-    >=> cast<uint64,uint8>
+    |> read<uint8> input suffix
+    >=> connectedComponentsUInt32Windowed windowSize workers
+    >=> cast<uint32,uint8>
     >=> write output suffix
     |> sink
 

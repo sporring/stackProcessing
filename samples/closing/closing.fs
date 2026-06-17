@@ -14,7 +14,7 @@ let main args =
 
     src
     |> read<uint8> input ".tiff"
-    >=> closing 3u
+    >=> binaryClosing 3u
     >=> write output ".tiff"
     |> sink
 

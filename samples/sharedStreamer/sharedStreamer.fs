@@ -21,13 +21,13 @@ let main arg =
 
     readMaker 
     >=> tap "cast"
-    >=> cast<uint8,float>
+    >=> cast<uint8,float32>
     >=> tap "fan out"
-    >=>> (imageAddScalar 1.0, imageAddScalar 2.0)
+    >=>> (addScalar 1.0f, addScalar 2.0f)
     >=> tap "fan in"
-    >>=> mulPair
+    >=> mulPair<float32>
     >=> tap "cast"
-    >=> cast<float,int8>
+    >=> cast<float32,int8>
     >=> tap "write"
     >=> write output ".tiff"
     |> sink

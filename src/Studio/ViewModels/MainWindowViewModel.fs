@@ -258,6 +258,7 @@ module private ScalarNode =
           Numeric Int64
           Numeric Float32
           Numeric Float64
+          Numeric Complex64
           Numeric Complex
           Bool
           String ]
@@ -284,6 +285,7 @@ module private ScalarNode =
             | Float32
             | Float64
             | Number
+            | Complex64
             | Complex -> "1.0"
             | UInt8
             | Int8
@@ -336,6 +338,7 @@ module private ScalarNode =
             | Float32
             | Float64
             | Number
+            | Complex64
             | Complex -> isFloat trimmed || isStandardNumericName trimmed
 
     let ensureValueMatchesType (state: PipelineNodeState) =
@@ -386,6 +389,7 @@ module private ScalarOpNode =
           Numeric Int64
           Numeric Float32
           Numeric Float64
+          Numeric Complex64
           Numeric Complex ]
         |> List.map BasicType.toString
 
@@ -443,7 +447,7 @@ module private ScalarFunctionNode =
 
 module private SourceImageNode =
     let hasInputTitle functionId =
-        functionId = "Read" || functionId = "ReadRandom" || functionId = "EstimateHistogram" || functionId = "ReadRange" || functionId = "ReadSlab"
+        functionId = "Read" || functionId = "ReadRandom" || functionId = "EstimateHistogram" || functionId = "ReadRange"
 
     let hasOutputTitle functionId =
         functionId = "Write" || functionId = "WriteThrough" || functionId = "WriteChunks"
@@ -451,7 +455,6 @@ module private SourceImageNode =
     let hasFormatParameter functionId =
         hasInputTitle functionId
         || hasOutputTitle functionId
-        || functionId = "WriteSlabSlices"
         || functionId = "GetChunkInfo"
         || functionId = "ResampleAffine"
 
@@ -466,6 +469,7 @@ module private SourceImageNode =
           Int64
           Float32
           Float64
+          Complex64
           Complex ]
         |> List.map NumericType.toString
 
@@ -483,11 +487,6 @@ module private SourceImageNode =
           "OME-Zarr"
           "NeXus/HDF5" ]
 
-    let readSlabFormatOptions =
-        [ "Chunked stack"
-          "OME-Zarr"
-          "NeXus/HDF5" ]
-
     let writeFormatOptions =
         [ "Image stack"
           "Volume file"
@@ -495,7 +494,7 @@ module private SourceImageNode =
           "NeXus/HDF5" ]
 
     let private readSourceFunctionIds =
-        Set.ofList [ "Read"; "ReadRandom"; "EstimateHistogram"; "ReadRange"; "ReadSlab" ]
+        Set.ofList [ "Read"; "ReadRandom"; "EstimateHistogram"; "ReadRange" ]
 
     let isReadSource functionId =
         readSourceFunctionIds |> Set.contains functionId
@@ -516,10 +515,10 @@ module private SourceImageNode =
         let common = Set.ofList [ "availableMemory"; "type"; "format"; "input" ]
 
         let zarr =
-            Set.ofList [ "slabDepth"; "multiscaleIndex"; "datasetIndex"; "timepoint"; "channel"; "maxParallelChunks" ]
+            Set.ofList [ "thickDepth"; "multiscaleIndex"; "datasetIndex"; "timepoint"; "channel"; "maxParallelChunks" ]
 
         let nexus =
-            Set.ofList [ "datasetPath"; "slabDepth"; "frameAxis"; "yAxis"; "xAxis" ]
+            Set.ofList [ "datasetPath"; "frameAxis"; "yAxis"; "xAxis" ]
 
         match state.Definition.Id, selectedFormat state with
         | "ReadRandom", "Image stack" ->
@@ -529,23 +528,22 @@ module private SourceImageNode =
         | "ReadRange", "Image stack"
         | "ReadRange", "Volume file" ->
             common |> Set.add "first" |> Set.add "step" |> Set.add "last" |> Set.add "suffix"
-        | "Read", "Image stack"
-        | "ReadSlab", "Chunked stack" ->
+        | "Read", "Image stack" ->
             common |> Set.add "suffix"
         | "Read", "Volume file" ->
             common |> Set.add "suffix"
         | "ReadRandom", "OME-Zarr" ->
-            Set.union common zarr |> Set.add "depth" |> Set.remove "slabDepth"
+            Set.union common zarr |> Set.add "depth" |> Set.remove "thickDepth"
         | "ReadRandom", "NeXus/HDF5" ->
-            Set.union common nexus |> Set.add "depth" |> Set.remove "slabDepth"
+            Set.union common nexus |> Set.add "depth"
         | "ReadRange", "OME-Zarr" ->
-            Set.union common zarr |> Set.add "first" |> Set.add "step" |> Set.add "last" |> Set.remove "slabDepth"
+            Set.union common zarr |> Set.add "first" |> Set.add "step" |> Set.add "last" |> Set.remove "thickDepth"
         | "ReadRange", "NeXus/HDF5" ->
-            Set.union common nexus |> Set.add "first" |> Set.add "step" |> Set.add "last" |> Set.remove "slabDepth"
-        | ("Read" | "ReadSlab"), "OME-Zarr" ->
+            Set.union common nexus |> Set.add "first" |> Set.add "step" |> Set.add "last"
+        | "Read", "OME-Zarr" ->
             Set.union common zarr
-        | ("Read" | "ReadSlab"), "NeXus/HDF5" ->
-            Set.union common nexus |> Set.remove "slabDepth"
+        | "Read", "NeXus/HDF5" ->
+            Set.union common nexus
         | _ ->
             state.Parameters
             |> Seq.map _.Key
@@ -602,13 +600,10 @@ module private SourceImageNode =
               "BinaryContour"
               "BinaryMedian"
               "LabelContour"
-              "ConnectedComponents"
-              "RelabelComponents"
-              "MakeConnectedComponentTranslationTable"
-              "UpdateConnectedComponents" ]
+              "ConnectedComponents" ]
 
     let parameterIsVisible (state: PipelineNodeState) key =
-        if state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadRange" || state.Definition.Id = "ReadSlab" then
+        if state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadRange" then
             readVisibleParameterKeys state |> Set.contains key
         elif state.Definition.Id = "Write" then
             writeVisibleParameterKeys state |> Set.contains key
@@ -682,7 +677,7 @@ module private SourceImageNode =
             |> List.choose NumericType.tryParse
         | "Write" ->
             match selectedFormat state with
-            | "OME-Zarr" -> [ UInt8; UInt16 ]
+            | "OME-Zarr" -> [ UInt8; UInt16; Float32; Float64; Complex64 ]
             | "NeXus/HDF5" -> [ UInt8; Int8; UInt16; Int16; UInt32; Int32; Float32; Float64 ]
             | "Volume file" -> ImageFileFormat.readSupportedTypes ".tiff"
             | _ -> selectedSuffix state |> ImageFileFormat.supportedTypes
@@ -786,6 +781,7 @@ module private PairOperationNode =
           Int64
           Float32
           Float64
+          Complex64
           Complex ]
         |> List.map NumericType.toString
 
@@ -1001,6 +997,7 @@ module private HighValueFilterNode =
         [ "Clamp"
           "ShiftScale"
           "IntensityStretch"
+          "HistogramEqualization"
           "CreatePadding"
           "Crop"
           "SmoothWMedian"
@@ -1012,17 +1009,13 @@ module private HighValueFilterNode =
           "GrayscaleDilate"
           "GrayscaleOpening"
           "GrayscaleClosing"
-          "WhiteTopHat"
-          "BlackTopHat"
-          "MorphologicalGradient"
           "LabelContour"
           "ChangeLabel"
           "SerialPolynomialBiasCorrect" ]
         |> Set.ofList
 
     let typedImageInputFunctionIds =
-        [ "HistogramEqualization"
-          "ImageComparison"
+        [ "ImageComparison"
           "FitBiasModel"
           "FitBiasModelMasked"
           "CorrectBias"
@@ -1056,9 +1049,6 @@ module private HighValueFilterNode =
           "GrayscaleDilate"
           "GrayscaleOpening"
           "GrayscaleClosing"
-          "WhiteTopHat"
-          "BlackTopHat"
-          "MorphologicalGradient"
           "OtsuThresholdFromHistogram"
           "MomentsThresholdFromHistogram"
           "MarchingCubes"
@@ -1397,7 +1387,8 @@ type PipelineNodeViewModel(
         | "Expand"
         | "Write"
         | "GetChunkInfo"
-        | "ComponentTranslationTable"
+        | "GetZarrInfo"
+        | "GetNexusInfo"
         | "SerialEstBoundingBox"
         | "ImHistogramData"
         | "Histogram"
@@ -1408,8 +1399,8 @@ type PipelineNodeViewModel(
 
     let outputKindForPort functionId portIndex (port: Port) =
         match functionId, portIndex, port.Type with
-        | ("Read" | "ReadRandom" | "ReadRange" | "ReadSlab"), _, Custom _
-        | "Write", _, Custom "StackInfo" -> ReducerOutput
+        | ("Read" | "ReadRandom" | "ReadRange"), _, Custom _
+        | "Write", _, Custom "ImageInfo" -> ReducerOutput
         | "WriteChunks", _, Custom "ChunkInfo" -> ReducerOutput
         | _ -> outputKindFor functionId
 
@@ -1422,16 +1413,7 @@ type PipelineNodeViewModel(
         | "Read"
         | "ReadRandom"
         | "ReadRange" ->
-            let infoType =
-                match SourceImageNode.selectedFormat state with
-                | "OME-Zarr"
-                | "NeXus/HDF5" -> BuiltInCatalog.chunkInfo
-                | _ -> BuiltInCatalog.stackInfo
-            let infoName = if infoType = BuiltInCatalog.chunkInfo then "ChunkInfo" else "StackInfo"
-
-            state.Definition.Inputs, SourceImageNode.outputPort state :: [ { Name = infoName; Type = infoType } ]
-        | "ReadSlab" ->
-            state.Definition.Inputs, SourceImageNode.outputPort state :: (state.Definition.Outputs |> List.skip 1)
+            state.Definition.Inputs, SourceImageNode.outputPort state :: [ { Name = "ImageInfo"; Type = BuiltInCatalog.imageInfo } ]
         | "PolygonMask" -> state.Definition.Inputs, state.Definition.Outputs
         | "Zero"
         | "NormalNoise"
@@ -1440,14 +1422,7 @@ type PipelineNodeViewModel(
         | "SpeckleNoise"
         | "CreateByEuler2DTransform" -> state.Definition.Inputs, [ SourceImageNode.outputPort state ]
         | "Write" ->
-            let infoType =
-                match SourceImageNode.selectedFormat state with
-                | "OME-Zarr"
-                | "NeXus/HDF5" -> BuiltInCatalog.chunkInfo
-                | _ -> BuiltInCatalog.stackInfo
-            let infoName = if infoType = BuiltInCatalog.chunkInfo then "ChunkInfo" else "StackInfo"
-
-            [ SourceImageNode.writeInputPort state ], [ { Name = infoName; Type = infoType } ]
+            [ SourceImageNode.writeInputPort state ], [ { Name = "ImageInfo"; Type = BuiltInCatalog.imageInfo } ]
         | "WriteChunks" ->
             [ SourceImageNode.writeInputPort state ], state.Definition.Outputs
         | "ImageOpImage" -> PairOperationNode.ports state
@@ -1474,7 +1449,6 @@ type PipelineNodeViewModel(
         parameter.IsVisible
         && parameter.UseInput
         && (state.Definition.Id <> "Print" || PrintNode.inputIsVisible state parameter.Key)
-        || (state.Definition.Id = "CollapseComponentLabels" && parameter.Key = "translationTable")
 
     let computeNodeWidth () =
         let parameterPinCount =
@@ -1629,7 +1603,7 @@ type PipelineNodeViewModel(
                     state.Title <- ScalarImageOperationNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
-                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "EstimateHistogram" || state.Definition.Id = "ReadRange" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "Zero" || state.Definition.Id = "NormalNoise" || state.Definition.Id = "SaltAndPepperNoise" || state.Definition.Id = "ShotNoise" || state.Definition.Id = "SpeckleNoise" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "Resize" || state.Definition.Id = "Resample" || state.Definition.Id = "ResampleAffine" || HighValueFilterNode.typedImageFunctionIds.Contains state.Definition.Id || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
+                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "EstimateHistogram" || state.Definition.Id = "ReadRange" || state.Definition.Id = "Zero" || state.Definition.Id = "NormalNoise" || state.Definition.Id = "SaltAndPepperNoise" || state.Definition.Id = "ShotNoise" || state.Definition.Id = "SpeckleNoise" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "Resize" || state.Definition.Id = "Resample" || state.Definition.Id = "ResampleAffine" || HighValueFilterNode.typedImageFunctionIds.Contains state.Definition.Id || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
                     if state.Definition.Id = "Scalar" then
                         ScalarNode.ensureValueMatchesType state
                         state.Title <- ScalarNode.title state
@@ -1664,7 +1638,7 @@ type PipelineNodeViewModel(
                     this.RebuildPins()
                     refreshNodePins this
                     markGraphDirty()
-                elif (state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadRange" || state.Definition.Id = "ReadSlab" || state.Definition.Id = "Write") && parameter.Key = "format" && args.PropertyName = nameof parameter.Value then
+                elif (state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "ReadRange" || state.Definition.Id = "Write") && parameter.Key = "format" && args.PropertyName = nameof parameter.Value then
                     SourceImageNode.updateParameterVisibility state
                     SourceImageNode.updateReadSuffixOptionStates state
                     state.Title <- SourceImageNode.title state
@@ -1726,8 +1700,6 @@ type PipelineNodeViewModel(
                 ScalarFunctionNode.scalarPort
             elif ScalarImageOperationNode.isOperation state.Definition.Id && parameter.Key = "value" then
                 ScalarImageOperationNode.valuePort state
-            elif state.Definition.Id = "CollapseComponentLabels" && parameter.Key = "translationTable" then
-                PortMapping.customParameterPort parameter.Key "TranslationTable"
             elif state.Definition.Id = "SerialApplyTrans" && parameter.Key = "geometry" then
                 PortMapping.customParameterPort parameter.Key "SerialVolumeGeometry"
             elif state.Definition.Id = "Print" && PrintNode.isInputKey parameter.Key then
@@ -2017,9 +1989,9 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("Read" | "ReadRandom" | "ReadRange" | "ReadSlab"), "format" ->
+                | ("Read" | "ReadRandom" | "ReadRange"), "format" ->
                     let options =
-                        (if functionId = "ReadSlab" then SourceImageNode.readSlabFormatOptions else SourceImageNode.readFormatOptions)
+                        SourceImageNode.readFormatOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
@@ -2029,7 +2001,7 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
-                | ("Read" | "ReadRandom" | "ReadRange" | "ReadSlab"), "type" ->
+                | ("Read" | "ReadRandom" | "ReadRange"), "type" ->
                     let options =
                         SourceImageNode.typeOptions
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
@@ -2116,6 +2088,7 @@ type MainWindowViewModel() as this =
                 | "FFT", "type" ->
                     let options =
                         PairOperationNode.typeOptions
+                        |> List.filter ((<>) (NumericType.toString Complex64))
                         |> List.filter ((<>) (NumericType.toString Complex))
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
@@ -2507,7 +2480,6 @@ type MainWindowViewModel() as this =
             node.State.Definition.Id = "Read"
             || node.State.Definition.Id = "ReadRandom"
             || node.State.Definition.Id = "ReadRange"
-            || node.State.Definition.Id = "ReadSlab"
             || node.State.Definition.Id = "Zero"
             || node.State.Definition.Id = "NormalNoise"
             || node.State.Definition.Id = "SaltAndPepperNoise"
@@ -3370,18 +3342,27 @@ type MainWindowViewModel() as this =
                     | _ -> true
 
                 let pruneInvalidConnectors () =
-                    let invalidConnectors =
-                        drawing.Connectors
-                        |> Seq.filter (fun connector ->
-                            not (pinIsStillOnNode connector.Start)
-                            || not (pinIsStillOnNode connector.End)
-                            || not (canConnectPins connector.Start connector.End))
-                        |> Seq.toArray
+                    let connectors = drawing.Connectors |> Seq.toArray
+                    let validConnectors =
+                        connectors
+                        |> Array.filter (fun connector ->
+                            pinIsStillOnNode connector.Start
+                            && pinIsStillOnNode connector.End
+                            && canConnectPins connector.Start connector.End)
 
-                    for connector in invalidConnectors do
-                        drawing.Connectors.Remove(connector) |> ignore
+                    if validConnectors.Length = connectors.Length then
+                        false
+                    else
+                        let previousSuppressConnectorCollectionRefresh = suppressConnectorCollectionRefresh
+                        suppressConnectorCollectionRefresh <- true
+                        try
+                            drawing.Connectors.Clear()
+                            for connector in validConnectors do
+                                drawing.Connectors.Add(connector) |> ignore
+                        finally
+                            suppressConnectorCollectionRefresh <- previousSuppressConnectorCollectionRefresh
 
-                    invalidConnectors.Length > 0
+                        true
 
                 let refreshExpandNodes () =
                     let mutable changed = false
@@ -4008,8 +3989,6 @@ type MainWindowViewModel() as this =
                     | "Volume file" -> Some("file", normalizeFile input suffix)
                     | "NeXus/HDF5" -> Some("file", normalizeFile input "")
                     | _ -> Some("directory", normalizeDirectory input)
-                | "ReadSlab" ->
-                    Some("directory", normalizeDirectory input)
                 | "ReadPointSet" ->
                     Some("file", normalizeFile input (parameterValue node "suffix"))
                 | _ ->

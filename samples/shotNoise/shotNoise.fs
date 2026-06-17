@@ -12,7 +12,8 @@ let main args =
         | _ -> "../tmp/shotNoise"
 
     src
-    |> shotNoise<float> 64u 64u 64u 2.0
+    |> zero<float> 64u 64u 64u
+    >=> addShotNoise<float> 2.0
     >=> cast<float, uint8>
     >=> write output ".tiff"
     |> sink

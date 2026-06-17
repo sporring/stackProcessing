@@ -11,15 +11,13 @@ let main args =
         | [| input |] -> input
         | _ -> "../data/volume"
 
-    let estimate =
+    let histogram =
         src
-        |> estimateHistogram<float> 16u input ".tiff" 4u "DKWAndHoldout" 0.95
+        |> readRandom<uint8> 16u input ".tiff"
+        >=> imageHistogram<uint8> ()
         |> drain
 
-    printfn "Histogram estimate: samples=%u confidence=%.3f CDF half-width=%.6f holdout delta=%.6f"
-        estimate.Samples
-        estimate.Confidence
-        estimate.CdfHalfWidth
-        estimate.HoldoutMaxCdfDelta
+    printfn "Sampled histogram bins: %d" histogram.Counts.Count
+    showChartWithLabels "Column" "Sampled volume histogram" "intensity" "pixel count" histogram.Counts
 
     0

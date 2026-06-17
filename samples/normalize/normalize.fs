@@ -16,17 +16,17 @@ let main arg =
     let Float640 = 255.0
     let ImageStats0 =
         src
-        |> readRandom<float> 20u input ".tiff"
-        >=> computeStats ()
+        |> readRandom<float32> 20u input ".tiff"
+        >=> computeStats<float32> ()
         |> drain
     let Float641 = (ImageStats0.Max - ImageStats0.Min)
     let Float642 = (Float640 / Float641)
 
     src
-    |> read<float> input ".tiff"
-    >=> imageSubScalar ImageStats0.Min
-    >=> imageMulScalar Float642
-    >=> cast<float,uint8>
+    |> read<float32> input ".tiff"
+    >=> subScalar (float32 ImageStats0.Min)
+    >=> mulScalar (float32 Float642)
+    >=> cast<float32,uint8>
     >=> write output ".tiff"
     |> sink
 

@@ -6,8 +6,7 @@ open Expecto
 let allTests =
     testSequenced
     <| testList "All Tests" [
-        Tests.StackProcessingSupportTests.stackProcessingSupportSuite
-        Tests.StackProcessingCorrectnessTests.stackProcessingCorrectnessSuite
+        Tests.ChunkTests.chunkSuite
     ]
 
 [<EntryPoint>]

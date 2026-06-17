@@ -6,6 +6,8 @@ open System.IO
 open System.Numerics
 open System.Runtime.CompilerServices
 open System.Runtime.InteropServices
+open System.Threading
+open Image
 open Microsoft.FSharp.NativeInterop
 
 #nowarn "9"
@@ -49,6 +51,15 @@ let private parseArgs (args: string array) =
 
 let private optional name fallback (opts: Map<string,string>) =
     opts.TryFind name |> Option.defaultValue fallback
+
+let private optionalBool name fallback (opts: Map<string,string>) =
+    opts.TryFind name
+    |> Option.map (fun value ->
+        match value.Trim().ToLowerInvariant() with
+        | "1" | "true" | "yes" | "y" -> true
+        | "0" | "false" | "no" | "n" -> false
+        | _ -> invalidArg name $"Expected a boolean value for --{name}, got '{value}'.")
+    |> Option.defaultValue fallback
 
 let private parseShape (text: string) =
     let parts = text.Split('x', StringSplitOptions.RemoveEmptyEntries)
@@ -131,6 +142,68 @@ let private fillFloat32 (buffer: float32[]) length =
     for i in 0 .. length - 1 do
         buffer[i] <- float32 (i &&& 0xff)
 
+type private ExperimentImageStorage<'T when 'T: equality> =
+    | ItkImage of itk.simple.Image
+    | ArrayPool1D of buffer: 'T[] * length: int * release: (unit -> unit)
+
+type private ExperimentImage<'T when 'T: equality>(shape: Shape, storage: ExperimentImageStorage<'T>) =
+    let mutable storageOpt = Some storage
+    let mutable refCount = 1
+
+    member _.Shape = shape
+
+    member _.Length = requireIntLength shape
+
+    member _.Storage =
+        match storageOpt with
+        | Some storage -> storage
+        | None -> ObjectDisposedException(nameof ExperimentImage<'T>) |> raise
+
+    member image.IncRef() =
+        if Interlocked.Increment(&refCount) <= 1 then
+            ObjectDisposedException(nameof ExperimentImage<'T>) |> raise
+        image
+
+    member image.TryArrayPool1D() =
+        match image.Storage with
+        | ArrayPool1D(buffer, length, _) -> ValueSome(buffer, length)
+        | ItkImage _ -> ValueNone
+
+    member image.ToSimpleITK() =
+        match image.Storage with
+        | ItkImage image -> image
+        | ArrayPool1D(buffer, length, _) ->
+            if length <> image.Length then
+                invalidOp $"ExperimentImage length mismatch: storage length {length}, shape length {image.Length}."
+            importedImage<'T> shape buffer
+
+    member _.DecRef() =
+        let remaining = Interlocked.Decrement(&refCount)
+        if remaining = 0 then
+            match storageOpt with
+            | None -> ()
+            | Some storage ->
+                storageOpt <- None
+                match storage with
+                | ItkImage image -> image.Dispose()
+                | ArrayPool1D(_, _, release) -> release()
+        elif remaining < 0 then
+            invalidOp "ExperimentImage.DecRef called after the image had already been released."
+
+    interface IDisposable with
+        member image.Dispose() = image.DecRef()
+
+module private ExperimentImage =
+    let rentArrayPool<'T when 'T: equality> shape =
+        let length = requireIntLength shape
+        let buffer = ArrayPool<'T>.Shared.Rent(length)
+        let release () =
+            ArrayPool<'T>.Shared.Return(buffer, RuntimeHelpers.IsReferenceOrContainsReferences<'T>())
+        new ExperimentImage<'T>(shape, ArrayPool1D(buffer, length, release))
+
+    let fromItkTransfer<'T when 'T: equality> shape (image: itk.simple.Image) =
+        new ExperimentImage<'T>(shape, ItkImage image)
+
 let private thresholdUInt8Array threshold (input: uint8[]) (output: uint8[]) length =
     for i in 0 .. length - 1 do
         output[i] <- if input[i] >= threshold then 255uy else 0uy
@@ -182,6 +255,21 @@ let private thresholdUInt8Vector (threshold: byte) (input: uint8[]) (output: uin
         output[i] <- if input[i] >= threshold then 255uy else 0uy
         i <- i + 1
 
+let private thresholdUInt8OneVector (threshold: byte) (input: uint8[]) (output: uint8[]) length =
+    let width = Vector<byte>.Count
+    let thresholdVector = Vector<byte>(threshold)
+    let oneVector = Vector<byte>(1uy)
+    let mutable i = 0
+    let vectorEnd = length - (length % width)
+    while i < vectorEnd do
+        let values = Vector<byte>(input, i)
+        let mask = Vector.GreaterThanOrEqual(values, thresholdVector)
+        Vector.BitwiseAnd(mask, oneVector).CopyTo(output, i)
+        i <- i + width
+    while i < length do
+        output[i] <- if input[i] >= threshold then 1uy else 0uy
+        i <- i + 1
+
 let private thresholdUInt16Array threshold (input: uint16[]) (output: uint8[]) length =
     for i in 0 .. length - 1 do
         output[i] <- if input[i] >= threshold then 255uy else 0uy
@@ -209,6 +297,9 @@ let private thresholdUInt16ToUInt16OneWhile threshold (input: uint16[]) (output:
     while i < length do
         output[i] <- if input[i] >= threshold then 1us else 0us
         i <- i + 1
+
+let private thresholdUInt16ToUInt16OneArrayMap threshold (input: uint16[]) =
+    input |> Array.map (fun value -> if value >= threshold then 1us else 0us)
 
 [<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
 let private thresholdUInt16WhileOptimized threshold (input: uint16[]) (output: uint8[]) length =
@@ -289,6 +380,9 @@ let private thresholdFloat32ToFloat32OneWhile threshold (input: float32[]) (outp
         output[i] <- if input[i] >= threshold then 1.0f else 0.0f
         i <- i + 1
 
+let private thresholdFloat32ToFloat32OneArrayMap threshold (input: float32[]) =
+    input |> Array.map (fun value -> if value >= threshold then 1.0f else 0.0f)
+
 [<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
 let private thresholdFloat32WhileOptimized threshold (input: float32[]) (output: uint8[]) length =
     let mutable i = 0
@@ -361,6 +455,89 @@ let private thresholdFloat32ToFloat32OneVector (threshold: float32) (input: floa
         output[i] <- if input[i] >= threshold then 1.0f else 0.0f
         i <- i + 1
 
+let private thresholdUInt8SpanOneVector (threshold: byte) (input: Span<uint8>) (output: Span<uint8>) =
+    let width = Vector<byte>.Count
+    let thresholdVector = Vector<byte>(threshold)
+    let oneVector = Vector<byte>(1uy)
+    let mutable i = 0
+    let vectorEnd = input.Length - (input.Length % width)
+    while i < vectorEnd do
+        let values = Vector<byte>(input.Slice(i, width))
+        let mask = Vector.GreaterThanOrEqual(values, thresholdVector)
+        let selected = Vector.BitwiseAnd(mask, oneVector)
+        let mutable lane = 0
+        while lane < width do
+            output[i + lane] <- selected[lane]
+            lane <- lane + 1
+        i <- i + width
+    while i < input.Length do
+        output[i] <- if input[i] >= threshold then 1uy else 0uy
+        i <- i + 1
+
+let private thresholdUInt16SpanOneVector (threshold: uint16) (input: Span<uint16>) (output: Span<uint16>) =
+    let width = Vector<uint16>.Count
+    let thresholdVector = Vector<uint16>(threshold)
+    let oneVector = Vector<uint16>(1us)
+    let mutable i = 0
+    let vectorEnd = input.Length - (input.Length % width)
+    while i < vectorEnd do
+        let values = Vector<uint16>(input.Slice(i, width))
+        let mask = Vector.GreaterThanOrEqual(values, thresholdVector)
+        Vector.BitwiseAnd(mask, oneVector).CopyTo(output.Slice(i, width))
+        i <- i + width
+    while i < input.Length do
+        output[i] <- if input[i] >= threshold then 1us else 0us
+        i <- i + 1
+
+let private thresholdFloat32SpanOneVector (threshold: float32) (input: Span<float32>) (output: Span<float32>) =
+    let width = Vector<float32>.Count
+    let thresholdVector = Vector<float32>(threshold)
+    let trueVector = Vector<float32>(1.0f)
+    let falseVector = Vector<float32>.Zero
+    let mutable i = 0
+    let vectorEnd = input.Length - (input.Length % width)
+    while i < vectorEnd do
+        let values = Vector<float32>(input.Slice(i, width))
+        let mask = Vector.GreaterThanOrEqual(values, thresholdVector)
+        Vector.ConditionalSelect(mask, trueVector, falseVector).CopyTo(output.Slice(i, width))
+        i <- i + width
+    while i < input.Length do
+        output[i] <- if input[i] >= threshold then 1.0f else 0.0f
+        i <- i + 1
+
+let private makeInTypeThresholdFilter threshold =
+    let filter = new itk.simple.BinaryThresholdImageFilter()
+    filter.SetLowerThreshold(threshold)
+    filter.SetUpperThreshold(Double.PositiveInfinity)
+    filter.SetInsideValue(1uy)
+    filter.SetOutsideValue(0uy)
+    filter
+
+let private thresholdExperimentImageInType<'T when 'T: equality> threshold (input: ExperimentImage<'T>) =
+    match input.TryArrayPool1D() with
+    | ValueSome(inputBuffer, length) ->
+        let output = ExperimentImage.rentArrayPool<'T> input.Shape
+        match output.TryArrayPool1D() with
+        | ValueSome(outputBuffer, outputLength) when outputLength = length ->
+            let t = typeof<'T>
+            if t = typeof<uint8> then
+                thresholdUInt8OneVector (byte threshold) (unbox<uint8[]> inputBuffer) (unbox<uint8[]> outputBuffer) length
+            elif t = typeof<uint16> then
+                thresholdUInt16ToUInt16OneVector (uint16 threshold) (unbox<uint16[]> inputBuffer) (unbox<uint16[]> outputBuffer) length
+            elif t = typeof<float32> then
+                thresholdFloat32ToFloat32OneVector (float32 threshold) (unbox<float32[]> inputBuffer) (unbox<float32[]> outputBuffer) length
+            else
+                output.DecRef()
+                invalidArg "T" $"Unsupported ExperimentImage threshold type {t.Name}."
+            output
+        | _ ->
+            output.DecRef()
+            invalidOp "ArrayPool-backed ExperimentImage output did not expose ArrayPool storage."
+    | ValueNone ->
+        use filter = makeInTypeThresholdFilter threshold
+        let result = filter.Execute(input.ToSimpleITK())
+        ExperimentImage.fromItkTransfer<'T> input.Shape result
+
 let private thresholdUInt8Span threshold (input: Span<uint8>) (output: Span<uint8>) =
     for i in 0 .. input.Length - 1 do
         output[i] <- if input[i] >= threshold then 255uy else 0uy
@@ -379,20 +556,8 @@ let private thresholdUInt8OneWhile threshold (input: uint8[]) (output: uint8[]) 
         output[i] <- if input[i] >= threshold then 1uy else 0uy
         i <- i + 1
 
-let private thresholdUInt8OneVector (threshold: byte) (input: uint8[]) (output: uint8[]) length =
-    let width = Vector<byte>.Count
-    let thresholdVector = Vector<byte>(threshold)
-    let oneVector = Vector<byte>(1uy)
-    let mutable i = 0
-    let vectorEnd = length - (length % width)
-    while i < vectorEnd do
-        let values = Vector<byte>(input, i)
-        let mask = Vector.GreaterThanOrEqual(values, thresholdVector)
-        Vector.BitwiseAnd(mask, oneVector).CopyTo(output, i)
-        i <- i + width
-    while i < length do
-        output[i] <- if input[i] >= threshold then 1uy else 0uy
-        i <- i + 1
+let private thresholdUInt8OneArrayMap threshold (input: uint8[]) =
+    input |> Array.map (fun value -> if value >= threshold then 1uy else 0uy)
 
 let private thresholdUInt16OneWhile threshold (input: uint16[]) (output: uint8[]) length =
     let mutable i = 0
@@ -533,6 +698,16 @@ let private measureArrayActions pixelName shapeName reportedThreshold repeat act
             [ successful "arraypool" variant pixelName shapeName reportedThreshold repeat seconds allocated ]
         with ex ->
             [ failed "arraypool" variant pixelName shapeName reportedThreshold repeat ex ])
+
+let private measureActions backend pixelName shapeName reportedThreshold repeat actions =
+    actions
+    |> List.collect (fun (variant, action) ->
+        try
+            action()
+            let seconds, allocated = measure action
+            [ successful backend variant pixelName shapeName reportedThreshold repeat seconds allocated ]
+        with ex ->
+            [ failed backend variant pixelName shapeName reportedThreshold repeat ex ])
 
 let private withPooledBuffers<'T> shape name fill body =
     let length = requireIntLength shape
@@ -770,6 +945,573 @@ let private runChunkStorageCase pixelType shape threshold repeat =
     | UInt16 -> runChunkStorageUInt16 shape threshold repeat
     | Float32 -> runChunkStorageFloat32 shape threshold repeat
 
+let private runImageClassArrayPoolCase<'T when 'T: equality> pixelName shape threshold repeat fill directAction =
+    let shapeName = shapeText shape
+    let image = ExperimentImage.rentArrayPool<'T> shape
+    try
+        match image.TryArrayPool1D() with
+        | ValueSome(buffer, length) -> fill buffer length
+        | ValueNone -> invalidOp "Newly rented ExperimentImage did not expose ArrayPool storage."
+
+        let imageAction () =
+            use output = thresholdExperimentImageInType threshold image
+            output.Length |> ignore
+
+        let rows =
+            [ "arraypool-image-intype-vector-dispatch", imageAction ]
+            |> measureActions "experiment-image" pixelName shapeName threshold repeat
+
+        directAction rows
+    finally
+        image.DecRef()
+
+let private runImageClassItkCase<'T when 'T: equality> pixelName shape threshold repeat fill =
+    let shapeName = shapeText shape
+    let length = requireIntLength shape
+    let input = ArrayPool<'T>.Shared.Rent(length)
+    try
+        fill input length
+        let image = ExperimentImage.fromItkTransfer<'T> shape (importedImage<'T> shape input)
+        try
+            [ "simpleitk-image-intype-filter-dispatch", fun () ->
+                  use output = thresholdExperimentImageInType threshold image
+                  output.Length |> ignore ]
+            |> measureActions "experiment-image" pixelName shapeName threshold repeat
+        finally
+            image.DecRef()
+    finally
+        ArrayPool<'T>.Shared.Return(input, RuntimeHelpers.IsReferenceOrContainsReferences<'T>())
+
+let private runImageClassUInt8 shape threshold repeat =
+    let shapeName = shapeText shape
+    let typedThreshold = byte threshold
+    runImageClassArrayPoolCase<uint8>
+        "UInt8"
+        shape
+        threshold
+        repeat
+        fillUInt8
+        (fun imageRows ->
+            withPooledBuffers<uint8> shape "UInt8" fillUInt8 (fun length input output ->
+                let directRows =
+                    [ "direct-intype-vector", fun () -> thresholdUInt8OneVector typedThreshold input output length ]
+                    |> measureActions "arraypool" "UInt8" shapeName threshold repeat
+                directRows @ imageRows))
+    @ runImageClassItkCase<uint8> "UInt8" shape threshold repeat fillUInt8
+
+let private runImageClassUInt16 shape threshold repeat =
+    let shapeName = shapeText shape
+    let typedThreshold = uint16 threshold
+    runImageClassArrayPoolCase<uint16>
+        "UInt16"
+        shape
+        threshold
+        repeat
+        fillUInt16
+        (fun imageRows ->
+            withPooledUInt16Mask shape (fun length input output ->
+                let directRows =
+                    [ "direct-intype-vector", fun () -> thresholdUInt16ToUInt16OneVector typedThreshold input output length ]
+                    |> measureActions "arraypool" "UInt16" shapeName threshold repeat
+                directRows @ imageRows))
+    @ runImageClassItkCase<uint16> "UInt16" shape threshold repeat fillUInt16
+
+let private runImageClassFloat32 shape threshold repeat =
+    let shapeName = shapeText shape
+    let typedThreshold = float32 threshold
+    runImageClassArrayPoolCase<float32>
+        "Float32"
+        shape
+        threshold
+        repeat
+        fillFloat32
+        (fun imageRows ->
+            withPooledFloat32Mask shape (fun length input output ->
+                let directRows =
+                    [ "direct-intype-vector", fun () -> thresholdFloat32ToFloat32OneVector typedThreshold input output length ]
+                    |> measureActions "arraypool" "Float32" shapeName threshold repeat
+                directRows @ imageRows))
+    @ runImageClassItkCase<float32> "Float32" shape threshold repeat fillFloat32
+
+let private runImageClassCase pixelType shape threshold repeat =
+    match pixelType with
+    | UInt8 -> runImageClassUInt8 shape threshold repeat
+    | UInt16 -> runImageClassUInt16 shape threshold repeat
+    | Float32 -> runImageClassFloat32 shape threshold repeat
+
+let private sliceShape shape =
+    { Width = shape.Width
+      Height = shape.Height
+      Depth = 1 }
+
+let private measureImageClassSliceWise<'T when 'T: equality> pixelName shape threshold repeat fill =
+    let fullShapeName = shapeText shape
+    let oneSlice = sliceShape shape
+    let sliceLength = requireIntLength oneSlice
+    let input = ExperimentImage.rentArrayPool<'T> oneSlice
+    try
+        match input.TryArrayPool1D() with
+        | ValueSome(buffer, length) when length = sliceLength -> fill buffer length
+        | ValueSome(_, length) -> invalidOp $"Slice image length mismatch: got {length}, expected {sliceLength}."
+        | ValueNone -> invalidOp "Newly rented slice ExperimentImage did not expose ArrayPool storage."
+
+        [ "arraypool-image-slicewise-intype-vector-dispatch", fun () ->
+              let mutable z = 0
+              while z < shape.Depth do
+                  use output = thresholdExperimentImageInType threshold input
+                  output.Length |> ignore
+                  z <- z + 1 ]
+        |> measureActions "experiment-image" pixelName fullShapeName threshold repeat
+    finally
+        input.DecRef()
+
+let private measureDirectSliceWiseUInt8 shape threshold repeat =
+    let fullShapeName = shapeText shape
+    let oneSlice = sliceShape shape
+    let sliceLength = requireIntLength oneSlice
+    let input = ArrayPool<uint8>.Shared.Rent(sliceLength)
+    let output = ArrayPool<uint8>.Shared.Rent(sliceLength)
+    try
+        fillUInt8 input sliceLength
+        let typedThreshold = byte threshold
+        [ "direct-slicewise-intype-vector", fun () ->
+              let mutable z = 0
+              while z < shape.Depth do
+                  thresholdUInt8OneVector typedThreshold input output sliceLength
+                  z <- z + 1 ]
+        |> measureActions "arraypool" "UInt8" fullShapeName threshold repeat
+    finally
+        ArrayPool<uint8>.Shared.Return(input)
+        ArrayPool<uint8>.Shared.Return(output)
+
+let private measureDirectSliceWiseUInt16 shape threshold repeat =
+    let fullShapeName = shapeText shape
+    let oneSlice = sliceShape shape
+    let sliceLength = requireIntLength oneSlice
+    let input = ArrayPool<uint16>.Shared.Rent(sliceLength)
+    let output = ArrayPool<uint16>.Shared.Rent(sliceLength)
+    try
+        fillUInt16 input sliceLength
+        let typedThreshold = uint16 threshold
+        [ "direct-slicewise-intype-vector", fun () ->
+              let mutable z = 0
+              while z < shape.Depth do
+                  thresholdUInt16ToUInt16OneVector typedThreshold input output sliceLength
+                  z <- z + 1 ]
+        |> measureActions "arraypool" "UInt16" fullShapeName threshold repeat
+    finally
+        ArrayPool<uint16>.Shared.Return(input)
+        ArrayPool<uint16>.Shared.Return(output)
+
+let private measureDirectSliceWiseFloat32 shape threshold repeat =
+    let fullShapeName = shapeText shape
+    let oneSlice = sliceShape shape
+    let sliceLength = requireIntLength oneSlice
+    let input = ArrayPool<float32>.Shared.Rent(sliceLength)
+    let output = ArrayPool<float32>.Shared.Rent(sliceLength)
+    try
+        fillFloat32 input sliceLength
+        let typedThreshold = float32 threshold
+        [ "direct-slicewise-intype-vector", fun () ->
+              let mutable z = 0
+              while z < shape.Depth do
+                  thresholdFloat32ToFloat32OneVector typedThreshold input output sliceLength
+                  z <- z + 1 ]
+        |> measureActions "arraypool" "Float32" fullShapeName threshold repeat
+    finally
+        ArrayPool<float32>.Shared.Return(input)
+        ArrayPool<float32>.Shared.Return(output)
+
+let private runImageClassSliceWiseCase pixelType shape threshold repeat =
+    match pixelType with
+    | UInt8 ->
+        measureDirectSliceWiseUInt8 shape threshold repeat
+        @ measureImageClassSliceWise<uint8> "UInt8" shape threshold repeat fillUInt8
+    | UInt16 ->
+        measureDirectSliceWiseUInt16 shape threshold repeat
+        @ measureImageClassSliceWise<uint16> "UInt16" shape threshold repeat fillUInt16
+    | Float32 ->
+        measureDirectSliceWiseFloat32 shape threshold repeat
+        @ measureImageClassSliceWise<float32> "Float32" shape threshold repeat fillFloat32
+
+let private chunkGeometryForSlice shape =
+    uint64 shape.Width, uint64 shape.Height, 1UL
+
+let private measureChunkSliceWiseUInt8 shape threshold repeat =
+    let fullShapeName = shapeText shape
+    let size = chunkGeometryForSlice shape
+    let input = StackCore.Chunk.create<uint8> size
+    try
+        let inputSpan = StackCore.Chunk.span<uint8> input
+        for i in 0 .. inputSpan.Length - 1 do
+            inputSpan[i] <- byte (i &&& 0xff)
+        let typedThreshold = byte threshold
+        [ "chunk-slicewise-intype-vector", fun () ->
+              let inputSpan = StackCore.Chunk.span<uint8> input
+              let mutable z = 0
+              while z < shape.Depth do
+                  let output = StackCore.Chunk.create<uint8> size
+                  try
+                      thresholdUInt8OneVector typedThreshold input.Bytes output.Bytes inputSpan.Length
+                  finally
+                      StackCore.Chunk.decRef output
+                  z <- z + 1 ]
+        |> measureActions "chunk" "UInt8" fullShapeName threshold repeat
+    finally
+        StackCore.Chunk.decRef input
+
+let private measureChunkSliceWiseUInt16 shape threshold repeat =
+    let fullShapeName = shapeText shape
+    let size = chunkGeometryForSlice shape
+    let input = StackCore.Chunk.create<uint16> size
+    try
+        let inputSpan = StackCore.Chunk.span<uint16> input
+        for i in 0 .. inputSpan.Length - 1 do
+            inputSpan[i] <- uint16 (i &&& 0xffff)
+        let typedThreshold = uint16 threshold
+        [ "chunk-slicewise-intype-vector", fun () ->
+              let inputSpan = StackCore.Chunk.span<uint16> input
+              let mutable z = 0
+              while z < shape.Depth do
+                  let output = StackCore.Chunk.create<uint16> size
+                  try
+                      thresholdUInt16SpanOneVector typedThreshold inputSpan (StackCore.Chunk.span<uint16> output)
+                  finally
+                      StackCore.Chunk.decRef output
+                  z <- z + 1 ]
+        |> measureActions "chunk" "UInt16" fullShapeName threshold repeat
+    finally
+        StackCore.Chunk.decRef input
+
+let private measureChunkSliceWiseFloat32 shape threshold repeat =
+    let fullShapeName = shapeText shape
+    let size = chunkGeometryForSlice shape
+    let input = StackCore.Chunk.create<float32> size
+    try
+        let inputSpan = StackCore.Chunk.span<float32> input
+        for i in 0 .. inputSpan.Length - 1 do
+            inputSpan[i] <- float32 (i &&& 0xff)
+        let typedThreshold = float32 threshold
+        [ "chunk-slicewise-intype-vector", fun () ->
+              let inputSpan = StackCore.Chunk.span<float32> input
+              let mutable z = 0
+              while z < shape.Depth do
+                  let output = StackCore.Chunk.create<float32> size
+                  try
+                      thresholdFloat32SpanOneVector typedThreshold inputSpan (StackCore.Chunk.span<float32> output)
+                  finally
+                      StackCore.Chunk.decRef output
+                  z <- z + 1 ]
+        |> measureActions "chunk" "Float32" fullShapeName threshold repeat
+    finally
+        StackCore.Chunk.decRef input
+
+let private runChunkSliceWiseCase pixelType shape threshold repeat =
+    match pixelType with
+    | UInt8 ->
+        measureDirectSliceWiseUInt8 shape threshold repeat
+        @ measureChunkSliceWiseUInt8 shape threshold repeat
+    | UInt16 ->
+        measureDirectSliceWiseUInt16 shape threshold repeat
+        @ measureChunkSliceWiseUInt16 shape threshold repeat
+    | Float32 ->
+        measureDirectSliceWiseFloat32 shape threshold repeat
+        @ measureChunkSliceWiseFloat32 shape threshold repeat
+
+let private measureMapStyleUInt8 shape threshold repeat =
+    let fullShapeName = shapeText shape
+    let oneSlice = sliceShape shape
+    let sliceLength = requireIntLength oneSlice
+    let input = Array.zeroCreate<uint8> sliceLength
+    let output = Array.zeroCreate<uint8> sliceLength
+    fillUInt8 input sliceLength
+    let typedThreshold = byte threshold
+    [ "while-exact-array-slicewise", fun () ->
+          let mutable z = 0
+          while z < shape.Depth do
+              thresholdUInt8OneWhile typedThreshold input output sliceLength
+              z <- z + 1
+      "array-map-exact-array-slicewise", fun () ->
+          let mutable z = 0
+          let mutable checksum = 0
+          while z < shape.Depth do
+              let mapped = thresholdUInt8OneArrayMap typedThreshold input
+              checksum <- checksum + int mapped[0]
+              z <- z + 1
+          checksum |> ignore ]
+    |> measureActions "map-style" "UInt8" fullShapeName threshold repeat
+
+let private measureMapStyleUInt16 shape threshold repeat =
+    let fullShapeName = shapeText shape
+    let oneSlice = sliceShape shape
+    let sliceLength = requireIntLength oneSlice
+    let input = Array.zeroCreate<uint16> sliceLength
+    let output = Array.zeroCreate<uint16> sliceLength
+    fillUInt16 input sliceLength
+    let typedThreshold = uint16 threshold
+    [ "while-exact-array-slicewise", fun () ->
+          let mutable z = 0
+          while z < shape.Depth do
+              thresholdUInt16ToUInt16OneWhile typedThreshold input output sliceLength
+              z <- z + 1
+      "array-map-exact-array-slicewise", fun () ->
+          let mutable z = 0
+          let mutable checksum = 0
+          while z < shape.Depth do
+              let mapped = thresholdUInt16ToUInt16OneArrayMap typedThreshold input
+              checksum <- checksum + int mapped[0]
+              z <- z + 1
+          checksum |> ignore ]
+    |> measureActions "map-style" "UInt16" fullShapeName threshold repeat
+
+let private measureMapStyleFloat32 shape threshold repeat =
+    let fullShapeName = shapeText shape
+    let oneSlice = sliceShape shape
+    let sliceLength = requireIntLength oneSlice
+    let input = Array.zeroCreate<float32> sliceLength
+    let output = Array.zeroCreate<float32> sliceLength
+    fillFloat32 input sliceLength
+    let typedThreshold = float32 threshold
+    [ "while-exact-array-slicewise", fun () ->
+          let mutable z = 0
+          while z < shape.Depth do
+              thresholdFloat32ToFloat32OneWhile typedThreshold input output sliceLength
+              z <- z + 1
+      "array-map-exact-array-slicewise", fun () ->
+          let mutable z = 0
+          let mutable checksum = 0.0f
+          while z < shape.Depth do
+              let mapped = thresholdFloat32ToFloat32OneArrayMap typedThreshold input
+              checksum <- checksum + mapped[0]
+              z <- z + 1
+          checksum |> ignore ]
+    |> measureActions "map-style" "Float32" fullShapeName threshold repeat
+
+let private runMapStyleSliceWiseCase pixelType shape threshold repeat =
+    match pixelType with
+    | UInt8 -> measureMapStyleUInt8 shape threshold repeat
+    | UInt16 -> measureMapStyleUInt16 shape threshold repeat
+    | Float32 -> measureMapStyleFloat32 shape threshold repeat
+
+let private measureChunkMapUInt8 shape threshold repeat =
+    let fullShapeName = shapeText shape
+    let size = chunkGeometryForSlice shape
+    let input = StackCore.Chunk.create<uint8> size
+    let reusableOutput = StackCore.Chunk.create<uint8> size
+    try
+        let inputSpan = StackCore.Chunk.span<uint8> input
+        for i in 0 .. inputSpan.Length - 1 do
+            inputSpan[i] <- byte (i &&& 0xff)
+        let typedThreshold = byte threshold
+        [ "chunk-mapInto-slicewise", fun () ->
+              let mutable z = 0
+              while z < shape.Depth do
+                  StackCore.Chunk.mapInto (fun value -> if value >= typedThreshold then 1uy else 0uy) input reusableOutput
+                  z <- z + 1
+          "chunk-map-slicewise", fun () ->
+              let mutable z = 0
+              while z < shape.Depth do
+                  let output = StackCore.Chunk.map (fun value -> if value >= typedThreshold then 1uy else 0uy) input
+                  try
+                      output.ByteLength |> ignore
+                  finally
+                      StackCore.Chunk.decRef output
+                  z <- z + 1 ]
+        |> measureActions "chunk-map" "UInt8" fullShapeName threshold repeat
+    finally
+        StackCore.Chunk.decRef reusableOutput
+        StackCore.Chunk.decRef input
+
+let private measureChunkMapUInt16 shape threshold repeat =
+    let fullShapeName = shapeText shape
+    let size = chunkGeometryForSlice shape
+    let input = StackCore.Chunk.create<uint16> size
+    let reusableOutput = StackCore.Chunk.create<uint16> size
+    try
+        let inputSpan = StackCore.Chunk.span<uint16> input
+        for i in 0 .. inputSpan.Length - 1 do
+            inputSpan[i] <- uint16 (i &&& 0xffff)
+        let typedThreshold = uint16 threshold
+        [ "chunk-mapInto-slicewise", fun () ->
+              let mutable z = 0
+              while z < shape.Depth do
+                  StackCore.Chunk.mapInto (fun value -> if value >= typedThreshold then 1us else 0us) input reusableOutput
+                  z <- z + 1
+          "chunk-map-slicewise", fun () ->
+              let mutable z = 0
+              while z < shape.Depth do
+                  let output = StackCore.Chunk.map (fun value -> if value >= typedThreshold then 1us else 0us) input
+                  try
+                      output.ByteLength |> ignore
+                  finally
+                      StackCore.Chunk.decRef output
+                  z <- z + 1 ]
+        |> measureActions "chunk-map" "UInt16" fullShapeName threshold repeat
+    finally
+        StackCore.Chunk.decRef reusableOutput
+        StackCore.Chunk.decRef input
+
+let private measureChunkMapFloat32 shape threshold repeat =
+    let fullShapeName = shapeText shape
+    let size = chunkGeometryForSlice shape
+    let input = StackCore.Chunk.create<float32> size
+    let reusableOutput = StackCore.Chunk.create<float32> size
+    try
+        let inputSpan = StackCore.Chunk.span<float32> input
+        for i in 0 .. inputSpan.Length - 1 do
+            inputSpan[i] <- float32 (i &&& 0xff)
+        let typedThreshold = float32 threshold
+        [ "chunk-mapInto-slicewise", fun () ->
+              let mutable z = 0
+              while z < shape.Depth do
+                  StackCore.Chunk.mapInto (fun value -> if value >= typedThreshold then 1.0f else 0.0f) input reusableOutput
+                  z <- z + 1
+          "chunk-map-slicewise", fun () ->
+              let mutable z = 0
+              while z < shape.Depth do
+                  let output = StackCore.Chunk.map (fun value -> if value >= typedThreshold then 1.0f else 0.0f) input
+                  try
+                      output.ByteLength |> ignore
+                  finally
+                      StackCore.Chunk.decRef output
+                  z <- z + 1 ]
+        |> measureActions "chunk-map" "Float32" fullShapeName threshold repeat
+    finally
+        StackCore.Chunk.decRef reusableOutput
+        StackCore.Chunk.decRef input
+
+let private runChunkMapCase pixelType shape threshold repeat =
+    match pixelType with
+    | UInt8 -> measureChunkMapUInt8 shape threshold repeat
+    | UInt16 -> measureChunkMapUInt16 shape threshold repeat
+    | Float32 -> measureChunkMapFloat32 shape threshold repeat
+
+let private imageSizeList shape =
+    [ uint shape.Width; uint shape.Height; uint shape.Depth ]
+
+let private chunkSize shape =
+    uint64 shape.Width, uint64 shape.Height, uint64 shape.Depth
+
+let private measureHistogramUInt8 includeImageFunctions shape threshold repeat =
+    let shapeName = shapeText shape
+    let length = requireIntLength shape
+    let pixels = Array.zeroCreate<uint8> length
+    fillUInt8 pixels length
+    let image = Image.Image<uint8>.ofFlatArray(imageSizeList shape, pixels, "histogram-benchmark")
+    let chunk = StackCore.Chunk.create<uint8> (chunkSize shape)
+    let leftEdges16 = [ for edge in 0 .. 16 .. 240 -> float edge ]
+    let leftEdges256 = [ for edge in 0 .. 255 -> float edge ]
+    try
+        let values = StackCore.Chunk.span<uint8> chunk
+        for i in 0 .. values.Length - 1 do
+            values[i] <- pixels[i]
+        let baselineActions =
+            if includeImageFunctions then
+                [ "imagefunctions-histogram", fun () ->
+                      let histogram = ImageFunctions.histogram image
+                      if Map.isEmpty histogram then invalidOp "ImageFunctions.histogram returned an empty histogram." ]
+            else
+                []
+
+        let chunkActions =
+            [ "chunk-histogram-dense", fun () ->
+                  let histogram = ChunkFunctions.histogramDense chunk
+                  if Map.isEmpty histogram then invalidOp "ChunkFunctions.histogramDense returned an empty histogram."
+              "chunk-histogram-leftedges-16", fun () ->
+                  let histogram = ChunkFunctions.histogramLeftEdges leftEdges16 chunk
+                  if Map.isEmpty histogram then invalidOp "ChunkFunctions.histogramLeftEdges returned an empty histogram."
+              "chunk-histogram-leftedges-256", fun () ->
+                  let histogram = ChunkFunctions.histogramLeftEdges leftEdges256 chunk
+                  if Map.isEmpty histogram then invalidOp "ChunkFunctions.histogramLeftEdges returned an empty histogram." ]
+
+        baselineActions @ chunkActions
+        |> measureActions "histogram" "UInt8" shapeName threshold repeat
+    finally
+        StackCore.Chunk.decRef chunk
+        image.decRefCount()
+
+let private measureHistogramUInt16 includeImageFunctions shape threshold repeat =
+    let shapeName = shapeText shape
+    let length = requireIntLength shape
+    let pixels = Array.zeroCreate<uint16> length
+    fillUInt16 pixels length
+    let image = Image.Image<uint16>.ofFlatArray(imageSizeList shape, pixels, "histogram-benchmark")
+    let chunk = StackCore.Chunk.create<uint16> (chunkSize shape)
+    let leftEdges256 = [ for edge in 0 .. 256 .. 65280 -> float edge ]
+    let leftEdges4096 = [ for edge in 0 .. 4096 .. 61440 -> float edge ]
+    try
+        let values = StackCore.Chunk.span<uint16> chunk
+        for i in 0 .. values.Length - 1 do
+            values[i] <- pixels[i]
+        let baselineActions =
+            if includeImageFunctions then
+                [ "imagefunctions-histogram", fun () ->
+                      let histogram = ImageFunctions.histogram image
+                      if Map.isEmpty histogram then invalidOp "ImageFunctions.histogram returned an empty histogram." ]
+            else
+                []
+
+        let chunkActions =
+            [ "chunk-histogram-dense", fun () ->
+                  let histogram = ChunkFunctions.histogramDense chunk
+                  if Map.isEmpty histogram then invalidOp "ChunkFunctions.histogramDense returned an empty histogram."
+              "chunk-histogram-leftedges-256", fun () ->
+                  let histogram = ChunkFunctions.histogramLeftEdges leftEdges256 chunk
+                  if Map.isEmpty histogram then invalidOp "ChunkFunctions.histogramLeftEdges returned an empty histogram."
+              "chunk-histogram-leftedges-4096", fun () ->
+                  let histogram = ChunkFunctions.histogramLeftEdges leftEdges4096 chunk
+                  if Map.isEmpty histogram then invalidOp "ChunkFunctions.histogramLeftEdges returned an empty histogram." ]
+
+        baselineActions @ chunkActions
+        |> measureActions "histogram" "UInt16" shapeName threshold repeat
+    finally
+        StackCore.Chunk.decRef chunk
+        image.decRefCount()
+
+let private measureHistogramFloat32 includeImageFunctions shape threshold repeat =
+    let shapeName = shapeText shape
+    let length = requireIntLength shape
+    let pixels = Array.zeroCreate<float32> length
+    fillFloat32 pixels length
+    let image = Image.Image<float32>.ofFlatArray(imageSizeList shape, pixels, "histogram-benchmark")
+    let chunk = StackCore.Chunk.create<float32> (chunkSize shape)
+    let leftEdges16 = [ for edge in 0 .. 16 .. 240 -> float edge ]
+    let leftEdges256 = [ for edge in 0 .. 255 -> float edge ]
+    try
+        let values = StackCore.Chunk.span<float32> chunk
+        for i in 0 .. values.Length - 1 do
+            values[i] <- pixels[i]
+        let baselineActions =
+            if includeImageFunctions then
+                [ "imagefunctions-histogram", fun () ->
+                      let histogram = ImageFunctions.histogram image
+                      if Map.isEmpty histogram then invalidOp "ImageFunctions.histogram returned an empty histogram." ]
+            else
+                []
+
+        let chunkActions =
+            [ "chunk-histogram-sparse", fun () ->
+                  let histogram = ChunkFunctions.histogram chunk
+                  if Map.isEmpty histogram then invalidOp "ChunkFunctions.histogram returned an empty histogram."
+              "chunk-histogram-leftedges-16", fun () ->
+                  let histogram = ChunkFunctions.histogramLeftEdges leftEdges16 chunk
+                  if Map.isEmpty histogram then invalidOp "ChunkFunctions.histogramLeftEdges returned an empty histogram."
+              "chunk-histogram-leftedges-256", fun () ->
+                  let histogram = ChunkFunctions.histogramLeftEdges leftEdges256 chunk
+                  if Map.isEmpty histogram then invalidOp "ChunkFunctions.histogramLeftEdges returned an empty histogram." ]
+
+        baselineActions @ chunkActions
+        |> measureActions "histogram" "Float32" shapeName threshold repeat
+    finally
+        StackCore.Chunk.decRef chunk
+        image.decRefCount()
+
+let private runHistogramCase includeImageFunctions pixelType shape threshold repeat =
+    match pixelType with
+    | UInt8 -> measureHistogramUInt8 includeImageFunctions shape threshold repeat
+    | UInt16 -> measureHistogramUInt16 includeImageFunctions shape threshold repeat
+    | Float32 -> measureHistogramFloat32 includeImageFunctions shape threshold repeat
+
 let private writeRows output rows =
     let exists = File.Exists output
     use writer = new StreamWriter(output, append = true)
@@ -795,6 +1537,12 @@ let private usage () =
     printfn "  dotnet run --project benchmarks/InMemoryThreshold.Benchmarks -- --output tmp/in-memory-threshold.csv --shapes 128x128x128,256x256x256,1024x1024x1024 --pixel-types UInt8,UInt16,Float32 --repeat 3 --threshold 128"
     printfn "  dotnet run --project benchmarks/InMemoryThreshold.Benchmarks -- --mode filter-lifecycle --output tmp/filter-lifecycle.csv --shapes 1024x1024x1 --pixel-types UInt8 --repeat 3 --iterations 1024 --threshold 128"
     printfn "  dotnet benchmarks/InMemoryThreshold.Benchmarks/bin/Release/net10.0/InMemoryThreshold.Benchmarks.dll --mode chunk-storage --output tmp/chunk-storage-threshold.csv --shapes 256x256x256,512x512x512 --pixel-types UInt8,UInt16,Float32 --repeat 3 --threshold 128"
+    printfn "  dotnet benchmarks/InMemoryThreshold.Benchmarks/bin/Release/net10.0/InMemoryThreshold.Benchmarks.dll --mode chunk-slicewise --output tmp/chunk-slicewise-threshold.csv --shapes 256x256x256,512x512x512 --pixel-types UInt8,UInt16,Float32 --repeat 3 --threshold 128"
+    printfn "  dotnet benchmarks/InMemoryThreshold.Benchmarks/bin/Release/net10.0/InMemoryThreshold.Benchmarks.dll --mode chunk-map --output tmp/chunk-map-threshold.csv --shapes 256x256x256,512x512x512 --pixel-types UInt8,UInt16,Float32 --repeat 3 --threshold 128"
+    printfn "  dotnet benchmarks/InMemoryThreshold.Benchmarks/bin/Release/net10.0/InMemoryThreshold.Benchmarks.dll --mode map-style-slicewise --output tmp/map-style-slicewise-threshold.csv --shapes 256x256x256,512x512x512 --pixel-types UInt8,UInt16,Float32 --repeat 3 --threshold 128"
+    printfn "  dotnet benchmarks/InMemoryThreshold.Benchmarks/bin/Release/net10.0/InMemoryThreshold.Benchmarks.dll --mode image-class --output tmp/image-class-threshold.csv --shapes 256x256x256,512x512x512 --pixel-types UInt8,UInt16,Float32 --repeat 3 --threshold 128"
+    printfn "  dotnet benchmarks/InMemoryThreshold.Benchmarks/bin/Release/net10.0/InMemoryThreshold.Benchmarks.dll --mode image-class-slicewise --output tmp/image-class-slicewise-threshold.csv --shapes 256x256x256,512x512x512 --pixel-types UInt8,UInt16,Float32 --repeat 3 --threshold 128"
+    printfn "  dotnet benchmarks/InMemoryThreshold.Benchmarks/bin/Release/net10.0/InMemoryThreshold.Benchmarks.dll --mode histogram --include-imagefunctions false --output tmp/chunk-histogram.csv --shapes 256x256x256,512x512x512 --pixel-types UInt8,UInt16,Float32 --repeat 3"
 
 [<EntryPoint>]
 let main args =
@@ -817,6 +1565,7 @@ let main args =
             let repeat = optional "repeat" "3" opts |> int
             let iterations = optional "iterations" "1024" opts |> int
             let threshold = optional "threshold" "128" opts |> fun text -> Double.Parse(text, invariant)
+            let includeImageFunctions = optionalBool "include-imagefunctions" true opts
 
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))) |> ignore
             for shape in shapes do
@@ -828,6 +1577,12 @@ let main args =
                                 | "threshold" -> runCase pixelType shape threshold r
                                 | "filter-lifecycle" -> runFilterLifecycleCase pixelType shape threshold r iterations
                                 | "chunk-storage" -> runChunkStorageCase pixelType shape threshold r
+                                | "chunk-slicewise" -> runChunkSliceWiseCase pixelType shape threshold r
+                                | "chunk-map" -> runChunkMapCase pixelType shape threshold r
+                                | "map-style-slicewise" -> runMapStyleSliceWiseCase pixelType shape threshold r
+                                | "image-class" -> runImageClassCase pixelType shape threshold r
+                                | "image-class-slicewise" -> runImageClassSliceWiseCase pixelType shape threshold r
+                                | "histogram" -> runHistogramCase includeImageFunctions pixelType shape threshold r
                                 | _ -> invalidArg "mode" $"Unsupported mode '{mode}'."
                             with ex ->
                                 let pixelName = string pixelType

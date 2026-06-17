@@ -68,6 +68,15 @@ module PipelineCodeGenerator =
         else
             trimmed
 
+    let private intArray3Literal (value: string) =
+        let trimmed = value.Trim()
+        let m = Regex.Match(trimmed, @"^\(?\s*(\d+)u?\s*,\s*(\d+)u?\s*,\s*(\d+)u?\s*\)?$")
+
+        if m.Success then
+            $"[| {m.Groups[1].Value}; {m.Groups[2].Value}; {m.Groups[3].Value} |]"
+        else
+            trimmed
+
     let private integerLiteralOrCast castName suffix (value: string) =
         let trimmed = value.Trim()
 
@@ -104,6 +113,7 @@ module PipelineCodeGenerator =
             | Float32 -> $"float32 {constant}"
             | Float64
             | Number -> constant
+            | Complex64 -> $"Image.ComplexFloat32(float32 {constant}, 0.0f)"
             | Complex -> $"System.Numerics.Complex({constant}, 0.0)"
         | None ->
             match numericType with
@@ -132,12 +142,35 @@ module PipelineCodeGenerator =
             | Float64
             | Number ->
                 float64Literal trimmed
+            | Complex64 ->
+                if trimmed.StartsWith("Image.ComplexFloat32", StringComparison.Ordinal)
+                   || trimmed.StartsWith("ComplexFloat32", StringComparison.Ordinal) then
+                    trimmed
+                else
+                    let realLiteral = if hasSuffix [ "f" ] trimmed then trimmed else $"{float64Literal trimmed}f"
+                    $"Image.ComplexFloat32({realLiteral}, 0.0f)"
             | Complex ->
                 if trimmed.StartsWith("System.Numerics.Complex", StringComparison.Ordinal)
                    || trimmed.StartsWith("Complex", StringComparison.Ordinal) then
                     trimmed
                 else
                     $"System.Numerics.Complex({float64Literal trimmed}, 0.0)"
+
+    let private numericLiteralForPixelType pixelType value =
+        match pixelType with
+        | "uint8" -> numericLiteral UInt8 value
+        | "int8" -> numericLiteral Int8 value
+        | "uint16" -> numericLiteral UInt16 value
+        | "int16" -> numericLiteral Int16 value
+        | "uint32" -> numericLiteral UInt32 value
+        | "int32" -> numericLiteral Int32 value
+        | "uint64" -> numericLiteral UInt64 value
+        | "int64" -> numericLiteral Int64 value
+        | "float32" -> numericLiteral Float32 value
+        | "float" -> numericLiteral Float64 value
+        | "Image.ComplexFloat32" -> numericLiteral Complex64 value
+        | "System.Numerics.Complex" -> numericLiteral Complex value
+        | _ -> value
 
     let private literalValue basicType value =
         match basicType with
@@ -207,8 +240,8 @@ module PipelineCodeGenerator =
         | "Int64" -> "int64"
         | "Float32" -> "float32"
         | "Float64" -> "float"
-        | "Complex" | "ComplexFloat64" -> "System.Numerics.Complex"
-        | "ComplexFloat32" -> "Image.ComplexFloat32"
+        | "Complex64" | "ComplexFloat32" -> "Image.ComplexFloat32"
+        | "Complex" | "Complex128" | "ComplexFloat64" -> "System.Numerics.Complex"
         | _ -> suffix
 
     let private pixelTypeNameFromParameter key defaultType (node: SavedNode) =
@@ -242,10 +275,10 @@ module PipelineCodeGenerator =
     let private pairStageFunctionName (node: SavedNode) =
         match node.FunctionId with
         | "ImageOpImage" -> Some(imageOpImageFunctionName node)
-        | "ComplexFromReIm" -> Some "toComplex"
-        | "ComplexPolar" -> Some "polarToComplex"
+        | "ComplexFromReIm" -> Some "toComplex64"
+        | "ComplexPolar" -> Some "polarToComplex64"
         | "ToVectorImage" -> Some "toVectorImage<float>"
-        | "AppendVectorElement" -> Some "appendVectorElement"
+        | "AppendVectorElement" -> Some "appendVectorElement<float>"
         | "VectorDot" -> Some "vectorDot"
         | "VectorCross3D" -> Some "vectorCross3D"
         | "AffineRegistration" ->
@@ -277,7 +310,7 @@ module PipelineCodeGenerator =
 
     let private pairCompositionOperator (node: SavedNode) =
         match node.FunctionId with
-        | "ImageOpImage" -> ">>=>"
+        | "ImageOpImage" -> ">=>"
         | _ -> ">=>"
 
     let private safeIdentifier (value: string) =
@@ -298,14 +331,14 @@ module PipelineCodeGenerator =
             | _ -> "*"
 
         match node.FunctionId, operation with
-        | "ImageOpScalar", "+" -> Some "imageAddScalar"
-        | "ImageOpScalar", "-" -> Some "imageSubScalar"
-        | "ImageOpScalar", "*" -> Some "imageMulScalar"
-        | "ImageOpScalar", "/" -> Some "imageDivScalar"
-        | "ScalarOpImage", "+" -> Some "scalarAddImage"
-        | "ScalarOpImage", "-" -> Some "scalarSubImage"
-        | "ScalarOpImage", "*" -> Some "scalarMulImage"
-        | "ScalarOpImage", "/" -> Some "scalarDivImage"
+        | "ImageOpScalar", "+" -> Some "addScalar"
+        | "ImageOpScalar", "-" -> Some "subScalar"
+        | "ImageOpScalar", "*" -> Some "mulScalar"
+        | "ImageOpScalar", "/" -> Some "divScalar"
+        | "ScalarOpImage", "+" -> Some "scalarAdd"
+        | "ScalarOpImage", "-" -> Some "scalarSub"
+        | "ScalarOpImage", "*" -> Some "scalarMul"
+        | "ScalarOpImage", "/" -> Some "scalarDiv"
         | _ -> None
 
     let private isScalarImageFunction functionId =
@@ -321,6 +354,13 @@ module PipelineCodeGenerator =
             configuredFunction
         else
             "sqrt"
+
+    let private unaryImageStageFunctionName (node: SavedNode) =
+        match unaryImageFunctionName node with
+        | "abs" -> "absFloat32"
+        | "sqrt" -> "sqrtFloat32"
+        | "square" -> "squareFloat32"
+        | name -> name
 
     let private scalarFunctionExpression functionName argument =
         match functionName with
@@ -404,11 +444,16 @@ module PipelineCodeGenerator =
         || node.FunctionId = "FitBiasModel"
         || node.FunctionId = "FitBiasModelMasked"
 
-    let private stackInfoFieldExpression bindingName portIndex =
-        [| $"{bindingName}.dimensions"
+    let private imageInfoFieldExpression bindingName portIndex =
+        [| $"{bindingName}.format"
+           $"{bindingName}.dimensions"
            $"{bindingName}.size"
            $"{bindingName}.componentType"
            $"{bindingName}.numberOfComponents"
+           $"{bindingName}.chunks"
+           $"{bindingName}.chunks[0]"
+           $"{bindingName}.chunks[1]"
+           $"{bindingName}.chunks[2]"
            $"{bindingName}.size[0]"
            $"{bindingName}.size[1]"
            $"{bindingName}.size[2]" |]
@@ -427,9 +472,6 @@ module PipelineCodeGenerator =
            $"{bindingName}.size[2]" |]
         |> Array.tryItem portIndex
 
-    let private isTranslationTableNode (node: SavedNode) =
-        node.FunctionId = "ComponentTranslationTable"
-
     let private isHistogramDataNode (node: SavedNode) =
         node.FunctionId = "Histogram"
         || node.FunctionId = "ImHistogramData"
@@ -444,36 +486,30 @@ module PipelineCodeGenerator =
     let private isExpandNode (node: SavedNode) =
         node.FunctionId = "Expand"
 
-    let private isWriteStackInfoNode (node: SavedNode) =
+    let private isWriteImageInfoNode (node: SavedNode) =
         node.FunctionId = "Write"
-        && savedParamValue "format" node <> "OME-Zarr"
-        && savedParamValue "format" node <> "NeXus/HDF5"
 
     let private isWriteChunkInfoNode (node: SavedNode) =
         node.FunctionId = "WriteChunks"
-        || (node.FunctionId = "Write"
-            && (savedParamValue "format" node = "OME-Zarr" || savedParamValue "format" node = "NeXus/HDF5"))
 
     let private readFormat (node: SavedNode) =
         savedParamValue "format" node
 
-    let private isReadStackInfoNode (node: SavedNode) =
+    let private isReadImageInfoNode (node: SavedNode) =
         match node.FunctionId with
         | "Read"
         | "ReadRandom"
-        | "ReadRange" -> readFormat node <> "OME-Zarr" && readFormat node <> "NeXus/HDF5"
+        | "ReadRange" -> true
         | _ -> false
+
+    let private isImageInfoNode (node: SavedNode) =
+        node.FunctionId = "GetZarrInfo" || node.FunctionId = "GetNexusInfo"
 
     let private isChunkInfoNode (node: SavedNode) =
-        node.FunctionId = "GetChunkInfo" || node.FunctionId = "GetZarrInfo" || node.FunctionId = "GetNexusInfo"
+        node.FunctionId = "GetChunkInfo"
 
     let private isReadChunkInfoNode (node: SavedNode) =
-        match node.FunctionId with
-        | "Read"
-        | "ReadRandom"
-        | "ReadRange" -> readFormat node = "OME-Zarr" || readFormat node = "NeXus/HDF5"
-        | "ReadSlab" -> true
-        | _ -> false
+        false
 
     let private quantileFieldExpression bindingName portIndex =
         if portIndex >= 0 && portIndex < 5 then Some $"{bindingName}[{portIndex}]" else None
@@ -490,7 +526,7 @@ module PipelineCodeGenerator =
         | _ ->
             if portIndex = 0 then Some bindingName else None
 
-    let private parameterExpression (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (quantileNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (serialGeometryNamesByNodeId: Map<string, string>) (node: SavedNode) parameterIndex key =
+    let private parameterExpression (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (quantileNamesByNodeId: Map<string, string>) (imageInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (serialGeometryNamesByNodeId: Map<string, string>) (node: SavedNode) parameterIndex key =
         let linkedExpression =
             graph.Edges
             |> Seq.tryFind (fun edge ->
@@ -530,12 +566,12 @@ module PipelineCodeGenerator =
                                 match quantileNamesByNodeId |> Map.tryFind edge.FromNode with
                                 | Some name -> quantileFieldExpression name edge.FromPort
                                 | None ->
-                                    stackInfoNamesByNodeId
+                                    imageInfoNamesByNodeId
                                     |> Map.tryFind edge.FromNode
                                     |> Option.bind (fun name ->
                                         match nodesById |> Map.tryFind edge.FromNode with
                                         | Some sourceNode when sourceNode.FunctionId = "Expand" ->
-                                            stackInfoFieldExpression name edge.FromPort
+                                            imageInfoFieldExpression name edge.FromPort
                                         | Some _ when edge.FromPort = 0 ->
                                             Some name
                                         | _ ->
@@ -565,7 +601,7 @@ module PipelineCodeGenerator =
             { Value = savedParamValue key node
               IsLinked = false }
 
-    let private scalarBinding (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (quantileNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (serialGeometryNamesByNodeId: Map<string, string>) (node: SavedNode) =
+    let private scalarBinding (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (quantileNamesByNodeId: Map<string, string>) (imageInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (serialGeometryNamesByNodeId: Map<string, string>) (node: SavedNode) =
         let name = scalarNamesByNodeId |> Map.find node.Id
 
         let value =
@@ -574,7 +610,7 @@ module PipelineCodeGenerator =
                 let parameterExpression key =
                     node.Parameters
                     |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
                     |> Option.defaultValue { Value = ""; IsLinked = false }
 
                 let operation =
@@ -601,7 +637,7 @@ module PipelineCodeGenerator =
                 let parameterExpression =
                     node.Parameters
                     |> Seq.tryFindIndex (fun parameter -> parameter.Key = "a")
-                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index "a")
+                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index "a")
                     |> Option.defaultValue { Value = ""; IsLinked = false }
 
                 let argument =
@@ -615,7 +651,7 @@ module PipelineCodeGenerator =
                 let parameterExpression key =
                     node.Parameters
                     |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
                     |> Option.defaultValue { Value = ""; IsLinked = false }
 
                 let seed = (parameterExpression "seed").Value
@@ -635,7 +671,7 @@ module PipelineCodeGenerator =
                 let histogram =
                     node.Parameters
                     |> Seq.tryFindIndex (fun parameter -> parameter.Key = "histogram")
-                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index "histogram")
+                    |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index "histogram")
                     |> Option.defaultValue { Value = savedParamValue "histogram" node; IsLinked = false }
 
                 $"{functionName} {histogram.Value}"
@@ -644,11 +680,11 @@ module PipelineCodeGenerator =
 
         name, $"let {name} = {value}"
 
-    let private chunkInfoBinding (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (quantileNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (serialGeometryNamesByNodeId: Map<string, string>) (node: SavedNode) =
+    let private chunkInfoBinding (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (quantileNamesByNodeId: Map<string, string>) (imageInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (serialGeometryNamesByNodeId: Map<string, string>) (node: SavedNode) =
         let parameterExpression key =
             node.Parameters
             |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
             |> Option.defaultValue { Value = ""; IsLinked = false }
 
         let stringArgument key =
@@ -658,25 +694,14 @@ module PipelineCodeGenerator =
         let name = chunkInfoNamesByNodeId |> Map.find node.Id
         let input = stringArgument "input"
 
-        if node.FunctionId = "GetZarrInfo" then
-            let multiscaleIndex = parameterExpression "multiscaleIndex"
-            let datasetIndex = parameterExpression "datasetIndex"
-            name, $"let {name} = getZarrInfo {input} {multiscaleIndex.Value} {datasetIndex.Value}"
-        elif node.FunctionId = "GetNexusInfo" then
-            let datasetPath = stringArgument "datasetPath"
-            let frameAxis = parameterExpression "frameAxis"
-            let yAxis = parameterExpression "yAxis"
-            let xAxis = parameterExpression "xAxis"
-            name, $"let {name} = getNexusInfo {input} {datasetPath} {frameAxis.Value} {yAxis.Value} {xAxis.Value}"
-        else
-            let suffix = stringArgument "suffix"
-            name, $"let {name} = getChunkInfo {input} {suffix}"
+        let suffix = stringArgument "suffix"
+        name, $"let {name} = getChunkInfo {input} {suffix}"
 
-    let private savedElementLine (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (quantileNamesByNodeId: Map<string, string>) (stackInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (serialGeometryNamesByNodeId: Map<string, string>) (node: SavedNode) =
+    let private savedElementLine (graph: SavedGraph) (nodesById: Map<string, SavedNode>) (scalarNamesByNodeId: Map<string, string>) (statsNamesByNodeId: Map<string, string>) (translationTableNamesByNodeId: Map<string, string>) (histogramNamesByNodeId: Map<string, string>) (quantileNamesByNodeId: Map<string, string>) (imageInfoNamesByNodeId: Map<string, string>) (chunkInfoNamesByNodeId: Map<string, string>) (serialGeometryNamesByNodeId: Map<string, string>) (node: SavedNode) =
         let parameterExpressionForNode (targetNode: SavedNode) key =
             targetNode.Parameters
             |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId targetNode index key)
+            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId targetNode index key)
             |> Option.defaultValue { Value = ""; IsLinked = false }
 
         let parameterExpression key =
@@ -705,24 +730,28 @@ module PipelineCodeGenerator =
         let parameterValueForNode targetNode key =
             let expression = parameterExpressionForNode targetNode key
 
-            if expression.IsLinked then
+            match dynamicParameterTypeForNode targetNode key with
+            | Some(BasicType.Numeric Float32) when expression.IsLinked ->
+                $"float32 ({expression.Value})"
+            | Some(BasicType.Numeric numericType) when not expression.IsLinked ->
+                numericLiteral numericType expression.Value
+            | Some BasicType.Bool when not expression.IsLinked ->
+                expression.Value.Trim().ToLowerInvariant()
+            | Some BasicType.Unit when not expression.IsLinked ->
+                "()"
+            | Some BasicType.Map when not expression.IsLinked ->
                 expression.Value
-            else
-                match dynamicParameterTypeForNode targetNode key with
-                | Some(BasicType.Numeric numericType) ->
-                    numericLiteral numericType expression.Value
-                | Some BasicType.Bool ->
-                    expression.Value.Trim().ToLowerInvariant()
-                | Some BasicType.Unit ->
-                    "()"
-                | Some BasicType.Map ->
-                    expression.Value
-                | Some BasicType.String
-                | None ->
-                    expression.Value
+            | Some BasicType.String when not expression.IsLinked ->
+                expression.Value
+            | _ ->
+                expression.Value
 
         let parameterValue key =
             parameterValueForNode node key
+
+        let parameterValueOrDefault key fallback =
+            let value = parameterValue key
+            if String.IsNullOrWhiteSpace value then fallback else value
 
         let isNoneValue (value: string) =
             let trimmed = value.Trim()
@@ -760,10 +789,58 @@ module PipelineCodeGenerator =
                         | "SerialEstTrans", 0 ->
                             inferredImagePixelType visited sourceNode 0
                         | "Cast", 0 ->
-                            Some(pixelTypeNameFromParameter "targetType" "Float64" sourceNode)
+                            Some(pixelTypeNameFromParameter "targetType" "Float32" sourceNode)
                         | _ ->
                             let configured = savedParamValue "type" sourceNode
                             if String.IsNullOrWhiteSpace configured then None else Some(pixelTypeNameFromSuffix configured)))
+
+        let rec inferredVectorPixelType visited (targetNode: SavedNode) inputPort =
+            if visited |> Set.contains targetNode.Id then
+                None
+            else
+                let visited = visited |> Set.add targetNode.Id
+
+                graph.Edges
+                |> Array.tryFind (fun edge ->
+                    edge.ToNode = targetNode.Id
+                    && edge.ToKind <> "parameterInput"
+                    && edge.ToPort = inputPort)
+                |> Option.bind (fun edge ->
+                    nodesById
+                    |> Map.tryFind edge.FromNode
+                    |> Option.bind (fun sourceNode ->
+                        match sourceNode.FunctionId, edge.FromPort with
+                        | "Gradient", 0 -> Some "float32"
+                        | "StructureTensor", 0 -> Some "float32"
+                        | "PCA", port when port >= 0 && port <= 8 -> Some "float32"
+                        | "VectorRange", 0
+                        | "AppendVectorElement", 0
+                        | "VectorMapElements", 0 ->
+                            inferredVectorPixelType visited sourceNode 0
+                        | "ToVectorImage", 0
+                        | "ColorToVector3", 0
+                        | "VectorCross3D", 0 -> Some "float"
+                        | _ -> None))
+
+        let pipelineVectorPixelType defaultType =
+            inferredVectorPixelType Set.empty node 0
+            |> Option.defaultValue defaultType
+
+        let inputSourcePortType inputPort =
+            graph.Edges
+            |> Array.tryFind (fun edge ->
+                edge.ToNode = node.Id
+                && edge.ToKind <> "parameterInput"
+                && edge.ToPort = inputPort)
+            |> Option.bind (fun edge ->
+                nodesById
+                |> Map.tryFind edge.FromNode
+                |> Option.bind (fun sourceNode ->
+                    BuiltInCatalog.tryFind sourceNode.FunctionId
+                    |> Option.bind (fun definition ->
+                        definition.Outputs
+                        |> List.tryItem edge.FromPort
+                        |> Option.map _.Type)))
 
         let pipelinePixelType defaultType =
             inferredImagePixelType Set.empty node 0
@@ -821,8 +898,8 @@ module PipelineCodeGenerator =
                                         PortType.Custom "ImageStats"
                                     elif recordSource.FunctionId = "ObjectSizeStats" then
                                         PortType.Custom "ObjectSizeStats"
-                                    elif isWriteStackInfoNode recordSource || isReadStackInfoNode recordSource then
-                                        PortType.Custom "StackInfo"
+                                    elif isImageInfoNode recordSource || isWriteImageInfoNode recordSource || isReadImageInfoNode recordSource then
+                                        PortType.Custom "ImageInfo"
                                     elif isChunkInfoNode recordSource || isReadChunkInfoNode recordSource then
                                         PortType.Custom "ChunkInfo"
                                     else
@@ -957,9 +1034,11 @@ module PipelineCodeGenerator =
                 let firstLeftEdge = parameterValue "firstLeftEdge"
                 let lastLeftEdge = parameterValue "lastLeftEdge"
                 let bins = parameterValue "bins"
-                $">=> imHistogramFixedBins {firstLeftEdge} {lastLeftEdge} {bins}"
+                let pixelType = pipelinePixelType "Float32"
+                $">=> imageHistogramFixedBins<{pixelType}> ({firstLeftEdge}) ({lastLeftEdge}) ({bins})"
             else
-                ">=> imHistogram ()"
+                let pixelType = pipelinePixelType "Float32"
+                $">=> imageHistogram<{pixelType}> ()"
 
         match node.FunctionId with
         | "Empty" ->
@@ -967,7 +1046,7 @@ module PipelineCodeGenerator =
             "|> empty" |> sourcePrefix availableMemory
         | "Zero" ->
             let availableMemory = parameterValue "availableMemory"
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let width = parameterValue "width"
             let height = parameterValue "height"
             let depth = parameterValue "depth"
@@ -989,47 +1068,47 @@ module PipelineCodeGenerator =
             let width = parameterValue "width"
             let height = parameterValue "height"
             let depth = parameterValue "depth"
-            $"|> coordinateX<float> {width} {height} {depth}" |> sourcePrefix availableMemory
+            $"|> coordinateX<float32> {width} {height} {depth}" |> sourcePrefix availableMemory
         | "CoordinateY" ->
             let availableMemory = parameterValue "availableMemory"
             let width = parameterValue "width"
             let height = parameterValue "height"
             let depth = parameterValue "depth"
-            $"|> coordinateY<float> {width} {height} {depth}" |> sourcePrefix availableMemory
+            $"|> coordinateY<float32> {width} {height} {depth}" |> sourcePrefix availableMemory
         | "CoordinateZ" ->
             let availableMemory = parameterValue "availableMemory"
             let width = parameterValue "width"
             let height = parameterValue "height"
             let depth = parameterValue "depth"
-            $"|> coordinateZ<float> {width} {height} {depth}" |> sourcePrefix availableMemory
+            $"|> coordinateZ<float32> {width} {height} {depth}" |> sourcePrefix availableMemory
         | "NormalNoise" ->
             let availableMemory = parameterValue "availableMemory"
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let width = parameterValue "width"
             let height = parameterValue "height"
             let depth = parameterValue "depth"
             let mean = parameterValue "mean"
             let std = parameterValue "std"
-            $"|> normalNoise<{pixelType}> {width} {height} {depth} {mean} {std}" |> sourcePrefix availableMemory
+            $"|> zero<{pixelType}> {width} {height} {depth}{Environment.NewLine}>=> addNormalNoise<{pixelType}> {mean} {std}" |> sourcePrefix availableMemory
         | "SaltAndPepperNoise" ->
             let availableMemory = parameterValue "availableMemory"
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let width = parameterValue "width"
             let height = parameterValue "height"
             let depth = parameterValue "depth"
             let probability = parameterValue "probability"
-            $"|> saltAndPepperNoise<{pixelType}> {width} {height} {depth} {probability}" |> sourcePrefix availableMemory
+            $"|> zero<{pixelType}> {width} {height} {depth}{Environment.NewLine}>=> addSaltAndPepperNoise<{pixelType}> {probability}" |> sourcePrefix availableMemory
         | "ShotNoise" ->
             let availableMemory = parameterValue "availableMemory"
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let width = parameterValue "width"
             let height = parameterValue "height"
             let depth = parameterValue "depth"
             let scale = parameterValue "scale"
-            $"|> shotNoise<{pixelType}> {width} {height} {depth} {scale}" |> sourcePrefix availableMemory
+            $"|> zero<{pixelType}> {width} {height} {depth}{Environment.NewLine}>=> addShotNoise<{pixelType}> {scale}" |> sourcePrefix availableMemory
         | "SpeckleNoise" ->
             let availableMemory = parameterValue "availableMemory"
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let width = parameterValue "width"
             let height = parameterValue "height"
             let depth = parameterValue "depth"
@@ -1053,10 +1132,10 @@ module PipelineCodeGenerator =
                   $"debug 1u (optimizerEnabled ()) {uint64Literal availableMemory}"
                   $"|> repeat {maskName} 1u"
                   $">=> cast<uint8,{pixelType}>"
-                  $">=> createByEuler2DTransformFromImage {depth} {transformName}" ]
+                  $">=> createByEuler2DTransform {depth} {transformName}" ]
         | "ReadRandom" ->
             let availableMemory = parameterValue "availableMemory"
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let format = savedParamValue "format" node
             let depth = parameterValue "depth"
             let input = quotedParameter "input"
@@ -1082,17 +1161,14 @@ module PipelineCodeGenerator =
                 $"|> readRandom<{pixelType}> {depth} {input} {suffix}" |> sourcePrefix availableMemory
         | "EstimateHistogram" ->
             let availableMemory = parameterValue "availableMemory"
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let slices = parameterValue "slices"
             let input = quotedParameter "input"
             let suffix = quotedParameter "suffix"
-            let down = parameterValue "down"
-            let estimator = quotedParameter "estimator"
-            let confidence = parameterValue "confidence"
-            $"|> estimateHistogram<{pixelType}> {slices} {input} {suffix} {down} {estimator} {confidence}" |> sourcePrefix availableMemory
+            $"|> readRandom<{pixelType}> {slices} {input} {suffix}{Environment.NewLine}>=> imageHistogram<{pixelType}> ()" |> sourcePrefix availableMemory
         | "ReadRange" ->
             let availableMemory = parameterValue "availableMemory"
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let format = savedParamValue "format" node
             let first = parameterValue "first"
             let step = parameterValue "step"
@@ -1118,40 +1194,17 @@ module PipelineCodeGenerator =
                 $"|> readNexusRange<{pixelType}> {first} {step} {last} {input} {datasetPath} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
             | _ ->
                 $"|> readRange<{pixelType}> {first} {step} {last} {input} {suffix}" |> sourcePrefix availableMemory
-        | "ReadSlab" ->
-            let availableMemory = parameterValue "availableMemory"
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let format = savedParamValue "format" node
-            let input = quotedParameter "input"
-            let suffix = quotedParameterOrDefault "suffix" ".tiff"
-            let slabDepth = parameterValue "slabDepth"
-            let multiscaleIndex = parameterValue "multiscaleIndex"
-            let datasetIndex = parameterValue "datasetIndex"
-            let timepoint = parameterValue "timepoint"
-            let channel = parameterValue "channel"
-            let maxParallelChunks = parameterValue "maxParallelChunks"
-            let datasetPath = quotedParameter "datasetPath"
-            let frameAxis = parameterValue "frameAxis"
-            let yAxis = parameterValue "yAxis"
-            let xAxis = parameterValue "xAxis"
-            match format with
-            | "OME-Zarr" ->
-                $"|> readZarrSlab<{pixelType}> {input} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
-            | "NeXus/HDF5" ->
-                $"|> readNexusSlab<{pixelType}> {input} {datasetPath} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
-            | _ ->
-                $"|> readSlab<{pixelType}> {input} {suffix}" |> sourcePrefix availableMemory
         | "ReadPointSet" ->
             let availableMemory = parameterValue "availableMemory"
             let input = quotedParameter "input"
             $"|> readPointSet {input}" |> sourcePrefix availableMemory
         | "Read" ->
             let availableMemory = parameterValue "availableMemory"
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let format = savedParamValue "format" node
             let input = quotedParameter "input"
             let suffix = quotedParameterOrDefault "suffix" ".tiff"
-            let slabDepth = parameterValue "slabDepth"
+            let thickDepth = parameterValue "thickDepth"
             let multiscaleIndex = parameterValue "multiscaleIndex"
             let datasetIndex = parameterValue "datasetIndex"
             let timepoint = parameterValue "timepoint"
@@ -1166,7 +1219,7 @@ module PipelineCodeGenerator =
                 let volumeInput = $"(volumeFilePath {input} {suffix})"
                 $"|> readVolume<{pixelType}> {volumeInput}" |> sourcePrefix availableMemory
             | "OME-Zarr" ->
-                $"|> readZarrSlab<{pixelType}> {input} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
+                $"|> readZarrThick<{pixelType}> 0u System.UInt32.MaxValue {thickDepth} {input} {multiscaleIndex} {datasetIndex} {timepoint} {channel} {maxParallelChunks}" |> sourcePrefix availableMemory
             | "NeXus/HDF5" ->
                 $"|> readNexusSlab<{pixelType}> {input} {datasetPath} {frameAxis} {yAxis} {xAxis}" |> sourcePrefix availableMemory
             | _ ->
@@ -1212,7 +1265,7 @@ module PipelineCodeGenerator =
                 let physicalSizeY = parameterValue "physicalSizeY"
                 let physicalSizeZ = parameterValue "physicalSizeZ"
                 let maxConcurrentWrites = parameterValue "maxConcurrentWrites"
-                $">=> writeZarr {output} {name} {depth} {chunkX} {chunkY} {chunkZ} {physicalSizeX} {physicalSizeY} {physicalSizeZ} {maxConcurrentWrites}"
+                $">=> writeZarrThick {output} {name} {depth} {chunkX} {chunkY} {chunkZ} {physicalSizeX} {physicalSizeY} {physicalSizeZ} {maxConcurrentWrites}"
             | "NeXus/HDF5" ->
                 let datasetPath = quotedParameter "datasetPath"
                 let depth = parameterValue "depth"
@@ -1224,7 +1277,9 @@ module PipelineCodeGenerator =
                 let xAxis = parameterValue "xAxis"
                 $">=> writeNexus {output} {datasetPath} {depth} {chunkX} {chunkY} {chunkZ} {frameAxis} {yAxis} {xAxis}"
             | _ ->
-                $">=> write {output} {suffix}"
+                match inputSourcePortType 0 with
+                | Some(PortType.Custom "ColorImage") -> $">=> writeColor {output} {suffix}"
+                | _ -> $">=> write {output} {suffix}"
         | "WriteMesh" ->
             let output = quotedParameter "output"
             let format = quotedParameter "format"
@@ -1249,11 +1304,6 @@ module PipelineCodeGenerator =
             $">=> writeThrough {output} {suffix}"
         | "Ignore" ->
             ""
-        | "WriteSlabSlices" ->
-            let output = quotedParameter "output"
-            let suffix = quotedParameter "suffix"
-            let windowSize = parameterValue "windowSize" |> uintWindowOrDefault "1u"
-            $">=> teeFst (writeSlabSlices {output} {suffix} {windowSize})"
         | "Tap" ->
             let tapPrintNode =
                 graph.Edges
@@ -1364,54 +1414,49 @@ module PipelineCodeGenerator =
             let yAxis = quotedParameter "yAxis"
             $"showChartWithLabels {quote kind} {title} {xAxis} {yAxis} {values}"
         | "ShowImage" ->
+            let pixelType = pipelinePixelType "Float32"
             let colorMap = quotedParameter "colorMap"
             let title = quotedParameter "title"
             let xAxis = quotedParameter "xAxis"
             let yAxis = quotedParameter "yAxis"
-            $">=> show (showImageWithLabels {colorMap} {title} {xAxis} {yAxis})"
+            $">=> show (showChunkWithLabels<{pixelType}> {colorMap} {title} {xAxis} {yAxis})"
         | "SumProjection" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let functionName = savedParamValue "function" node
             $">=> sumProjection<{pixelType}> {quote functionName}"
         | "UnaryImageFunction" ->
-            $">=> {unaryImageFunctionName node}"
+            $">=> {unaryImageStageFunctionName node}"
         | "ComplexRe" ->
-            ">=> Re"
+            ">=> complex64Real"
         | "ComplexIm" ->
-            ">=> Im"
+            ">=> complex64Imag"
         | "ComplexModulus" ->
-            ">=> modulus"
+            ">=> complex64Modulus"
         | "ComplexArg" ->
-            ">=> arg"
+            ">=> complex64Argument"
         | "ComplexConjugate" ->
-            ">=> conjugate"
+            ">=> complex64Conjugate"
         | "FFT" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let chunkX = parameterValue "chunkX"
-            let chunkY = parameterValue "chunkY"
-            let chunkZ = parameterValue "chunkZ"
-            $">=> FFT<{pixelType}> {chunkX} {chunkY} {chunkZ}"
+            ">=> fft"
         | "InvFFT" ->
-            let chunkX = parameterValue "chunkX"
-            let chunkY = parameterValue "chunkY"
-            let chunkZ = parameterValue "chunkZ"
-            $">=> invFFT {chunkX} {chunkY} {chunkZ}"
+            ">=> invFft"
         | "ShiftFFT" ->
-            let chunkX = parameterValue "chunkX"
-            let chunkY = parameterValue "chunkY"
-            let chunkZ = parameterValue "chunkZ"
-            $">=> shiftFFT {chunkX} {chunkY} {chunkZ}"
+            ">=> fftShift3D"
         | "VectorElement" ->
             let componentId = parameterValue "component"
-            $">=> vectorElement<float> {componentId}"
+            let pixelType = pipelineVectorPixelType "float"
+            $">=> vectorElement<{pixelType}> {componentId}"
         | "VectorRange" ->
             let firstComponent = parameterValue "firstComponent"
             let componentCount = parameterValue "componentCount"
-            $">=> vectorRange<float> {firstComponent} {componentCount}"
+            let pixelType = pipelineVectorPixelType "float"
+            $">=> vectorRange<{pixelType}> {firstComponent} {componentCount}"
         | "Vector3ToColor" ->
             let inputMinimum = parameterValue "inputMinimum"
             let inputMaximum = parameterValue "inputMaximum"
-            $">=> vector3ToColor {inputMinimum} {inputMaximum}"
+            match pipelineVectorPixelType "float" with
+            | "float32" -> $">=> vector3ToColorFloat32 (float32 ({inputMinimum})) (float32 ({inputMaximum}))"
+            | _ -> $">=> vector3ToColor {inputMinimum} {inputMaximum}"
         | "ColorToVector3" ->
             let outputMinimum = parameterValue "outputMinimum"
             let outputMaximum = parameterValue "outputMaximum"
@@ -1425,69 +1470,83 @@ module PipelineCodeGenerator =
             let z = parameterValue "z"
             $">=> vectorAngleTo [ {x}; {y}; {z} ]"
         | "Gradient" ->
-            let order = parameterValue "order"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> gradient {order} {windowSize}"
+            let sigma = parameterValueOrDefault "sigma" "1.0"
+            let radius = parameterValueOrDefault "radius" "7"
+            let workers = parameterValueOrDefault "workers" "4"
+            $">=> gradientVector {sigma} {radius} {workers}"
         | "StructureTensor" ->
-            let sigma = parameterValue "sigma"
-            let rho = parameterValue "rho"
-            $">=> structureTensor {sigma} {rho}"
+            let sigma = parameterValueOrDefault "sigma" "1.0"
+            let radius = parameterValueOrDefault "radius" "7"
+            let rho = parameterValueOrDefault "rho" "2.0"
+            let rhoRadius = parameterValueOrDefault "rhoRadius" "7"
+            let workers = parameterValueOrDefault "workers" "4"
+            $">=> structureTensor {sigma} {radius} {rho} {rhoRadius} {workers}"
         | "PCA" ->
             let components = parameterValue "components"
-            $">=> PCA {components}"
+            $">=> pcaFloat32 {components}"
         | id when isScalarImageFunction id ->
             let value = parameterValue "value"
-            $">=> {scalarImageFunctionName node |> Option.get} {value}"
+            $">=> {scalarImageFunctionName node |> Option.get} ({value})"
         | id when pairStageFunctionName node |> Option.isSome ->
             $"{pairCompositionOperator node} {pairStageFunctionName node |> Option.get}"
         | "SmoothWGauss" ->
             let sigma = parameterValue "sigma"
-            let outputRegionMode = parameterValue "outputRegionMode" |> optionQualified "ImageFunctions"
-            let boundaryCondition = parameterValue "boundaryCondition" |> optionQualified "ImageFunctions"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> smoothWGauss {sigma} {outputRegionMode} {boundaryCondition} {windowSize}"
+            let pixelType = pipelinePixelType "Float32"
+            let radius =
+                match parameterValue "windowSize" |> optionUInt with
+                | "None" -> $"(int (System.Math.Ceiling(3.0 * ({sigma}))))"
+                | someWindow -> $"(int ((Option.get {someWindow} - 1u) / 2u))"
+            $">=> gaussianFilter<{pixelType}> {sigma} {radius} 1"
         | "Convolve" ->
             let kernel = parameterValue "kernel"
-            let outputRegionMode = parameterValue "outputRegionMode" |> optionQualified "ImageFunctions"
-            let boundaryCondition = parameterValue "boundaryCondition" |> optionQualified "ImageFunctions"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> convolve ({kernel}) {outputRegionMode} {boundaryCondition} {windowSize}"
+            let pixelType = pipelinePixelType "Float32"
+            let workers =
+                match parameterValue "windowSize" |> optionUInt with
+                | "None" -> "4"
+                | someWindow -> $"int (Option.get {someWindow})"
+            $">=> convolveFixedKernel<{pixelType}> ({kernel}) {workers}"
         | "FiniteDiff" ->
             let direction = parameterValue "direction"
             let order = parameterValue "order"
-            $">=> finiteDiff {direction} {order}"
+            let pixelType = pipelinePixelType "Float32"
+            match direction.Trim().TrimEnd('u', 'U').ToLowerInvariant() with
+            | "0" | "x" -> $">=> finiteDiffX<{pixelType}> {order} 1"
+            | "1" | "y" -> $">=> finiteDiffY<{pixelType}> {order} 1"
+            | "2" | "z" -> $">=> finiteDiffZ<{pixelType}> {order} 1"
+            | _ -> $">=> finiteDiffX<{pixelType}> {order} 1"
         | "Clamp" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let lower = parameterValue "lower"
             let upper = parameterValue "upper"
             $">=> clamp<{pixelType}> {lower} {upper}"
         | "ShiftScale" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let shift = parameterValue "shift"
             let scale = parameterValue "scale"
             $">=> shiftScale<{pixelType}> {shift} {scale}"
         | "IntensityStretch" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let inputMinimum = parameterValue "inputMinimum"
             let inputMaximum = parameterValue "inputMaximum"
             let outputMinimum = parameterValue "outputMinimum"
             let outputMaximum = parameterValue "outputMaximum"
-            $">=> intensityStretch<{pixelType}> {inputMinimum} {inputMaximum} {outputMinimum} {outputMaximum}"
+            $">=> intensityWindow<{pixelType}> {inputMinimum} {inputMaximum} {outputMinimum} {outputMaximum}"
         | "HistogramEqualization" ->
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let histogram = parameterValue "histogram"
-            $">=> histogramEqualization {histogram}"
+            $">=> histogramEqualization<{pixelType}> ({histogram} :> obj)"
         | "CreatePadding" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let beforeX = parameterValue "beforeX"
             let afterX = parameterValue "afterX"
             let beforeY = parameterValue "beforeY"
             let afterY = parameterValue "afterY"
             let beforeZ = parameterValue "beforeZ"
             let afterZ = parameterValue "afterZ"
-            let value = parameterValue "value"
-            $">=> createPadding<{pixelType}> {beforeX} {afterX} {beforeY} {afterY} {beforeZ} {afterZ} {value}"
+            let value = parameterValue "value" |> numericLiteralForPixelType pixelType
+            $">=> pad<{pixelType}> {beforeX} {afterX} {beforeY} {afterY} {beforeZ} {afterZ} {value}"
         | "Crop" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let beforeX = parameterValue "beforeX"
             let afterX = parameterValue "afterX"
             let beforeY = parameterValue "beforeY"
@@ -1496,65 +1555,78 @@ module PipelineCodeGenerator =
             let afterZ = parameterValue "afterZ"
             $">=> crop<{pixelType}> {beforeX} {afterX} {beforeY} {afterY} {beforeZ} {afterZ}"
         | "SmoothWMedian" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> smoothWMedian<{pixelType}> {radius} {windowSize}"
+            let workers =
+                match parameterValue "windowSize" |> optionUInt with
+                | "None" -> "4"
+                | someWindow -> $"int (Option.get {someWindow})"
+            let radius = $"(int ({radius}))"
+            match pixelType with
+            | "uint8" -> $">=> medianUInt8 {radius} {workers}"
+            | "uint16" -> $">=> medianUInt16 {radius} {workers}"
+            | "int" | "int32" -> $">=> medianInt32 {radius} {workers}"
+            | _ -> $">=> medianFloat32 {radius} {workers}"
         | "SmoothWBilateral" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let domainSigma = parameterValue "domainSigma"
             let rangeSigma = parameterValue "rangeSigma"
             let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> smoothWBilateral<{pixelType}> {domainSigma} {rangeSigma} {windowSize}"
         | "GradientMagnitude" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> gradientMagnitude<{pixelType}> {windowSize}"
+            let sigma = "1.0"
+            $">=> gradientMagnitude {sigma} 3 1"
         | "SobelEdge" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> sobelEdge<{pixelType}> {windowSize}"
+            $">=> sobelMagnitude 1"
         | "Laplacian" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> laplacian<{pixelType}> {windowSize}"
+            let sigma = "1.0"
+            $">=> laplacian {sigma} 3 1"
         | "GrayscaleErode" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let radius = parameterValue "radius"
             let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> grayscaleErode<{pixelType}> {radius} {windowSize}"
         | "GrayscaleDilate" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let radius = parameterValue "radius"
             let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> grayscaleDilate<{pixelType}> {radius} {windowSize}"
         | "GrayscaleOpening" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let radius = parameterValue "radius"
             let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> grayscaleOpening<{pixelType}> {radius} {windowSize}"
         | "GrayscaleClosing" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let radius = parameterValue "radius"
             let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> grayscaleClosing<{pixelType}> {radius} {windowSize}"
         | "WhiteTopHat" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> whiteTopHat<{pixelType}> {radius} {windowSize}"
+            let windowSize = savedParamValue "windowSize" node
+            if String.Equals(windowSize.Trim(), "None", StringComparison.OrdinalIgnoreCase) then
+                $">=> binaryWhiteTopHat {radius}"
+            else
+                let windowSize = numericLiteral Int32 windowSize
+                $">=> binaryWhiteTopHatWindowed {radius} {windowSize}"
         | "BlackTopHat" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> blackTopHat<{pixelType}> {radius} {windowSize}"
+            let windowSize = savedParamValue "windowSize" node
+            if String.Equals(windowSize.Trim(), "None", StringComparison.OrdinalIgnoreCase) then
+                $">=> binaryBlackTopHat {radius}"
+            else
+                let windowSize = numericLiteral Int32 windowSize
+                $">=> binaryBlackTopHatWindowed {radius} {windowSize}"
         | "MorphologicalGradient" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> morphologicalGradient<{pixelType}> {radius} {windowSize}"
+            let windowSize = savedParamValue "windowSize" node
+            if String.Equals(windowSize.Trim(), "None", StringComparison.OrdinalIgnoreCase) then
+                $">=> binaryGradient {radius}"
+            else
+                let windowSize = numericLiteral Int32 windowSize
+                $">=> binaryGradientWindowed {radius} {windowSize}"
         | "ImageComparison" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             $">=> {comparisonStageFunctionName node}<{pixelType}>"
         | "MaskLogic" ->
             $">=> {maskLogicStageFunctionName node}"
@@ -1562,12 +1634,19 @@ module PipelineCodeGenerator =
             ">=> maskNot"
         | "BinaryContour" ->
             let fullyConnected = parameterValue "fullyConnected"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> binaryContour {fullyConnected} {windowSize}"
+            let windowSize = savedParamValue "windowSize" node
+            if String.Equals(windowSize.Trim(), "None", StringComparison.OrdinalIgnoreCase) then
+                $">=> binaryContour {fullyConnected}"
+            else
+                let windowSize = numericLiteral Int32 windowSize
+                $">=> binaryContourWindowed {fullyConnected} {windowSize}"
         | "BinaryMedian" ->
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> binaryMedian {radius} {windowSize}"
+            let workers =
+                match parameterValue "windowSize" |> optionUInt with
+                | "None" -> "4"
+                | someWindow -> $"int (Option.get {someWindow})"
+            $">=> medianUInt8 (int ({radius})) {workers}"
         | "RemoveSmallObjects" ->
             let maximumVolume = parameterValue "maximumVolume"
             let connectivity = parameterValue "connectivity"
@@ -1587,7 +1666,7 @@ module PipelineCodeGenerator =
             let toLabel = parameterValue "toLabel"
             $">=> changeLabel<{pixelType}> {fromLabel} {toLabel}"
         | "ComputeStats" ->
-            ">=> computeStats ()"
+            $">=> computeStats ()"
         | "SurfaceArea" ->
             let xUnit = parameterValue "xUnit"
             let yUnit = parameterValue "yUnit"
@@ -1599,37 +1678,37 @@ module PipelineCodeGenerator =
             let zUnit = parameterValue "zUnit"
             $">=> volume {xUnit} {yUnit} {zUnit}"
         | "FitBiasModel" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let order = parameterValue "order"
             let depth = parameterValue "depth"
             $">=> fitBiasModel<{pixelType}> {order} {depth}"
         | "FitBiasModelMasked" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let order = parameterValue "order"
             let depth = parameterValue "depth"
             $">=> fitBiasModelMasked<{pixelType}> {order} {depth}"
         | "CorrectBias" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let model = parameterValue "model"
             $">=> correctBias<{pixelType}> {model}"
         | "CorrectBiasMasked" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let model = parameterValue "model"
             $">=> correctBiasMasked<{pixelType}> {model}"
         | "SerialPolynomialBiasCorrect" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let order = parameterValue "order"
             $">=> serialPolynomialBiasCorrect<{pixelType}> {order}"
         | "SerialEstTrans" ->
-            let pixelType = pipelinePixelType "Float64"
+            let pixelType = pipelinePixelType "Float32"
             let searchRadius = parameterValue "searchRadius"
             let method = quotedParameter "method"
             let scale = parameterValue "scale"
             let pixelFraction = parameterValue "pixelFraction"
             $">=> serialEstTrans<{pixelType}> {searchRadius} {method} {scale} {pixelFraction}"
         | "SerialApplyTrans" ->
-            let pixelType = pipelinePixelType "Float64"
-            let background = parameterValue "background"
+            let pixelType = pipelinePixelType "Float32"
+            let background = parameterValue "background" |> numericLiteralForPixelType pixelType
             let geometryExpression = parameterExpression "geometry"
             let geometry =
                 if geometryExpression.IsLinked then
@@ -1640,10 +1719,10 @@ module PipelineCodeGenerator =
                     geometryExpression.Value
             $">=> serialApplyTrans<{pixelType}> {background} {geometry}"
         | "SerialEstBoundingBox" ->
-            let pixelType = pipelinePixelType "Float64"
+            let pixelType = pipelinePixelType "Float32"
             $">=> serialEstBoundingBox<{pixelType}>"
         | "SerialApplyManifestInBoundingBox" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let manifest = parameterValue "manifest"
             let background = parameterValue "background"
             $">=> serialApplyManifestInBoundingBox<{pixelType}> {manifest} {background}"
@@ -1653,78 +1732,63 @@ module PipelineCodeGenerator =
             let zUnit = parameterValue "zUnit"
             $">=> pointPairDistances {xUnit} {yUnit} {zUnit}"
         | "AddNormalNoise" ->
+            let pixelType = pipelinePixelType "Float32"
             let mean = parameterValue "mean"
             let std = parameterValue "std"
-            $">=> addNormalNoise {mean} {std}"
+            $">=> addNormalNoise<{pixelType}> {mean} {std}"
         | "AddSaltAndPepperNoise" ->
+            let pixelType = pipelinePixelType "Float32"
             let probability = parameterValue "probability"
-            $">=> addSaltAndPepperNoise {probability}"
+            $">=> addSaltAndPepperNoise<{pixelType}> {probability}"
         | "AddShotNoise" ->
+            let pixelType = pipelinePixelType "Float32"
             let scale = parameterValue "scale"
-            $">=> addShotNoise {scale}"
+            $">=> addShotNoise<{pixelType}> {scale}"
         | "AddSpeckleNoise" ->
             let std = parameterValue "std"
             $">=> addSpeckleNoise {std}"
         | "Threshold" ->
+            let pixelType = pipelinePixelType "Float32"
             let lower = parameterValue "lower"
             let upper = parameterValue "upper"
-            $">=> threshold {lower} {upper}"
-        | "WindowSlabRoundtrip" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let windowSize = parameterValue "windowSize"
-            $">=> windowSlabRoundtrip<{pixelType}> {windowSize}"
-        | "WindowedCast" ->
-            let sourceType = pixelTypeNameFromParameter "sourceType" "Float64" node
-            let targetType = pixelTypeNameFromParameter "targetType" "UInt8" node
-            let windowSize = parameterValue "windowSize"
-            $">=> windowedCast<{sourceType}, {targetType}> {windowSize}"
-        | "WindowedThreshold" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
-            let lower = parameterValue "lower"
-            let upper = parameterValue "upper"
-            let windowSize = parameterValue "windowSize"
-            $">=> windowedThreshold<{pixelType}> {windowSize} {lower} {upper}"
+            $">=> thresholdRange<{pixelType}> {lower} {upper}"
         | "Erode" ->
             let radius = parameterValue "radius"
-            $">=> erode {radius}"
+            $">=> binaryErode {radius}"
         | "Dilate" ->
             let radius = parameterValue "radius"
-            $">=> dilate {radius}"
+            $">=> binaryDilate {radius}"
         | "DilateZonohedral" ->
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> dilateZonohedral {radius} {windowSize}"
+            $">=> binaryDilate {radius}"
         | "ErodeZonohedral" ->
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> erodeZonohedral {radius} {windowSize}"
+            $">=> binaryErode {radius}"
         | "Opening" ->
             let radius = parameterValue "radius"
-            $">=> opening {radius}"
+            $">=> binaryOpening {radius}"
         | "OpeningZonohedral" ->
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> openingZonohedral {radius} {windowSize}"
+            $">=> binaryOpening {radius}"
         | "Closing" ->
             let radius = parameterValue "radius"
-            $">=> closing {radius}"
+            $">=> binaryClosing {radius}"
         | "ClosingZonohedral" ->
             let radius = parameterValue "radius"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> closingZonohedral {radius} {windowSize}"
+            $">=> binaryClosing {radius}"
         | "ConnectedComponents" ->
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> connectedComponents {windowSize}"
-        | "RelabelComponents" ->
-            let minimumObjectSize = parameterValue "minimumObjectSize"
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> relabelComponents {minimumObjectSize} {windowSize}"
+            let windowSize = savedParamValue "windowSize" node
+            if String.Equals(windowSize.Trim(), "None", StringComparison.OrdinalIgnoreCase) then
+                ">=> connectedComponentsUInt32 ()"
+            else
+                let windowSize = numericLiteral Int32 windowSize
+                $">=> connectedComponentsUInt32Windowed {windowSize} System.Environment.ProcessorCount"
         | "MarchingCubes" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let surfaceValue = parameterValue "surfaceValue"
             $">=> marchingCubes<{pixelType}> {surfaceValue}"
         | "DogKeypoints" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let sigma0 = parameterValue "sigma0"
             let scaleFactor = parameterValue "scaleFactor"
             let scaleLevels = parameterValue "scaleLevels"
@@ -1732,7 +1796,7 @@ module PipelineCodeGenerator =
             let stride = parameterValue "stride"
             $">=> dogKeypoints<{pixelType}> {sigma0} {scaleFactor} {scaleLevels} {contrastThreshold} {stride}"
         | "SiftKeypoints" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let sigma0 = parameterValue "sigma0"
             let scaleFactor = parameterValue "scaleFactor"
             let scaleLevels = parameterValue "scaleLevels"
@@ -1740,20 +1804,20 @@ module PipelineCodeGenerator =
             let stride = parameterValue "stride"
             $">=> siftKeypoints<{pixelType}> {sigma0} {scaleFactor} {scaleLevels} {contrastThreshold} {stride}"
         | "LogBlobKeypoints" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let sigma = parameterValue "sigma"
             let threshold = parameterValue "threshold"
             let stride = parameterValue "stride"
             $">=> logBlobKeypoints<{pixelType}> {sigma} {threshold} {stride}"
         | "HessianKeypoints" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let sigma = parameterValue "sigma"
             let responseKind = quotedParameter "responseKind"
             let threshold = parameterValue "threshold"
             let stride = parameterValue "stride"
             $">=> hessianKeypoints<{pixelType}> {sigma} {responseKind} {threshold} {stride}"
         | "Harris3DKeypoints" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let sigma = parameterValue "sigma"
             let rho = parameterValue "rho"
             let k = parameterValue "k"
@@ -1761,14 +1825,14 @@ module PipelineCodeGenerator =
             let stride = parameterValue "stride"
             $">=> harris3DKeypoints<{pixelType}> {sigma} {rho} {k} {threshold} {stride}"
         | "Forstner3DKeypoints" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let sigma = parameterValue "sigma"
             let rho = parameterValue "rho"
             let threshold = parameterValue "threshold"
             let stride = parameterValue "stride"
             $">=> forstner3DKeypoints<{pixelType}> {sigma} {rho} {threshold} {stride}"
         | "PhaseCongruencyKeypoints" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float64" node
+            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let sigma = parameterValue "sigma"
             let threshold = parameterValue "threshold"
             let stride = parameterValue "stride"
@@ -1791,29 +1855,20 @@ module PipelineCodeGenerator =
         | "SignedDistanceBand" ->
             let bandRadius = parameterValue "bandRadius"
             let stride = parameterValue "stride"
-            $">=> signedDistanceBand {bandRadius} {stride}"
-        | "ComponentTranslationTable" ->
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> makeConnectedComponentTranslationTable {windowSize}"
-        | "CollapseComponentLabels" ->
-            let windowSize = parameterValue "windowSize" |> optionUInt
-            let translationTable = parameterValue "translationTable"
-            $">=> updateConnectedComponents {windowSize} {translationTable}"
+            $">=> signedDistanceBand {bandRadius} {stride} 1"
         | "PermuteAxes" ->
-            let axes = parameterValue "axes" |> uintTuple3Literal
-            let tileSize = parameterValue "tileSize"
-            $">=> permuteAxes {axes} {tileSize}"
+            let axes = parameterValue "axes" |> intArray3Literal
+            $">=> permuteAxes {axes}"
         | "ResampleAffine" ->
             let lerp = parameterValue "lerp"
-            let windowSize = parameterValue "windowSize" |> optionInt
             let inputGeometry = parameterValue "inputGeometry"
             let outputGeometry = parameterValue "outputGeometry"
             let affine = parameterValue "affine"
             let background = parameterValue "background"
-            $">=> resampleAffine {lerp} {windowSize} {inputGeometry} {outputGeometry} {affine} {background}"
+            $">=> resampleAffine {lerp} {inputGeometry} {outputGeometry} {affine} {background}"
         | "Cast" ->
-            let sourceType = pixelTypeNameFromParameter "sourceType" "Float64" node
-            let targetType = pixelTypeNameFromParameter "targetType" "Float64" node
+            let sourceType = pixelTypeNameFromParameter "sourceType" "Float32" node
+            let targetType = pixelTypeNameFromParameter "targetType" "Float32" node
             $">=> cast<{sourceType},{targetType}>"
         | _ ->
             $"// Unsupported element: {node.FunctionId}"
@@ -1894,20 +1949,8 @@ module PipelineCodeGenerator =
             Array.concat [ producerNames; singleValueNames; expandNames ]
             |> Map.ofArray
 
-        let translationTableNodesWithLinkedOutputs =
-            graph.Edges
-            |> Array.choose (fun edge ->
-                if edge.FromKind = "reducerOutput" && edge.ToKind = "parameterInput" then
-                    nodesById |> Map.tryFind edge.FromNode
-                else
-                    None)
-            |> Array.filter isTranslationTableNode
-            |> Array.distinctBy _.Id
-
         let translationTableNamesByNodeId =
-            translationTableNodesWithLinkedOutputs
-            |> Array.mapi (fun index node -> node.Id, $"TranslationTable{index}")
-            |> Map.ofArray
+            Map.empty<string, string>
 
         let histogramNodesWithLinkedOutputs =
             graph.Edges
@@ -1939,35 +1982,35 @@ module PipelineCodeGenerator =
             |> Array.mapi (fun index node -> node.Id, $"Quantiles{index}")
             |> Map.ofArray
 
-        let stackInfoExpandNodesWithLinkedOutputs =
-            expandNodesFor (fun node -> isWriteStackInfoNode node || isReadStackInfoNode node)
+        let imageInfoExpandNodesWithLinkedOutputs =
+            expandNodesFor (fun node -> isImageInfoNode node || isWriteImageInfoNode node || isReadImageInfoNode node)
 
-        let stackInfoProducerNodesForExpand =
-            stackInfoExpandNodesWithLinkedOutputs
+        let imageInfoProducerNodesForExpand =
+            imageInfoExpandNodesWithLinkedOutputs
             |> Array.choose expandSourceNode
             |> Array.distinctBy _.Id
 
-        let stackInfoProducerNodesWithDirectLinkedOutputs =
+        let imageInfoProducerNodesWithDirectLinkedOutputs =
             graph.Edges
             |> Array.choose (fun edge ->
                 if edge.FromKind = "reducerOutput" && edge.ToKind = "parameterInput" then
                     nodesById |> Map.tryFind edge.FromNode
                 else
                     None)
-            |> Array.filter (fun node -> isWriteStackInfoNode node || isReadStackInfoNode node)
+            |> Array.filter (fun node -> isImageInfoNode node || isWriteImageInfoNode node || isReadImageInfoNode node)
             |> Array.distinctBy _.Id
 
-        let stackInfoProducerNodesWithLinkedOutputs =
-            Array.concat [ stackInfoProducerNodesForExpand; stackInfoProducerNodesWithDirectLinkedOutputs ]
+        let imageInfoProducerNodesWithLinkedOutputs =
+            Array.concat [ imageInfoProducerNodesForExpand; imageInfoProducerNodesWithDirectLinkedOutputs ]
             |> Array.distinctBy _.Id
 
-        let stackInfoNamesByNodeId =
+        let imageInfoNamesByNodeId =
             let producerNames =
-                stackInfoProducerNodesWithLinkedOutputs
-                |> Array.mapi (fun index node -> node.Id, $"StackInfo{index}")
+                imageInfoProducerNodesWithLinkedOutputs
+                |> Array.mapi (fun index node -> node.Id, $"ImageInfo{index}")
 
             let expandNames =
-                stackInfoExpandNodesWithLinkedOutputs
+                imageInfoExpandNodesWithLinkedOutputs
                 |> Array.mapi (fun index node -> node.Id, $"Expand{index + statsExpandNodesWithLinkedOutputs.Length}")
 
             Array.concat [ producerNames; expandNames ]
@@ -2012,7 +2055,7 @@ module PipelineCodeGenerator =
 
             let expandNames =
                 chunkInfoExpandNodesWithLinkedOutputs
-                |> Array.mapi (fun index node -> node.Id, $"Expand{index + statsExpandNodesWithLinkedOutputs.Length + stackInfoExpandNodesWithLinkedOutputs.Length}")
+                |> Array.mapi (fun index node -> node.Id, $"Expand{index + statsExpandNodesWithLinkedOutputs.Length + imageInfoExpandNodesWithLinkedOutputs.Length}")
 
             Array.concat [ producerNames; expandNames ]
             |> Map.ofArray
@@ -2068,7 +2111,7 @@ module PipelineCodeGenerator =
                             match quantileNamesByNodeId |> Map.tryFind edge.FromNode with
                             | Some name -> Some name
                             | None ->
-                                match stackInfoNamesByNodeId |> Map.tryFind edge.FromNode with
+                                match imageInfoNamesByNodeId |> Map.tryFind edge.FromNode with
                                 | Some name -> Some name
                                 | None ->
                                     match chunkInfoNamesByNodeId |> Map.tryFind edge.FromNode with
@@ -2136,7 +2179,6 @@ module PipelineCodeGenerator =
         let validationError =
             let isReducerOutputNode (node: SavedNode) =
                 isSingleValueReducerNode node
-                || isTranslationTableNode node
                 || isHistogramDataNode node
                 || isQuantilesNode node
                 || isSerialVolumeGeometryNode node
@@ -2192,7 +2234,7 @@ module PipelineCodeGenerator =
                     None)
 
         let stageCall (node: SavedNode) =
-            let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node
+            let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node
 
             if line.StartsWith(">=> ", StringComparison.Ordinal) then
                 Some(line.Substring(4))
@@ -2216,7 +2258,7 @@ module PipelineCodeGenerator =
                         | "SerialEstTrans", 0 ->
                             inferredImagePixelType visited sourceNode 0
                         | "Cast", 0 ->
-                            Some(pixelTypeNameFromParameter "targetType" "Float64" sourceNode)
+                            Some(pixelTypeNameFromParameter "targetType" "Float32" sourceNode)
                         | _ ->
                             let configured = savedParamValue "type" sourceNode
                             if String.IsNullOrWhiteSpace configured then None else Some(pixelTypeNameFromSuffix configured)))
@@ -2247,7 +2289,7 @@ module PipelineCodeGenerator =
                                 let components =
                                     if String.IsNullOrWhiteSpace rawComponents then "3u"
                                     else numericLiteral UInt32 rawComponents
-                                $"{upstreamExpression}{newLine}>=> selectGroupedOutput ({components} + 1u) {edge.FromPort}u"
+                                $"{upstreamExpression}{newLine}>=> selectGroupedVectorOutput ({components} + 1u) {edge.FromPort}u"
                             elif upstream.FunctionId = "AffineRegistration" && edge.FromPort >= 0 && edge.FromPort <= 1 then
                                 $"{upstreamExpression}{newLine}>=> selectGroupedValueOutput 2u {edge.FromPort}u"
                             elif upstream.FunctionId = "EstimateHistogram" && edge.FromPort = 0 then
@@ -2325,7 +2367,7 @@ module PipelineCodeGenerator =
                     let right = inputExpression 1 |> parenthesizeBlock
                     $"({newLine}{indentBlock 4 left},{newLine}{indentBlock 4 right}{newLine}){newLine}||> zip{newLine}>=> {stage}"
                 | _ ->
-                    let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node
+                    let line = savedElementLine graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node
 
                     match incomingDataEdge node.Id 0 with
                     | Some _ ->
@@ -2365,8 +2407,6 @@ module PipelineCodeGenerator =
                     | "AffineRegistration"
                     | "SerialEstBoundingBox" ->
                         $"{expression}{newLine}|> drain"
-                    | "ComponentTranslationTable" ->
-                        $"{expression}{newLine}|> drain"
                     | "Histogram" ->
                         $"{expression}{newLine}|> drain"
                     | "ImHistogramData" ->
@@ -2387,7 +2427,7 @@ module PipelineCodeGenerator =
                         let components =
                             if String.IsNullOrWhiteSpace rawComponents then "3u"
                             else numericLiteral UInt32 rawComponents
-                        $"{upstreamExpression}{newLine}>=> selectGroupedOutput ({components} + 1u) {edge.FromPort}u"
+                        $"{upstreamExpression}{newLine}>=> selectGroupedVectorOutput ({components} + 1u) {edge.FromPort}u"
                     elif upstream.FunctionId = "AffineRegistration" && edge.FromPort >= 0 && edge.FromPort <= 1 then
                         $"{upstreamExpression}{newLine}>=> selectGroupedValueOutput 2u {edge.FromPort}u"
                     elif upstream.FunctionId = "EstimateHistogram" && edge.FromPort = 0 then
@@ -2414,7 +2454,7 @@ module PipelineCodeGenerator =
                     && not (translationTableNamesByNodeId |> Map.containsKey node.Id)
                     && not (histogramNamesByNodeId |> Map.containsKey node.Id)
                     && not (quantileNamesByNodeId |> Map.containsKey node.Id)
-                    && not (stackInfoNamesByNodeId |> Map.containsKey node.Id)
+                    && not (imageInfoNamesByNodeId |> Map.containsKey node.Id)
                     && not (chunkInfoNamesByNodeId |> Map.containsKey node.Id)
                     && not (serialGeometryNamesByNodeId |> Map.containsKey node.Id)
                     && not (dataEdges |> Array.exists (fun edge -> edge.FromNode = node.Id)))
@@ -2531,22 +2571,14 @@ module PipelineCodeGenerator =
             let scalarBindings =
                 scalarNodes
                 |> Array.map (fun node ->
-                    let name, text = scalarBinding graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node
+                    let name, text = scalarBinding graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node
 
                     { Name = name
                       Dependencies = parameterBindingDependencies node |> Set.remove name
                       Text = text })
 
             let translationTableBindings =
-                translationTableNodesWithLinkedOutputs
-                |> Array.map (fun node ->
-                    let name = translationTableNamesByNodeId |> Map.find node.Id
-                    let expression = pipelineExpression Set.empty node
-                    let body = indentBlock 4 $"{expression}{newLine}|> drain"
-
-                    { Name = name
-                      Dependencies = pipelineBindingDependencies Set.empty node |> Set.remove name
-                      Text = $"let {name} ={newLine}{body}" })
+                Array.empty
 
             let histogramBindings =
                 histogramNodesWithLinkedOutputs
@@ -2567,7 +2599,7 @@ module PipelineCodeGenerator =
                     let parameter key =
                         node.Parameters
                         |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-                        |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                        |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
                         |> Option.defaultValue { Value = savedParamValue key node; IsLinked = false }
 
                     let numericParameter key =
@@ -2591,19 +2623,53 @@ module PipelineCodeGenerator =
 
                     { Name = name
                       Dependencies = parameterBindingDependencies node |> Set.remove name
-                      Text = $"let {name} = quantiles [{quantileValues}] {histogram}" })
+                      Text = $"let {name} = quantiles [{quantileValues}] ({histogram} :> obj)" })
 
-            let stackInfoBindings =
-                let stackInfoProducerBindings =
-                    stackInfoProducerNodesWithLinkedOutputs
+            let imageInfoBindings =
+                let imageInfoProducerBindings =
+                    imageInfoProducerNodesWithLinkedOutputs
                     |> Array.map (fun node ->
                         match node.FunctionId with
-                        | "Read" ->
-                            let name = stackInfoNamesByNodeId |> Map.find node.Id
+                        | "GetZarrInfo" ->
+                            let name = imageInfoNamesByNodeId |> Map.find node.Id
                             let parameter key =
                                 node.Parameters
                                 |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                                |> Option.defaultValue { Value = savedParamValue key node; IsLinked = false }
+                            let stringArgument key =
+                                let expression = parameter key
+                                if expression.IsLinked then expression.Value else quote expression.Value
+                            let input = stringArgument "input"
+                            let multiscaleIndex = (parameter "multiscaleIndex").Value
+                            let datasetIndex = (parameter "datasetIndex").Value
+                            { Name = name
+                              Dependencies = parameterBindingDependencies node |> Set.remove name
+                              Text = $"let {name} = getZarrInfo {input} {multiscaleIndex} {datasetIndex}" }
+                        | "GetNexusInfo" ->
+                            let name = imageInfoNamesByNodeId |> Map.find node.Id
+                            let parameter key =
+                                node.Parameters
+                                |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
+                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                                |> Option.defaultValue { Value = savedParamValue key node; IsLinked = false }
+                            let stringArgument key =
+                                let expression = parameter key
+                                if expression.IsLinked then expression.Value else quote expression.Value
+                            let input = stringArgument "input"
+                            let datasetPath = stringArgument "datasetPath"
+                            let frameAxis = (parameter "frameAxis").Value
+                            let yAxis = (parameter "yAxis").Value
+                            let xAxis = (parameter "xAxis").Value
+                            { Name = name
+                              Dependencies = parameterBindingDependencies node |> Set.remove name
+                              Text = $"let {name} = getNexusInfo {input} {datasetPath} {frameAxis} {yAxis} {xAxis}" }
+                        | "Read" ->
+                            let name = imageInfoNamesByNodeId |> Map.find node.Id
+                            let parameter key =
+                                node.Parameters
+                                |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
+                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
                                 |> Option.defaultValue { Value = savedParamValue key node; IsLinked = false }
                             let stringArgument key =
                                 let expression = parameter key
@@ -2622,20 +2688,28 @@ module PipelineCodeGenerator =
                             let suffix = stringArgumentOrDefault "suffix" ".tiff"
                             let format = savedParamValue "format" node
                             let text =
-                                if format = "Volume file" then
-                                    let volumeInput = $"(volumeFilePath {input} {suffix})"
-                                    $"let {name} = getFileInfo {volumeInput}"
-                                else
-                                    $"let {name} = getStackInfo {input} {suffix}"
+                                match format with
+                                | "Volume file" -> $"let {name} = getImageFileInfo {input} {suffix}"
+                                | "OME-Zarr" ->
+                                    let multiscaleIndex = (parameter "multiscaleIndex").Value
+                                    let datasetIndex = (parameter "datasetIndex").Value
+                                    $"let {name} = getZarrInfo {input} {multiscaleIndex} {datasetIndex}"
+                                | "NeXus/HDF5" ->
+                                    let datasetPath = stringArgument "datasetPath"
+                                    let frameAxis = (parameter "frameAxis").Value
+                                    let yAxis = (parameter "yAxis").Value
+                                    let xAxis = (parameter "xAxis").Value
+                                    $"let {name} = getNexusInfo {input} {datasetPath} {frameAxis} {yAxis} {xAxis}"
+                                | _ -> $"let {name} = getImageInfo {input} {suffix}"
                             { Name = name
                               Dependencies = parameterBindingDependencies node |> Set.remove name
                               Text = text }
                         | "ReadRandom" ->
-                            let name = stackInfoNamesByNodeId |> Map.find node.Id
+                            let name = imageInfoNamesByNodeId |> Map.find node.Id
                             let parameter key =
                                 node.Parameters
                                 |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
                                 |> Option.defaultValue { Value = savedParamValue key node; IsLinked = false }
                             let stringArgument key =
                                 let expression = parameter key
@@ -2649,48 +2723,78 @@ module PipelineCodeGenerator =
                             let suffix = stringArgumentOrDefault "suffix" ".tiff"
                             let text =
                                 match savedParamValue "format" node with
-                                | "Volume file" ->
-                                    let volumeInput = $"(volumeFilePath {input} {suffix})"
-                                    $"let {name} = getFileInfo {volumeInput}"
-                                | _ ->
-                                    $"let {name} = getStackInfo {input} {suffix}"
+                                | "Volume file" -> $"let {name} = getImageFileInfo {input} {suffix}"
+                                | "OME-Zarr" ->
+                                    let multiscaleIndex = (parameter "multiscaleIndex").Value
+                                    let datasetIndex = (parameter "datasetIndex").Value
+                                    $"let {name} = getZarrInfo {input} {multiscaleIndex} {datasetIndex}"
+                                | "NeXus/HDF5" ->
+                                    let datasetPath = stringArgument "datasetPath"
+                                    let frameAxis = (parameter "frameAxis").Value
+                                    let yAxis = (parameter "yAxis").Value
+                                    let xAxis = (parameter "xAxis").Value
+                                    $"let {name} = getNexusInfo {input} {datasetPath} {frameAxis} {yAxis} {xAxis}"
+                                | _ -> $"let {name} = getImageInfo {input} {suffix}"
                             { Name = name
                               Dependencies = parameterBindingDependencies node |> Set.remove name
                               Text = text }
                         | "ReadRange" ->
-                            let name = stackInfoNamesByNodeId |> Map.find node.Id
+                            let name = imageInfoNamesByNodeId |> Map.find node.Id
                             let parameter key =
                                 node.Parameters
                                 |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
                                 |> Option.defaultValue { Value = savedParamValue key node; IsLinked = false }
                             let stringArgument key =
                                 let expression = parameter key
                                 if expression.IsLinked then expression.Value else quote expression.Value
                             let input = stringArgument "input"
                             let suffix = stringArgument "suffix"
+                            let format = savedParamValue "format" node
+                            let text =
+                                match format with
+                                | "Volume file" -> $"let {name} = getImageFileInfo {input} {suffix}"
+                                | "OME-Zarr" ->
+                                    let multiscaleIndex = (parameter "multiscaleIndex").Value
+                                    let datasetIndex = (parameter "datasetIndex").Value
+                                    $"let {name} = getZarrInfo {input} {multiscaleIndex} {datasetIndex}"
+                                | "NeXus/HDF5" ->
+                                    let datasetPath = stringArgument "datasetPath"
+                                    let frameAxis = (parameter "frameAxis").Value
+                                    let yAxis = (parameter "yAxis").Value
+                                    let xAxis = (parameter "xAxis").Value
+                                    $"let {name} = getNexusInfo {input} {datasetPath} {frameAxis} {yAxis} {xAxis}"
+                                | _ -> $"let {name} = getImageInfo {input} {suffix}"
                             { Name = name
                               Dependencies = parameterBindingDependencies node |> Set.remove name
-                              Text = $"let {name} = getStackInfo {input} {suffix}" }
+                              Text = text }
                         | "Write" ->
                             let parameter key =
                                 node.Parameters
                                 |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                                |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
                                 |> Option.defaultValue { Value = savedParamValue key node; IsLinked = false }
 
                             let stringArgument key =
                                 let expression = parameter key
                                 if expression.IsLinked then expression.Value else quote expression.Value
 
-                            let name = stackInfoNamesByNodeId |> Map.find node.Id
+                            let name = imageInfoNamesByNodeId |> Map.find node.Id
                             let expression = pipelineExpression Set.empty node
                             let output = stringArgument "output"
                             let suffix = stringArgument "suffix"
+                            let format = savedParamValue "format" node
                             let infoExpression =
-                                match savedParamValue "format" node with
-                                | "Volume file" -> $"getFileInfo (volumeFilePath {output} {suffix})"
-                                | _ -> $"getStackInfo {output} {suffix}"
+                                match format with
+                                | "Volume file" -> $"getImageFileInfo {output} {suffix}"
+                                | "OME-Zarr" -> $"getZarrInfo {output} 0 0"
+                                | "NeXus/HDF5" ->
+                                    let datasetPath = stringArgument "datasetPath"
+                                    let frameAxis = (parameter "frameAxis").Value
+                                    let yAxis = (parameter "yAxis").Value
+                                    let xAxis = (parameter "xAxis").Value
+                                    $"getNexusInfo {output} {datasetPath} {frameAxis} {yAxis} {xAxis}"
+                                | _ -> $"getImageInfo {output} {suffix}"
                             let body = indentBlock 4 $"{expression}{newLine}|> sink{newLine}{infoExpression}"
 
                             { Name = name
@@ -2701,12 +2805,12 @@ module PipelineCodeGenerator =
                                   |> Set.remove name
                               Text = $"let {name} ={newLine}{body}" }
                         | _ ->
-                            failwith $"Unsupported StackInfo producer: {node.FunctionId}")
+                            failwith $"Unsupported ImageInfo producer: {node.FunctionId}")
 
-                let stackInfoExpandBindings =
-                    stackInfoExpandNodesWithLinkedOutputs
+                let imageInfoExpandBindings =
+                    imageInfoExpandNodesWithLinkedOutputs
                     |> Array.map (fun node ->
-                        let name = stackInfoNamesByNodeId |> Map.find node.Id
+                        let name = imageInfoNamesByNodeId |> Map.find node.Id
 
                         let sourceName =
                             graph.Edges
@@ -2715,13 +2819,13 @@ module PipelineCodeGenerator =
                                 && edge.ToKind <> "parameterInput"
                                 && edge.ToPort = 0)
                             |> Option.bind bindingNameForOutput
-                            |> Option.defaultWith (fun () -> failwith $"Expand node '{node.Id}' is missing a StackInfo input.")
+                            |> Option.defaultWith (fun () -> failwith $"Expand node '{node.Id}' is missing a ImageInfo input.")
 
                         { Name = name
                           Dependencies = Set.singleton sourceName
                           Text = $"let {name} = {sourceName}" })
 
-                Array.concat [ stackInfoProducerBindings; stackInfoExpandBindings ]
+                Array.concat [ imageInfoProducerBindings; imageInfoExpandBindings ]
 
             let chunkInfoBindings =
                 let chunkInfoProducerBindings =
@@ -2730,7 +2834,7 @@ module PipelineCodeGenerator =
                         let parameter key =
                             node.Parameters
                             |> Seq.tryFindIndex (fun parameter -> parameter.Key = key)
-                            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
+                            |> Option.map (fun index -> parameterExpression graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node index key)
                             |> Option.defaultValue { Value = savedParamValue key node; IsLinked = false }
 
                         let stringArgument key =
@@ -2738,58 +2842,12 @@ module PipelineCodeGenerator =
                             if expression.IsLinked then expression.Value else quote expression.Value
 
                         match node.FunctionId with
-                        | "GetChunkInfo"
-                        | "GetZarrInfo"
-                        | "GetNexusInfo" ->
-                            let name, text = chunkInfoBinding graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId stackInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node
+                        | "GetChunkInfo" ->
+                            let name, text = chunkInfoBinding graph nodesById scalarNamesByNodeId statsNamesByNodeId translationTableNamesByNodeId histogramNamesByNodeId quantileNamesByNodeId imageInfoNamesByNodeId chunkInfoNamesByNodeId serialGeometryNamesByNodeId node
 
                             { Name = name
                               Dependencies = parameterBindingDependencies node |> Set.remove name
                               Text = text }
-                        | "Read"
-                        | "ReadRandom"
-                        | "ReadSlab" ->
-                            let name = chunkInfoNamesByNodeId |> Map.find node.Id
-                            let input = stringArgument "input"
-                            let suffix = stringArgument "suffix"
-                            let multiscaleIndex = (parameter "multiscaleIndex").Value
-                            let datasetIndex = (parameter "datasetIndex").Value
-                            let datasetPath = stringArgument "datasetPath"
-                            let frameAxis = (parameter "frameAxis").Value
-                            let yAxis = (parameter "yAxis").Value
-                            let xAxis = (parameter "xAxis").Value
-                            let text =
-                                match savedParamValue "format" node with
-                                | "OME-Zarr" -> $"let {name} = getZarrInfo {input} {multiscaleIndex} {datasetIndex}"
-                                | "NeXus/HDF5" -> $"let {name} = getNexusInfo {input} {datasetPath} {frameAxis} {yAxis} {xAxis}"
-                                | _ -> $"let {name} = getChunkInfo {input} {suffix}"
-                            { Name = name
-                              Dependencies = parameterBindingDependencies node |> Set.remove name
-                              Text = text }
-                        | "Write" ->
-                            let name = chunkInfoNamesByNodeId |> Map.find node.Id
-                            let expression = pipelineExpression Set.empty node
-                            let output = stringArgument "output"
-                            let multiscaleIndex = "0"
-                            let datasetIndex = "0"
-                            let datasetPath = stringArgument "datasetPath"
-                            let frameAxis = (parameter "frameAxis").Value
-                            let yAxis = (parameter "yAxis").Value
-                            let xAxis = (parameter "xAxis").Value
-                            let format = savedParamValue "format" node
-                            let infoExpression =
-                                match format with
-                                | "OME-Zarr" -> $"getZarrInfo {output} {multiscaleIndex} {datasetIndex}"
-                                | "NeXus/HDF5" -> $"getNexusInfo {output} {datasetPath} {frameAxis} {yAxis} {xAxis}"
-                                | _ -> failwith $"Write node '{node.Id}' does not produce ChunkInfo for format '{format}'."
-                            let body = indentBlock 4 $"{expression}{newLine}|> sink{newLine}{infoExpression}"
-                            { Name = name
-                              Dependencies =
-                                  Set.union
-                                      (pipelineBindingDependencies Set.empty node)
-                                      (parameterBindingDependencies node)
-                                  |> Set.remove name
-                              Text = $"let {name} ={newLine}{body}" }
                         | "WriteChunks" ->
                             let name = chunkInfoNamesByNodeId |> Map.find node.Id
                             let expression = pipelineExpression Set.empty node
@@ -2836,7 +2894,7 @@ module PipelineCodeGenerator =
                       Dependencies = pipelineBindingDependencies Set.empty node |> Set.remove name
                       Text = $"let {name} ={newLine}{body}" })
 
-            let bindings = Array.concat [ scalarBindings; statsBindings; translationTableBindings; histogramBindings; quantileBindings; stackInfoBindings; chunkInfoBindings; serialGeometryBindings ]
+            let bindings = Array.concat [ scalarBindings; statsBindings; translationTableBindings; histogramBindings; quantileBindings; imageInfoBindings; chunkInfoBindings; serialGeometryBindings ]
             let bindingsByName = bindings |> Array.map (fun binding -> binding.Name, binding) |> Map.ofArray
             let visited = HashSet<string>()
             let ordered = ResizeArray<NamedBinding>()
@@ -2861,10 +2919,10 @@ module PipelineCodeGenerator =
 
         let postRootNames =
             Array.append
-                (stackInfoProducerNodesWithLinkedOutputs
+                (imageInfoProducerNodesWithLinkedOutputs
                  |> Array.choose (fun node ->
                      if node.FunctionId = "Write" then
-                         stackInfoNamesByNodeId |> Map.tryFind node.Id
+                         imageInfoNamesByNodeId |> Map.tryFind node.Id
                      else
                          None))
                 (chunkInfoProducerNodesWithLinkedOutputs

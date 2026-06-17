@@ -3,6 +3,7 @@ module StackProcessingCost
 open System
 open System.Globalization
 open System.IO
+open System.Runtime.InteropServices
 open System.Text
 open System.Text.Json
 open SlimPipeline
@@ -47,15 +48,23 @@ let pixelTypeName<'T> =
     elif t = typeof<int32> || t = typeof<int> then "Int32"
     elif t = typeof<uint64> then "UInt64"
     elif t = typeof<int64> then "Int64"
-    elif t = typeof<Image.ComplexFloat32> then "ComplexFloat32"
     elif t = typeof<System.Numerics.Complex> then "ComplexFloat64"
     else t.Name
 
+let private voxelSize<'T> =
+    let t = typeof<'T>
+    if t = typeof<uint8> || t = typeof<int8> || t = typeof<bool> then 1UL
+    elif t = typeof<uint16> || t = typeof<int16> then 2UL
+    elif t = typeof<uint32> || t = typeof<int32> || t = typeof<uint> || t = typeof<int> || t = typeof<float32> then 4UL
+    elif t = typeof<uint64> || t = typeof<int64> || t = typeof<float> then 8UL
+    elif t = typeof<System.Numerics.Complex> then 16UL
+    else uint64 (Marshal.SizeOf(t))
+
 let imageBytes<'T> (nVoxels: uint64) =
-    Image.ImageFacts.memoryBytesForType<'T> nVoxels 1u
+    nVoxels * voxelSize<'T>
 
 let sliceBytes<'T> width height =
-    Image.ImageFacts.sliceBytesForType<'T> width height
+    uint64 width * uint64 height * voxelSize<'T>
 
 let imageStageMemory<'T> evaluation shape =
     { Evaluation = evaluation

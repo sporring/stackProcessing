@@ -17,10 +17,10 @@ let main arg =
             64u, 64u, 64u, "../tmp/erode"
 
     src
-    |> zero<uint8> width height depth
-    >=> addNormalNoise 128.0 50.0
-    >=> threshold 128.0 infinity
-    >=> erode radius 
+    |> zero<float32> width height depth
+    >=> addNormalNoise<float32> 128.0 50.0
+    >=> thresholdRange<float32> 128.0 infinity
+    >=> binaryErode radius
     //>=> dilate radius
     //>=> opening radius
     //>=> closing radius

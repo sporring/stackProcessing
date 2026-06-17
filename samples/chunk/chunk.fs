@@ -4,30 +4,28 @@ open StackProcessing
 
 [<EntryPoint>]
 let main arg =
-    let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 2GB for example
+    let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
 
     let src, arg = commandLineSource availableMemory arg
-    let input,output = 
-        if arg.Length > 0 then
-            "../data/volume", "../tmp/chunks"
-        else
-            "../data/volume", "../tmp/chunks"
+    let input, output =
+        match arg with
+        | [| input; output |] -> input, output
+        | [| input |] -> input, "../tmp/chunks.zarr"
+        | _ -> "../data/volume", "../tmp/chunks.zarr"
 
     deleteIfExists output
     src
     |> readRange<uint8> 0u 1 31u input ".tiff"
-    //|> getFilenames (input) ".tiff" Array.sort
-    //>=> readFiles<uint8>
-    >=> writeChunks output ".tiff" 12u 13u 14u
-    >=> ignoreSingles ()
+    >=> writeZarr<uint8> output "image" 32u 12u 13u 14u 1.0 1.0 1.0 0
     |> sink
 
-    let chunkInfo = getChunkInfo output ".tiff"
-    printfn $"Wrote chunks: chunks={chunkInfo.chunks} size={chunkInfo.size} componentType={chunkInfo.topLeftInfo.componentType}"
+    let chunkInfo = getZarrInfo output 0 0
+    printfn $"Wrote Zarr: chunks={chunkInfo.chunks} size={chunkInfo.size} componentType={chunkInfo.componentType}"
 
-    let output2 = "../tmp/volume-copy"
+    let output2 = "../tmp/chunk-zarr-copy"
     deleteIfExists output2
-    src |> readSlab<uint8> output ".tiff"
+    src
+    |> readZarrRange<uint8> 0u 1 31u output 0 0 0 0 0
     >=> write output2 ".tiff"
     |> sink
 

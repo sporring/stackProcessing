@@ -15,13 +15,13 @@ let main args =
     let thresholdValue =
         src
         |> readRandom<uint8> 16u input ".tiff"
-        >=> imHistogram ()
+        >=> imageHistogram<uint8> ()
         |> drain
         |> momentsThresholdFromHistogram
 
     src
     |> read<uint8> input ".tiff"
-    >=> threshold thresholdValue 255.0
+    >=> thresholdRange<uint8> thresholdValue 255.0
     >=> write output ".tiff"
     |> sink
 
