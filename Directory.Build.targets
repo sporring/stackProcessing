@@ -1,0 +1,16 @@
+<Project>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)lib/spnth.dll"
+          Condition="$([MSBuild]::IsOSPlatform('Windows')) and Exists('$(MSBuildThisFileDirectory)lib/spnth.dll')"
+          Link="spnth.dll"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)lib/libspnth.so"
+          Condition="$([MSBuild]::IsOSPlatform('Linux')) and Exists('$(MSBuildThisFileDirectory)lib/libspnth.so')"
+          Link="libspnth.so"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)lib/libspnth.dylib"
+          Condition="$([MSBuild]::IsOSPlatform('OSX')) and Exists('$(MSBuildThisFileDirectory)lib/libspnth.dylib')"
+          Link="libspnth.dylib"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
