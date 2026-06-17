@@ -18,6 +18,7 @@ Questions to consider:
 
 - Cleanup Image/TinyLinalg
 
+- Should ChunkFunctions/computeStats be SIMD'ed or Vector<>'ized, e.g., sum v = dot v ones
 
 ---
 

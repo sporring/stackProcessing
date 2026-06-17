@@ -2106,12 +2106,7 @@ let readChunkVolume<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
                   "depth", string depth
                   "pixelType", typeof<'T>.Name ])
 
-    let mapper (index: int) =
-        use reader = Tiff.Open(filename, "r")
-        if isNull reader then
-            invalidOp $"Could not open '{filename}' for TIFF volume reading."
-        if not (reader.SetDirectory(int16 index)) then
-            invalidOp $"Could not seek to TIFF page {index} in '{filename}'."
+    let readCurrentPage (reader: Tiff) (index: int) =
         if pl.debug then
             printfn $"[readChunkVolume] Reading TIFF page {index} from {filename} as {typeof<'T>.Name}"
 
@@ -2142,6 +2137,20 @@ let readChunkVolume<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
             Chunk.decRef chunk
             reraise()
 
+    let apply (_debug: bool) (_input: AsyncSeq<unit>) =
+        asyncSeq {
+            use reader = Tiff.Open(filename, "r")
+            if isNull reader then
+                invalidOp $"Could not open '{filename}' for TIFF volume reading."
+
+            for index in 0 .. int depth - 1 do
+                yield readCurrentPage reader index
+
+                if index < int depth - 1 then
+                    if not (reader.ReadDirectory()) then
+                        invalidOp $"TIFF volume '{filename}' ended after page {index}, but expected {depth} pages."
+        }
+
     let transition = ProfileTransition.create Unit Streaming
     let memoryNeed _ = elementBytes
     let elementTransformation _ = uint64 width * uint64 height
@@ -2155,7 +2164,12 @@ let readChunkVolume<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
             (fun _ -> 1UL)
 
     let stage =
-        Stage.init "readChunkVolume" depth mapper transition memoryNeed elementTransformation
+        let pipe =
+            { Name = "readChunkVolume.tiff"
+              Apply = apply
+              Profile = transition.From }
+
+        Stage.fromPipe "readChunkVolume" transition memoryNeed elementTransformation pipe
         |> withCostModel (StageCostModel.create memoryModel timeCostModel)
         |> Some
 
