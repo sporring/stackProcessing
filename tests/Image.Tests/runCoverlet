@@ -1,6 +1,0 @@
-export DYLD_LIBRARY_PATH=$(pwd)/lib
-dotnet test Image.Tests.fsproj \
-  --no-build \
-  /p:CollectCoverage=true \
-  /p:CoverletOutputFormat=cobertura \
-  /p:CoverletOutput="$(pwd)/coverage/" \

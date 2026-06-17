@@ -63,6 +63,7 @@ Generate:
 Run:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run --operation copy|threshold|median|median-native-nth|dilate|connectedComponents --pixel-type UInt8|UInt16|Int32|Float32 --input DIR --output DIR [--radius N] [--threshold X] [--window N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr --operation copy|copyThickThin|zarrToTiff|tiffToZarr|threshold|convolve|dilate --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR_OR_TIFF_DIR --output ZARR_OR_TIFF_DIR [--radius N] [--kernel-size N] [--threshold X] [--workers N] [--chunk-size N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-convolve-breakdown --variant read|readWrite|readConvolve|convolve --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--kernel-size N] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-direct-copy --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-direct-threshold --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-direct-threshold-raw --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--threshold X]
@@ -1842,6 +1843,100 @@ let private runZarr opts =
         | UInt16 -> runZarrTyped<uint16> operation shape input output radius kernelSize thresholdValue workers chunkSize availableMemory
         | Int32 -> failwith "run-zarr benchmark currently supports UInt8, UInt16, and Float32 only."
         | Float32 -> runZarrTyped<float32> operation shape input output radius kernelSize thresholdValue workers chunkSize availableMemory
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    exitCode
+
+let private releaseChunkStage<'T when 'T: equality> =
+    SlimPipeline.Stage.consumeWith
+        $"releaseChunk.{typeof<'T>.Name}"
+        (fun _debug _index (chunk: Chunk<'T>) -> Chunk.decRef chunk)
+        (fun _ -> 0UL)
+
+let private runZarrConvolveBreakdownTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    variant
+    shape
+    input
+    output
+    kernelSize
+    workers
+    availableMemory =
+
+    if workers < 1 then
+        invalidArg "workers" $"Zarr convolution breakdown expects at least one worker/window, got {workers}."
+
+    let zarrInfo = getZarrInfo input 0 0
+    let chunkDepth, chunkY, chunkX =
+        match zarrInfo.chunks with
+        | x :: y :: z :: _ -> max 1u (uint z), max 1u (uint y), max 1u (uint x)
+        | _ -> 16u, 256u, 256u
+
+    let depth = max 1u shape.Depth
+    let src = benchmarkSource availableMemory
+    let reader =
+        readZarrAlignedSlices<'T> 0u (depth - 1u) input 0 0 0 0
+    let kernel = uniformKernel3DFloat32 kernelSize
+    let convolution =
+        if workers = 1 then
+            ChunkFunctions.convolveFixedKernelNative<'T> kernel
+        else
+            ChunkFunctions.convolveFixedKernelNativeParallel<'T> kernel workers
+
+    match variant with
+    | "read" ->
+        src
+        |> reader
+        >=> releaseChunkStage<'T>
+        |> sink
+    | "readWrite" ->
+        src
+        |> reader
+        >=> writeZarrAlignedSlicesWithCompression<'T> ZarrCompression.None output "benchmark" depth chunkX chunkY chunkDepth 1.0 1.0 1.0 0
+        |> sink
+    | "readConvolve" ->
+        src
+        |> reader
+        >=> convolution
+        >=> releaseChunkStage<'T>
+        |> sink
+    | "convolve" ->
+        src
+        |> reader
+        >=> convolution
+        >=> writeZarrAlignedSlicesWithCompression<'T> ZarrCompression.None output "benchmark" depth chunkX chunkY chunkDepth 1.0 1.0 1.0 0
+        |> sink
+    | _ ->
+        failwith $"unsupported Zarr convolve breakdown variant '{variant}'"
+
+    0
+
+let private runZarrConvolveBreakdown opts =
+    let variant = require "variant" opts
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let shape = require "shape" opts |> parseShape
+    let input = require "input" opts
+    let output = optional "output" "" opts
+    let kernelSize = optional "kernel-size" "3" opts |> UInt32.Parse
+    let workers = optional "workers" "3" opts |> Int32.Parse
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+
+    match variant with
+    | "readWrite"
+    | "convolve" ->
+        if String.IsNullOrWhiteSpace output then
+            invalidArg "output" $"Zarr convolve breakdown variant '{variant}' requires --output."
+        ensureCleanDirectory output
+    | "read"
+    | "readConvolve" -> ()
+    | _ -> failwith $"unsupported Zarr convolve breakdown variant '{variant}'"
+
+    let stopwatch = Stopwatch.StartNew()
+    let exitCode =
+        match pixelType with
+        | UInt8 -> runZarrConvolveBreakdownTyped<uint8> variant shape input output kernelSize workers availableMemory
+        | UInt16 -> runZarrConvolveBreakdownTyped<uint16> variant shape input output kernelSize workers availableMemory
+        | Int32 -> failwith "run-zarr-convolve-breakdown currently supports UInt8, UInt16, and Float32 only."
+        | Float32 -> runZarrConvolveBreakdownTyped<float32> variant shape input output kernelSize workers availableMemory
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
     exitCode
@@ -5549,6 +5644,7 @@ let main args =
         | _ when args[0] = "generate" -> args[1..] |> parseArgs |> generate
         | _ when args[0] = "run" -> args[1..] |> parseArgs |> run
         | _ when args[0] = "run-zarr" -> args[1..] |> parseArgs |> runZarr
+        | _ when args[0] = "run-zarr-convolve-breakdown" -> args[1..] |> parseArgs |> runZarrConvolveBreakdown
         | _ when args[0] = "run-zarr-direct-copy" -> args[1..] |> parseArgs |> runZarrDirectCopy
         | _ when args[0] = "run-zarr-direct-copy-same-grid" -> args[1..] |> parseArgs |> runZarrDirectCopySameGrid
         | _ when args[0] = "run-zarr-direct-threshold" -> args[1..] |> parseArgs |> runZarrDirectThreshold

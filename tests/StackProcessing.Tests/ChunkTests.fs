@@ -1470,9 +1470,9 @@ let chunkSuite =
                 Expect.equal corrected.Length depth "Chunk bias correction should preserve stack depth."
                 for z in 0 .. corrected.Length - 1 do
                     Expect.equal corrected[z].Size (uint64 width, uint64 height, 1UL) $"Corrected slice {z} should preserve shape."
-                    let values = Chunk.span<float> corrected[z]
+                    let values = Chunk.span<float32> corrected[z]
                     for value in values do
-                        Expect.floatClose Accuracy.medium value 0.0 $"Corrected slice {z} should have the fitted constant bias removed."
+                        Expect.floatClose Accuracy.medium (float value) 0.0 $"Corrected slice {z} should have the fitted constant bias removed."
             finally
                 corrected |> List.iter Chunk.decRef
 

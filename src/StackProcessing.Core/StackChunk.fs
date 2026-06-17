@@ -1385,7 +1385,7 @@ let private projectionTransform (transformName: string) =
 
 let chunkSumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     transformName
-    : Stage<Chunk<'T>, Chunk<float>> =
+    : Stage<Chunk<'T>, Chunk<float32>> =
     let transform = projectionTransform transformName
 
     let reducer (_debug: bool) (input: AsyncSeq<Chunk<'T>>) =
@@ -1405,7 +1405,7 @@ let chunkSumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: st
                                 let accumulator =
                                     match state with
                                     | None ->
-                                        Some(width, height, Array.zeroCreate<float> (width * height))
+                                        Some(width, height, Array.zeroCreate<float32> (width * height))
                                     | Some(expectedWidth, expectedHeight, values) ->
                                         if expectedWidth <> width || expectedHeight <> height then
                                             invalidOp $"chunkSumProjection requires constant x-y slice size; got {width}x{height}, expected {expectedWidth}x{expectedHeight}."
@@ -1415,7 +1415,7 @@ let chunkSumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: st
                                 | None -> return None
                                 | Some(_, _, values) ->
                                     for i in 0 .. pixels.Length - 1 do
-                                        values[i] <- values[i] + transform (Convert.ToDouble pixels[i])
+                                        values[i] <- values[i] + float32 (transform (Convert.ToDouble pixels[i]))
                                     return accumulator
                             finally
                                 Chunk.decRef chunk
@@ -1426,13 +1426,13 @@ let chunkSumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: st
             | None ->
                 return raise (InvalidOperationException "chunkSumProjection cannot reduce an empty chunk stream.")
             | Some(width, height, values) ->
-                let output = Chunk.create<float> (uint64 width, uint64 height, 1UL)
+                let output = Chunk.create<float32> (uint64 width, uint64 height, 1UL)
                 let outputPixels = Chunk.span output
                 values.AsSpan().CopyTo outputPixels
                 return output
         }
 
-    Stage.reduce $"chunkSumProjection {transformName}" reducer Streaming (fun n -> n * uint64 (chunkElementBytes<'T> + chunkElementBytes<float>)) id
+    Stage.reduce $"chunkSumProjection {transformName}" reducer Streaming (fun n -> n * uint64 (chunkElementBytes<'T> + chunkElementBytes<float32>)) id
 
 let private mapFloat32Vector name (scalarOp: float32 -> float32) (vectorOp: Vector<float32> -> Vector<float32>) (chunk: Chunk<float32>) =
     ChunkKernel.mapFloat32Vector name scalarOp vectorOp chunk

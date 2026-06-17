@@ -3057,7 +3057,6 @@ let main args =
                                      source availableMemory
                                      |> read<uint8> inputDir ".tiff"
                                      >=> sumProjection<uint8> "Identity"
-                                     >=> cast<float, float32>
                                      >=> intensityStretch<float32> 0.0 255.0 0.0 255.0
                                      >=> cast<float32, uint8>
                                      >=> write (outputDir size "bio-projection-inspection-uint8-write") ".tiff")

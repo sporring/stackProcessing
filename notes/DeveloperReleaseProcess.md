@@ -42,7 +42,19 @@ Prefer immutable archives made from the tag, not from a working directory. Keep 
 
 ## Pre-Release Checklist
 
-From a clean checkout:
+Install dotnet, e.g., on Ubuntu
+
+```bash
+sudo apt-get update && sudo apt-get install -y dotnet-sdk-10.0
+```
+
+Clone stackProcessing repository
+
+```bash
+git clone https://github.com/sporring/stackProcessing.git
+```
+
+build and test:
 
 ```bash
 dotnet restore StackProcessing.sln

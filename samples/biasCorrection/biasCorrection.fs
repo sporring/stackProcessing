@@ -22,7 +22,7 @@ let main args =
     src
     |> readRange<float32> 0u 1 255u input ".tiff"
     >=> correctBias<float32> model
-    >=> cast<float, uint8>
+    >=> cast<float32, uint8>
     >=> write (outputRoot + "/unmasked") ".tiff"
     |> sink
 
@@ -35,7 +35,7 @@ let main args =
 
     zip image maskStream
     >=> correctBiasMasked<float32> maskedModel
-    >=> cast<float, uint8>
+    >=> cast<float32, uint8>
     >=> write (outputRoot + "/masked") ".tiff"
     |> sink
 

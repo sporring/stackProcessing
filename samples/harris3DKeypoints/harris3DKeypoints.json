@@ -4,7 +4,7 @@
     { "id": "source", "functionId": "NormalNoise", "x": 100.0, "y": 120.0,
       "parameters": [
         { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
-        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "type", "value": "Float32", "useInput": false },
         { "key": "width", "value": "64", "useInput": false },
         { "key": "height", "value": "64", "useInput": false },
         { "key": "depth", "value": "64", "useInput": false },
@@ -12,7 +12,7 @@
         { "key": "std", "value": "25.0", "useInput": false } ] },
     { "id": "keypoints", "functionId": "Harris3DKeypoints", "x": 330.0, "y": 120.0,
       "parameters": [
-        { "key": "type", "value": "Float64", "useInput": false },
+        { "key": "type", "value": "Float32", "useInput": false },
         { "key": "sigma", "value": "3.0", "useInput": false },
         { "key": "rho", "value": "1.5", "useInput": false },
         { "key": "k", "value": "0.04", "useInput": false },

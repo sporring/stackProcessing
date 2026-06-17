@@ -384,6 +384,51 @@ let private inspectChunkTiffSlice<'T> fileName =
 
     width, height, int width * expectedBytesPerSample, max (int width * expectedBytesPerSample) (tiff.ScanlineSize())
 
+type private ChunkTiffReadPlan =
+    { Width: uint
+      Height: uint
+      RowBytes: int
+      ScanlineSize: int
+      ConvertUInt8ToFloat32: bool }
+
+let private inspectChunkTiffSliceForRead<'T> fileName =
+    let expectedBits, expectedFormat, expectedBytesPerSample = tiffPixelLayout<'T> ()
+    use tiff = Tiff.Open(fileName, "r")
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF reading."
+
+    if not (tiff.SetDirectory(int16 0)) then
+        invalidOp $"Could not select TIFF page 0 in '{fileName}'."
+
+    let width = uint (tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
+    let height = uint (tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
+    if width = 0u || height = 0u then
+        invalidOp $"TIFF slice '{fileName}' has invalid page dimensions {width}x{height}."
+
+    let bitsPerSample = tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 1
+    let samplesPerPixel = tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 1
+    validateTiffSamples samplesPerPixel
+
+    let sampleFormat =
+        tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
+        |> enum<SampleFormat>
+
+    if bitsPerSample = expectedBits && sampleFormat = expectedFormat then
+        { Width = width
+          Height = height
+          RowBytes = int width * expectedBytesPerSample
+          ScanlineSize = max (int width * expectedBytesPerSample) (tiff.ScanlineSize())
+          ConvertUInt8ToFloat32 = false }
+    elif typeof<'T> = typeof<float32> && bitsPerSample = 8 && sampleFormat = SampleFormat.UINT then
+        let rowBytes = int width * sizeof<float32>
+        { Width = width
+          Height = height
+          RowBytes = rowBytes
+          ScanlineSize = max (int width) (tiff.ScanlineSize())
+          ConvertUInt8ToFloat32 = true }
+    else
+        invalidOp $"Input slice '{fileName}' does not match {typeof<'T>.Name}: got {bitsPerSample}-bit {sampleFormat}."
+
 let private tryReadTiffEncodedStripsInto (tiff: Tiff) (chunk: Chunk<'T>) sliceOffsetBytes sliceBytes =
     if tiff.IsTiled() then
         false
@@ -525,6 +570,70 @@ let private readChunkTiffSliceIntoOffset<'T when 'T: equality and 'T: (new: unit
                 Buffer.BlockCopy(scratch, 0, chunk.Bytes, sliceOffsetBytes + row * rowBytes, rowBytes)
         finally
             System.Buffers.ArrayPool<byte>.Shared.Return(scratch)
+
+let private readChunkTiffUInt8SliceAsFloat32IntoOffset
+    fileName
+    pageIndex
+    (chunk: Chunk<float32>)
+    expectedWidth
+    expectedHeight
+    sliceOffsetBytes
+    =
+
+    use tiff = Tiff.Open(fileName, "r")
+    if isNull tiff then
+        invalidOp $"Could not open '{fileName}' for TIFF reading."
+    if not (tiff.SetDirectory(int16 pageIndex)) then
+        invalidOp $"Could not select TIFF page {pageIndex} in '{fileName}'."
+
+    let width = uint (tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
+    let height = uint (tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
+    if width <> expectedWidth || height <> expectedHeight then
+        invalidOp $"Input slice '{fileName}' has shape {width}x{height}, expected {expectedWidth}x{expectedHeight}."
+
+    let bitsPerSample = tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 1
+    let samplesPerPixel = tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 1
+    validateTiffSamples samplesPerPixel
+
+    let sampleFormat =
+        tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
+        |> enum<SampleFormat>
+
+    if bitsPerSample <> 8 || sampleFormat <> SampleFormat.UINT then
+        invalidOp $"Input slice '{fileName}' cannot be converted to Single: got {bitsPerSample}-bit {sampleFormat}."
+
+    let widthI = int width
+    let heightI = int height
+    let sliceBytes = widthI * heightI * sizeof<float32>
+    if sliceOffsetBytes < 0 || chunk.ByteLength < sliceOffsetBytes + sliceBytes then
+        invalidArg "chunk" $"Chunk byte length {chunk.ByteLength} is too small to read slice '{fileName}' at offset {sliceOffsetBytes} with length {sliceBytes}."
+
+    let scanlineSize = max widthI (tiff.ScanlineSize())
+    let scratch = ArrayPool<byte>.Shared.Rent(scanlineSize)
+    try
+        let outputBytes = chunk.Bytes.AsSpan(sliceOffsetBytes, sliceBytes)
+        let output = MemoryMarshal.Cast<byte, float32>(outputBytes)
+        for row in 0 .. heightI - 1 do
+            if not (tiff.ReadScanline(scratch, row)) then
+                invalidOp $"Failed to read TIFF scanline {row} from '{fileName}'."
+            let rowOffset = row * widthI
+            for x in 0 .. widthI - 1 do
+                output[rowOffset + x] <- float32 scratch[x]
+    finally
+        ArrayPool<byte>.Shared.Return(scratch)
+
+let private readChunkTiffSliceByPlanIntoOffset<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (plan: ChunkTiffReadPlan)
+    fileName
+    pageIndex
+    (chunk: Chunk<'T>)
+    sliceOffsetBytes
+    =
+    if plan.ConvertUInt8ToFloat32 then
+        let floatChunk = box chunk :?> Chunk<float32>
+        readChunkTiffUInt8SliceAsFloat32IntoOffset fileName pageIndex floatChunk plan.Width plan.Height sliceOffsetBytes
+    else
+        readChunkTiffSliceIntoOffset<'T> fileName pageIndex chunk plan.Width plan.Height sliceOffsetBytes
 
 let private readChunkTiffSlice<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> fileName =
     let width, height, rowBytes, _scanlineSize = inspectChunkTiffSlice<'T> fileName
@@ -1327,8 +1436,10 @@ let readChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
     if files.Length = 0 then
         stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
 
-    let width, height, rowBytes, scanlineSize = inspectChunkTiffSlice<'T> files[0]
-    let elementBytes = uint64 rowBytes * uint64 height
+    let readPlan = inspectChunkTiffSliceForRead<'T> files[0]
+    let width = readPlan.Width
+    let height = readPlan.Height
+    let elementBytes = uint64 readPlan.RowBytes * uint64 height
     let sourcePeek =
         SourcePeek.create
             name
@@ -1342,7 +1453,7 @@ let readChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
                   "height", string height
                   "depth", string files.Length
                   "pixelType", typeof<'T>.Name
-                  "scanlineSize", string scanlineSize ])
+                  "scanlineSize", string readPlan.ScanlineSize ])
 
     let mapper (i: int) =
         let fileName = files[i]
@@ -1358,7 +1469,7 @@ let readChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
                     false
 
             if not readNative then
-                readChunkTiffSliceIntoOffset<'T> fileName 0 chunk width height 0
+                readChunkTiffSliceByPlanIntoOffset readPlan fileName 0 chunk 0
             chunk
         with
         | _ ->
@@ -1527,8 +1638,10 @@ let private readSelectedChunkSlices<'T when 'T: equality and 'T: (new: unit -> '
     if pages.Length = 0 then
         stopWithInputError $"{name} selected no {suffixDescription suffix} files from input stack directory: {inputDir}"
 
-    let width, height, rowBytes, scanlineSize = inspectChunkTiffSlice<'T> sourceFiles[0]
-    let elementBytes = uint64 rowBytes * uint64 height
+    let readPlan = inspectChunkTiffSliceForRead<'T> sourceFiles[0]
+    let width = readPlan.Width
+    let height = readPlan.Height
+    let elementBytes = uint64 readPlan.RowBytes * uint64 height
     let sourcePeek =
         SourcePeek.create
             name
@@ -1544,7 +1657,7 @@ let private readSelectedChunkSlices<'T when 'T: equality and 'T: (new: unit -> '
                    "sourceDepth", string sourcePages.Length
                    "sourceFiles", string sourceFiles.Length
                    "pixelType", typeof<'T>.Name
-                   "scanlineSize", string scanlineSize ]
+                   "scanlineSize", string readPlan.ScanlineSize ]
                  @ sourcePeekFields))
 
     let mapper (i: int) =
@@ -1553,7 +1666,7 @@ let private readSelectedChunkSlices<'T when 'T: equality and 'T: (new: unit -> '
             printfn $"[{name}] Reading chunk slice {i}: {fileName} page {pageIndex} as {typeof<'T>.Name}"
         let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
         try
-            readChunkTiffSliceIntoOffset<'T> fileName pageIndex chunk width height 0
+            readChunkTiffSliceByPlanIntoOffset readPlan fileName pageIndex chunk 0
             chunk
         with
         | _ ->
@@ -3834,6 +3947,9 @@ let readZarrEncodedChunks
         | "float64" -> 8UL
         | other -> failwith $"readZarrEncodedChunks currently supports scalar numeric chunks, got {other}."
     let chunkBytes = uint64 chunkX * uint64 chunkY * uint64 chunkZ * elementBytes
+    let maxParallelReads = max 1 (min Environment.ProcessorCount 16)
+    let mutable cachedBatchStart = -1
+    let mutable cachedBatchResults: ZarrEncodedChunk[] = Array.empty
     let sourcePeek =
         SourcePeek.create
             name
@@ -3850,16 +3966,34 @@ let readZarrEncodedChunks
                   "chunkZ", string chunkZ
                   "pixelType", level.DataType ])
 
+    let loadBatch outputIndex =
+        let batchStart = (outputIndex / maxParallelReads) * maxParallelReads
+        let batchStop = min chunks.Length (batchStart + maxParallelReads)
+        let batchChunks = chunks[batchStart .. batchStop - 1]
+        let batchResults =
+            array.ReadChunksEncodedAsync(batchChunks, maxParallelReads, CancellationToken.None)
+            |> runTask
+            |> Seq.toArray
+        deleteZarrNetDebugLogs ()
+        cachedBatchStart <- batchStart
+        cachedBatchResults <- batchResults
+
     let mapper (outputIndex: int) : EncodedLocatedChunk =
+        if cachedBatchStart < 0
+           || outputIndex < cachedBatchStart
+           || outputIndex >= cachedBatchStart + cachedBatchResults.Length then
+            loadBatch outputIndex
+
         let chunkRef = chunks[outputIndex]
         if pl.debug then
             printfn $"[readZarrEncodedChunks] Reading encoded chunk index ({chunkRef.ChunkCoord[4]}, {chunkRef.ChunkCoord[3]}, {chunkRef.ChunkCoord[2]}) from {path}"
 
         let payload =
-            array.ReadChunkEncodedAsync(chunkRef, CancellationToken.None)
-            |> runTask
-            |> Option.ofObj
-        deleteZarrNetDebugLogs ()
+            let encoded = cachedBatchResults[outputIndex - cachedBatchStart]
+            if encoded.IsPresent then
+                encoded.EncodedBytes.ToArray() |> Some
+            else
+                None
 
         { Index = (int chunkRef.ChunkCoord[4], int chunkRef.ChunkCoord[3], int chunkRef.ChunkCoord[2])
           Layout = layout
@@ -3897,6 +4031,12 @@ let writeZarrEncodedChunksWithCompression
     let mutable outputChunkLookup: Map<string, ZarrChunkRef> = Map.empty
     let mutable layout: ChunkLayout option = None
     let mutable written = 0
+    let writeParallelism =
+        if maxConcurrentWrites > 0 then
+            maxConcurrentWrites
+        else
+            max 1 (min Environment.ProcessorCount 16)
+    let pendingEncoded = ResizeArray<ZarrEncodedChunk>()
 
     let createWriter (chunkLayout: ChunkLayout) =
         let sizeX64, sizeY64, sizeZ64 = chunkLayout.VolumeSize
@@ -3961,7 +4101,14 @@ let writeZarrEncodedChunksWithCompression
         zarrStore <- None
         zarrArray <- None
         outputChunkLookup <- Map.empty
+        pendingEncoded.Clear()
         deleteZarrNetDebugLogs ()
+
+    let flushPending (array: ZarrArray) =
+        if pendingEncoded.Count > 0 then
+            array.WriteChunksEncodedAsync(pendingEncoded.ToArray(), writeParallelism, false, CancellationToken.None)
+            |> runUnitTask
+            pendingEncoded.Clear()
 
     let mapper (debug: bool) (_idx: int64) (located: EncodedLocatedChunk) =
         let array =
@@ -3986,8 +4133,9 @@ let writeZarrEncodedChunksWithCompression
                     | None -> failwith $"writeZarrEncodedChunks could not find output chunk for coordinate {key}."
                 if debug then
                     printfn $"[writeZarrEncodedChunks] Saved encoded chunk index {located.Index} to {outputPath}"
-                array.WriteChunkEncodedAsync(outputChunk, payload, CancellationToken.None)
-                |> runUnitTask
+                pendingEncoded.Add(ZarrEncodedChunk.Present(outputChunk, ReadOnlyMemory<byte>(payload)))
+                if pendingEncoded.Count >= writeParallelism then
+                    flushPending array
             | None ->
                 if debug then
                     printfn $"[writeZarrEncodedChunks] Skipped missing encoded chunk index {located.Index} in {outputPath}"
@@ -3995,6 +4143,7 @@ let writeZarrEncodedChunksWithCompression
             written <- written + 1
             let countX, countY, countZ = located.Layout.ChunkCounts
             if written = countX * countY * countZ then
+                flushPending array
                 finishWriter ()
         with
         | ex ->
@@ -4782,9 +4931,17 @@ let writeZarrChunkThickWithCompression<'T when 'T: equality and 'T: (new: unit -
     let mutable writer: OmeZarrWriter option = None
     let mutable zarrStore: LocalFileSystemStore option = None
     let mutable zarrArray: ZarrArray option = None
+    let mutable outputChunkLookup: Map<string, ZarrChunkRef> = Map.empty
     let mutable width = 0
     let mutable height = 0
     let mutable nextZ = 0
+    let writeParallelism =
+        if maxConcurrentWrites > 0 then
+            maxConcurrentWrites
+        else
+            max 1 (min Environment.ProcessorCount 16)
+    let pendingEncoded = ResizeArray<ZarrEncodedChunk>()
+    let pendingBuffers = ResizeArray<byte[]>()
 
     let createWriter chunkWidth chunkHeight =
         let descriptor =
@@ -4825,9 +4982,34 @@ let writeZarrChunkThickWithCompression<'T when 'T: equality and 'T: (new: unit -
         writer <- Some created
         zarrStore <- Some store
         zarrArray <- Some array
+        outputChunkLookup <-
+            collectZarrChunks array
+            |> Array.map (fun chunkRef -> zarrChunkCoordKey chunkRef, chunkRef)
+            |> Map.ofArray
         created, array
 
+    let flushPending (array: ZarrArray) =
+        if pendingEncoded.Count > 0 then
+            try
+                array.WriteChunksEncodedAsync(pendingEncoded.ToArray(), writeParallelism, false, CancellationToken.None)
+                |> runUnitTask
+            finally
+                for buffer in pendingBuffers do
+                    ArrayPool<byte>.Shared.Return(buffer)
+                pendingEncoded.Clear()
+                pendingBuffers.Clear()
+
+    let clearPending () =
+        for buffer in pendingBuffers do
+            ArrayPool<byte>.Shared.Return(buffer)
+        pendingEncoded.Clear()
+        pendingBuffers.Clear()
+
     let finishWriter () =
+        match zarrArray with
+        | Some array -> flushPending array
+        | None -> ()
+
         match writer with
         | Some zarrWriter ->
             zarrWriter.DisposeAsync().AsTask()
@@ -4843,6 +5025,8 @@ let writeZarrChunkThickWithCompression<'T when 'T: equality and 'T: (new: unit -
         writer <- None
         zarrStore <- None
         zarrArray <- None
+        outputChunkLookup <- Map.empty
+        clearPending ()
         deleteZarrNetDebugLogs ()
 
     let copyChunkRegionToBuffer
@@ -4900,34 +5084,61 @@ let writeZarrChunkThickWithCompression<'T when 'T: equality and 'T: (new: unit -
                 zCount, yCount, xCount
 
         let bufferBytes = outputZ * outputY * outputX * elementBytes
-        let buffer = ArrayPool<byte>.Shared.Rent(bufferBytes)
-        try
-            copyChunkRegionToBuffer
-                source
-                sourceWidth
-                sourceHeight
-                localZStart
-                yStart
-                xStart
-                zCount
-                yCount
-                xCount
-                outputZ
-                outputY
-                outputX
-                buffer
+        if isFullZarrChunk && compression = ZarrCompression.None then
+            let buffer = ArrayPool<byte>.Shared.Rent(bufferBytes)
+            try
+                copyChunkRegionToBuffer
+                    source
+                    sourceWidth
+                    sourceHeight
+                    localZStart
+                    yStart
+                    xStart
+                    zCount
+                    yCount
+                    xCount
+                    outputZ
+                    outputY
+                    outputX
+                    buffer
 
-            let memory = ReadOnlyMemory<byte>(buffer, 0, bufferBytes)
-            if isFullZarrChunk then
                 let coord =
                     [| 0L
                        0L
                        int64 (globalZStart / chunkZ)
                        int64 (yStart / chunkY)
                        int64 (xStart / chunkX) |]
-                array.WriteChunkDecodedAsync(coord, memory, true, CancellationToken.None)
-                |> runUnitTask
-            else
+                let key = String.Join("/", coord)
+                let outputChunk =
+                    match outputChunkLookup.TryFind key with
+                    | Some chunk -> chunk
+                    | None -> failwith $"writeZarrChunkThick could not find output chunk for coordinate {key}."
+                pendingEncoded.Add(ZarrEncodedChunk.Present(outputChunk, ReadOnlyMemory<byte>(buffer, 0, bufferBytes)))
+                pendingBuffers.Add buffer
+                if pendingEncoded.Count >= writeParallelism then
+                    flushPending array
+            with
+            | ex ->
+                ArrayPool<byte>.Shared.Return(buffer)
+                raise ex
+        else
+            let buffer = ArrayPool<byte>.Shared.Rent(bufferBytes)
+            try
+                copyChunkRegionToBuffer
+                    source
+                    sourceWidth
+                    sourceHeight
+                    localZStart
+                    yStart
+                    xStart
+                    zCount
+                    yCount
+                    xCount
+                    outputZ
+                    outputY
+                    outputX
+                    buffer
+
                 let regionStart =
                     [| 0L
                        0L
@@ -4942,71 +5153,76 @@ let writeZarrChunkThickWithCompression<'T when 'T: equality and 'T: (new: unit -
                        int64 (xStart + xCount) |]
                 array.WriteRegionAsync(regionStart, regionEnd, buffer[0 .. bufferBytes - 1], CancellationToken.None)
                 |> runUnitTask
-        finally
-            ArrayPool<byte>.Shared.Return(buffer)
+            finally
+                ArrayPool<byte>.Shared.Return(buffer)
 
     let mapper (debug: bool) (_idx: int64) (chunk: Chunk<'T>) =
         try
-            if depth <= 0 then
-                invalidArg "depth" "writeZarrChunkThick expects positive depth."
+            try
+                if depth <= 0 then
+                    invalidArg "depth" "writeZarrChunkThick expects positive depth."
 
-            let chunkWidth64, chunkHeight64, chunkDepth64 = chunk.Size
-            if chunkDepth64 = 0UL then
-                invalidArg "chunk" $"writeZarrChunkThick cannot write an empty-depth chunk: {chunk.Size}."
+                let chunkWidth64, chunkHeight64, chunkDepth64 = chunk.Size
+                if chunkDepth64 = 0UL then
+                    invalidArg "chunk" $"writeZarrChunkThick cannot write an empty-depth chunk: {chunk.Size}."
 
-            let chunkWidth = int chunkWidth64
-            let chunkHeight = int chunkHeight64
-            let chunkDepth = int chunkDepth64
-            let array =
-                match writer, zarrArray with
-                | Some _writer, Some array ->
-                    if chunkWidth <> width || chunkHeight <> height then
-                        failwith $"writeZarrChunkThick expected all thick chunks to be {width}x{height}, got {chunkWidth}x{chunkHeight}."
-                    array
-                | None, None ->
-                    createWriter chunkWidth chunkHeight |> snd
-                | _ ->
-                    failwith "writeZarrChunkThick has inconsistent writer state."
+                let chunkWidth = int chunkWidth64
+                let chunkHeight = int chunkHeight64
+                let chunkDepth = int chunkDepth64
+                let array =
+                    match writer, zarrArray with
+                    | Some _writer, Some array ->
+                        if chunkWidth <> width || chunkHeight <> height then
+                            failwith $"writeZarrChunkThick expected all thick chunks to be {width}x{height}, got {chunkWidth}x{chunkHeight}."
+                        array
+                    | None, None ->
+                        createWriter chunkWidth chunkHeight |> snd
+                    | _ ->
+                        failwith "writeZarrChunkThick has inconsistent writer state."
 
-            let planeBytes = chunkWidth * chunkHeight * elementBytes
-            let expectedBytes = planeBytes * chunkDepth
-            if chunk.ByteLength <> expectedBytes then
-                failwith $"writeZarrChunkThick expected {expectedBytes} bytes, got {chunk.ByteLength}."
-            if nextZ + chunkDepth > depth then
-                failwith $"writeZarrChunkThick received chunk depth {chunkDepth} at z={nextZ}, exceeding declared depth {depth}."
+                let planeBytes = chunkWidth * chunkHeight * elementBytes
+                let expectedBytes = planeBytes * chunkDepth
+                if chunk.ByteLength <> expectedBytes then
+                    failwith $"writeZarrChunkThick expected {expectedBytes} bytes, got {chunk.ByteLength}."
+                if nextZ + chunkDepth > depth then
+                    failwith $"writeZarrChunkThick received chunk depth {chunkDepth} at z={nextZ}, exceeding declared depth {depth}."
 
-            let mutable localZ = 0
-            while localZ < chunkDepth do
-                let globalZ = nextZ + localZ
-                let zOffset = globalZ % chunkZ
-                let zCount = min (chunkDepth - localZ) (chunkZ - zOffset)
+                let mutable localZ = 0
+                while localZ < chunkDepth do
+                    let globalZ = nextZ + localZ
+                    let zOffset = globalZ % chunkZ
+                    let zCount = min (chunkDepth - localZ) (chunkZ - zOffset)
 
-                for yStart in 0 .. chunkY .. chunkHeight - 1 do
-                    let yCount = min chunkY (chunkHeight - yStart)
-                    for xStart in 0 .. chunkX .. chunkWidth - 1 do
-                        let xCount = min chunkX (chunkWidth - xStart)
+                    for yStart in 0 .. chunkY .. chunkHeight - 1 do
+                        let yCount = min chunkY (chunkHeight - yStart)
+                        for xStart in 0 .. chunkX .. chunkWidth - 1 do
+                            let xCount = min chunkX (chunkWidth - xStart)
 
-                        if debug then
-                            printfn $"[writeZarrChunkThick] Saved region z {globalZ}..{globalZ + zCount - 1}, y {yStart}..{yStart + yCount - 1}, x {xStart}..{xStart + xCount - 1} to {outputPath} as {dataType}"
+                            if debug then
+                                printfn $"[writeZarrChunkThick] Saved region z {globalZ}..{globalZ + zCount - 1}, y {yStart}..{yStart + yCount - 1}, x {xStart}..{xStart + xCount - 1} to {outputPath} as {dataType}"
 
-                        writeChunkRegion
-                            array
-                            chunk
-                            chunkWidth
-                            chunkHeight
-                            localZ
-                            globalZ
-                            yStart
-                            xStart
-                            zCount
-                            yCount
-                            xCount
+                            writeChunkRegion
+                                array
+                                chunk
+                                chunkWidth
+                                chunkHeight
+                                localZ
+                                globalZ
+                                yStart
+                                xStart
+                                zCount
+                                yCount
+                                xCount
 
-                localZ <- localZ + zCount
+                    localZ <- localZ + zCount
 
-            nextZ <- nextZ + chunkDepth
-            if nextZ = depth then
-                finishWriter ()
+                nextZ <- nextZ + chunkDepth
+                if nextZ = depth then
+                    finishWriter ()
+            with
+            | ex ->
+                clearPending ()
+                raise ex
         finally
             Chunk.decRef chunk
 

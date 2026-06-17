@@ -11,7 +11,7 @@
       <HintPath>../../lib/SimpleITKCSharpManaged.dll</HintPath>
       <Private>true</Private>
     </Reference>
-    <ProjectReference Include="../../src/Image/Image.fsproj" />
+    <ProjectReference Include="../../../FSharpITK/src/Image/Image.fsproj" />
     <ProjectReference Include="../../src/StackProcessing/StackProcessing.fsproj" />
     <ProjectReference Include="../../../SharpFFTW/SharpFFTW/SharpFFTW.csproj" />
   </ItemGroup>

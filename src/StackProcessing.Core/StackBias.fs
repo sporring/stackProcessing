@@ -336,7 +336,7 @@ let private correctedChunkAt<'T when 'T: equality and 'T: (new: unit -> 'T) and 
     (model: BiasPolynomialModel)
     (chunk: Chunk<'T>)
     (mask: Chunk<uint8> option)
-    : Chunk<float>
+    : Chunk<float32>
     =
     try
         let width, height, depth = chunk.Size
@@ -355,11 +355,11 @@ let private correctedChunkAt<'T when 'T: equality and 'T: (new: unit -> 'T) and 
 
         let widthI = int width
         let heightI = int height
-        let output = Chunk.create<float> (width, height, 1UL)
+        let output = Chunk.create<float32> (width, height, 1UL)
 
         try
             let inputPixels = Chunk.span<'T> chunk
-            let outputPixels = Chunk.span<float> output
+            let outputPixels = Chunk.span<float32> output
             let terms = model.Terms |> List.toArray
             let coefficients = model.Coefficients |> List.toArray
             let xPowers = coordinatePowers model.Width model.Order
@@ -373,7 +373,7 @@ let private correctedChunkAt<'T when 'T: equality and 'T: (new: unit -> 'T) and 
                     for x in 0 .. widthI - 1 do
                         let i = flatIndex2 widthI x y
                         let input = inputPixels[i] |> toDouble
-                        outputPixels[i] <- input - evaluateValues terms coefficients xPowers yPowers zPowers x y zIndex
+                        outputPixels[i] <- float32 (input - evaluateValues terms coefficients xPowers yPowers zPowers x y zIndex)
             | Some maskChunk ->
                 let maskPixels = Chunk.span<uint8> maskChunk
                 for y in 0 .. heightI - 1 do
@@ -381,8 +381,10 @@ let private correctedChunkAt<'T when 'T: equality and 'T: (new: unit -> 'T) and 
                         let i = flatIndex2 widthI x y
                         let input = inputPixels[i] |> toDouble
                         outputPixels[i] <-
-                            if maskPixels[i] <> 0uy then input - evaluateValues terms coefficients xPowers yPowers zPowers x y zIndex
-                            else input
+                            if maskPixels[i] <> 0uy then
+                                float32 (input - evaluateValues terms coefficients xPowers yPowers zPowers x y zIndex)
+                            else
+                                float32 input
 
             output
         with
@@ -395,9 +397,9 @@ let private correctedChunkAt<'T when 'T: equality and 'T: (new: unit -> 'T) and 
 
 let correctBiasChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     model
-    : Stage<Chunk<'T>, Chunk<float>> =
+    : Stage<Chunk<'T>, Chunk<float32>> =
     let name = $"correctBiasChunk.{typeof<'T>.Name}"
-    let memoryNeed n = n * uint64 (Marshal.SizeOf<'T>() + Marshal.SizeOf<float>())
+    let memoryNeed n = n * uint64 (Marshal.SizeOf<'T>() + Marshal.SizeOf<float32>())
     let apply _debug (input: AsyncSeq<Chunk<'T>>) =
         asyncSeq {
             let mutable z = 0u
@@ -416,9 +418,9 @@ let correctBiasChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: stru
 
 let correctBiasChunkMasked<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     model
-    : Stage<Chunk<'T> * Chunk<uint8>, Chunk<float>> =
+    : Stage<Chunk<'T> * Chunk<uint8>, Chunk<float32>> =
     let name = $"correctBiasChunkMasked.{typeof<'T>.Name}"
-    let memoryNeed n = n * uint64 (Marshal.SizeOf<'T>() + Marshal.SizeOf<uint8>() + Marshal.SizeOf<float>())
+    let memoryNeed n = n * uint64 (Marshal.SizeOf<'T>() + Marshal.SizeOf<uint8>() + Marshal.SizeOf<float32>())
     let apply _debug (input: AsyncSeq<Chunk<'T> * Chunk<uint8>>) =
         asyncSeq {
             let mutable z = 0u

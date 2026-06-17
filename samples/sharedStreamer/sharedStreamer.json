@@ -110,7 +110,7 @@
         },
         {
           "key": "targetType",
-          "value": "Float64",
+          "value": "Float32",
           "useInput": false
         }
       ]
@@ -141,7 +141,7 @@
         },
         {
           "key": "type",
-          "value": "Float64",
+          "value": "Float32",
           "useInput": false
         },
         {
@@ -164,7 +164,7 @@
         },
         {
           "key": "type",
-          "value": "Float64",
+          "value": "Float32",
           "useInput": false
         },
         {
@@ -187,7 +187,7 @@
         },
         {
           "key": "type",
-          "value": "Float64",
+          "value": "Float32",
           "useInput": false
         }
       ]
@@ -200,7 +200,7 @@
       "parameters": [
         {
           "key": "sourceType",
-          "value": "Float64",
+          "value": "Float32",
           "useInput": false
         },
         {
