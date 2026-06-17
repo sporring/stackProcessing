@@ -28,7 +28,6 @@
         <PackageReference Include="Plotly.NET" Version="5.1.0" />
         <PackageReference Include="PureHDF" Version="2.1.1" />
         <ProjectReference Include="$(ZarrNetProject)" Condition="Exists('$(ZarrNetProject)')" />
-        <ProjectReference Include="../../../SharpFFTW/SharpFFTW/SharpFFTW.csproj" />
         <ProjectReference Include="../Chunk/Chunk.Core.fsproj" />
         <ProjectReference Include="../TinyLinAlg/TinyLinAlg.fsproj" />
         <ProjectReference Include="../SlimPipeline/SlimPipeline.fsproj" />

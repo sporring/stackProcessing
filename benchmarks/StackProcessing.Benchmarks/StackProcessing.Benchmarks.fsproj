@@ -9,7 +9,6 @@
   <ItemGroup>
     <ProjectReference Include="../../../FSharpITK/src/Image/Image.fsproj" />
     <ProjectReference Include="../../src/StackProcessing/StackProcessing.fsproj" />
-    <ProjectReference Include="../../../SharpFFTW/SharpFFTW/SharpFFTW.csproj" />
   </ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
     <None Include="../../lib/spnth.dll" Condition="Exists('../../lib/spnth.dll')" CopyToOutputDirectory="PreserveNewest" />

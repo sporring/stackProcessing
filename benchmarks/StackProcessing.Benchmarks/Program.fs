@@ -76,7 +76,7 @@ Run:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-xy-float32-zarr --shape WxHxD --input DIR --output ZARR [--chunk-size N] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-z-complex64-zarr --shape WxHxD --input ZARR --output ZARR [--chunk-size N]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-native-float32-zarr --shape WxHxD --input DIR --output ZARR [--chunk-size N] [--workers N] [--available-memory BYTES]
-  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-fft3d-kernel --shape WxHxD [--variant simpleitk|lowlevel|lowlevel-xy-plan-z|lowlevel-xy-z-plan|lowlevel-3d|lowlevel-r2c-3d|sharpfftw|all] [--iterations N]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-fft3d-kernel --shape WxHxD [--variant simpleitk|lowlevel|lowlevel-xy-plan-z|lowlevel-xy-z-plan|lowlevel-3d|lowlevel-r2c-3d|all] [--iterations N]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft3d-stage --shape WxHxD [--variant complex-xy|real-xy|real-xy-roundtrip|all] [--iterations N]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft3d-stage-io --shape WxHxD --input DIR --output DIR [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft3d-stage-overhead --shape WxHxD [--iterations N]
@@ -2976,7 +2976,6 @@ type Fft3DKernelVariant =
     | Fft3DLowlevelXYZPlan
     | Fft3DLowlevelFull
     | Fft3DLowlevelRealToComplexFull
-    | Fft3DSharpFftw
 
 type ChunkFft3DStageVariant =
     | ChunkFft3DComplexXY
@@ -2997,8 +2996,7 @@ let private parseFft3DKernelVariant value =
     | "lowlevel-xy-z-plan" | "xy-z-plan" | "xyz-plan" -> [ Fft3DLowlevelXYZPlan ]
     | "lowlevel-3d" | "native-3d" | "fftw-3d" -> [ Fft3DLowlevelFull ]
     | "lowlevel-r2c-3d" | "native-r2c-3d" | "fftw-r2c-3d" | "r2c-3d" -> [ Fft3DLowlevelRealToComplexFull ]
-    | "sharpfftw" | "sharp-fftw" | "fftw3d" -> [ Fft3DSharpFftw ]
-    | "all" | "All" | "ALL" -> [ Fft3DSimpleItk; Fft3DLowlevel; Fft3DLowlevelXYPlan; Fft3DLowlevelXYZPlan; Fft3DLowlevelFull; Fft3DLowlevelRealToComplexFull; Fft3DSharpFftw ]
+    | "all" | "All" | "ALL" -> [ Fft3DSimpleItk; Fft3DLowlevel; Fft3DLowlevelXYPlan; Fft3DLowlevelXYZPlan; Fft3DLowlevelFull; Fft3DLowlevelRealToComplexFull ]
     | _ -> failwith $"unsupported FFT3D kernel variant '{value}'"
 
 let private fft3DKernelVariantName variant =
@@ -3009,7 +3007,6 @@ let private fft3DKernelVariantName variant =
     | Fft3DLowlevelXYZPlan -> "lowlevel-xy-z-plan"
     | Fft3DLowlevelFull -> "lowlevel-3d"
     | Fft3DLowlevelRealToComplexFull -> "lowlevel-r2c-3d"
-    | Fft3DSharpFftw -> "sharpfftw-3d"
 
 let private parseChunkFft3DStageVariant value =
     match value with
@@ -3301,35 +3298,6 @@ let private runLowlevelRealToComplexFullFft3DKernel iterations (source: float32[
         complexHandle.Free()
         realHandle.Free()
 
-let private runSharpFftwFft3DKernel iterations (source: float32[,,]) =
-    let width = source.GetLength 0
-    let height = source.GetLength 1
-    let depth = source.GetLength 2
-    let complexCount = width * height * depth
-    let values = Array.zeroCreate<float32> (complexCount * 2)
-
-    use input = new SharpFFTW.Single.ComplexArray(complexCount)
-    use output = new SharpFFTW.Single.ComplexArray(complexCount)
-    use plan =
-        SharpFFTW.Single.Plan.Create3(
-            depth,
-            height,
-            width,
-            input,
-            output,
-            SharpFFTW.Direction.Forward,
-            SharpFFTW.Options.Estimate)
-
-    let stopwatch = Stopwatch.StartNew()
-    for _ in 1 .. iterations do
-        fillInterleavedComplex64FromReal source values
-        input.Set(values)
-        plan.Execute()
-    stopwatch.Stop()
-
-    output.CopyTo(values)
-    stopwatch.Elapsed, checksumComplex64Interleaved values
-
 let private runFft3DKernel opts =
     let shape = require "shape" opts |> parseShape
     let iterations = optional "iterations" "1" opts |> Int32.Parse
@@ -3357,7 +3325,6 @@ let private runFft3DKernel opts =
                 | Fft3DLowlevelXYZPlan -> runLowlevelXYZPlanFft3DKernel iterations source
                 | Fft3DLowlevelFull -> runLowlevelFullFft3DKernel iterations source
                 | Fft3DLowlevelRealToComplexFull -> runLowlevelRealToComplexFullFft3DKernel iterations source
-                | Fft3DSharpFftw -> runSharpFftwFft3DKernel iterations source
             total <- total + elapsed
             printfn
                 "variant=%s shape=%ux%ux%u iterations=%d totalSeconds=%s perIterationSeconds=%s checksum=%u"

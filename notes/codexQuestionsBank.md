@@ -20,6 +20,8 @@ Questions to consider:
 
 - Should ChunkFunctions/computeStats be SIMD'ed or Vector<>'ized, e.g., sum v = dot v ones
 
+- native libtiff in benchmarks but not in SP, which uses bitMiracle. That's probably a loss wrt. speed.
+
 ---
 
 Ignore anything below here:
