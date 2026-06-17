@@ -48,18 +48,30 @@ Install dotnet, e.g., on Ubuntu
 sudo apt-get update && sudo apt-get install -y dotnet-sdk-10.0
 ```
 
-Clone stackProcessing repository
+Clone StackProcessing and the current Zarr.NET fork side by side. The Chunk
+Zarr stages use APIs that are still moving, so this developer version expects a
+source checkout rather than a public NuGet package.
 
 ```bash
+git clone https://github.com/sporring/Zarr.NET.git
 git clone https://github.com/sporring/stackProcessing.git
 ```
 
 build and test:
 
 ```bash
+dotnet build Zarr.NET/Zarr.NET.csproj --configuration Release --nologo
+cd stackProcessing
 dotnet restore StackProcessing.sln
 dotnet build StackProcessing.sln --configuration Release --nologo
 dotnet test --configuration Release --no-build --nologo
+```
+
+If Zarr.NET is checked out somewhere else, pass its project path explicitly:
+
+```bash
+dotnet build StackProcessing.sln --configuration Release --nologo \
+  /p:ZarrNetProject=/absolute/path/to/Zarr.NET.csproj
 ```
 
 Check Studio specifically:

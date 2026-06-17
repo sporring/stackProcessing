@@ -54,11 +54,16 @@ StackProcessing is a .NET 10 F# solution.
 4. Run Studio.
 
 ```bash
+git clone https://github.com/sporring/Zarr.NET.git
 git clone https://github.com/sporring/stackProcessing.git
 cd stackProcessing
 dotnet build StackProcessing.sln
 dotnet run --project src/Studio/Studio.fsproj
 ```
+
+The current developer build expects the `Zarr.NET` checkout to sit next to
+`stackProcessing`. If it is elsewhere, pass
+`/p:ZarrNetProject=/absolute/path/to/Zarr.NET.csproj` to `dotnet build`.
 
 Some high-performance Chunk stages use native helper libraries built from the
 `native/` sources. Build or restore those native binaries before running
