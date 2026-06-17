@@ -20,7 +20,7 @@
     <PlatformTarget>AnyCPU</PlatformTarget>
     <OtherFlags>--sig:"$(SigFile)"</OtherFlags>
   </PropertyGroup>   
-  <Target Name="CleanTextFile" AfterTargets="Build">
+  <Target Name="CleanTextFile" AfterTargets="Build" Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
     <Exec Command="tmp='$(SigFile).tmp.'$$; grep -v '^[[:space:]]*$' '$(SigFile)' &gt; &quot;$tmp&quot; &amp;&amp; mv &quot;$tmp&quot; '$(SigFile)'" />
   </Target>
 
@@ -35,7 +35,7 @@
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
     <None Include="../../lib/SimpleITKCSharpNative.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>libSimpleITKCSharpNative.dll</TargetPath>
+      <TargetPath>SimpleITKCSharpNative.dll</TargetPath>
     </None>
   </ItemGroup>
   

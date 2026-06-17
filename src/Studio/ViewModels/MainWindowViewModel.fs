@@ -3727,7 +3727,7 @@ type MainWindowViewModel() as this =
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
     <None Include="{xml simpleItkWindowsNative}">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>libSimpleITKCSharpNative.dll</TargetPath>
+      <TargetPath>SimpleITKCSharpNative.dll</TargetPath>
     </None>
   </ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">

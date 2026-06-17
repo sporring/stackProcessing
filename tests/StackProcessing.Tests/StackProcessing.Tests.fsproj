@@ -20,7 +20,7 @@
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
     <None Include="../../lib/SimpleITKCSharpNative.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>libSimpleITKCSharpNative.dll</TargetPath>
+      <TargetPath>SimpleITKCSharpNative.dll</TargetPath>
     </None>
   </ItemGroup>
 
