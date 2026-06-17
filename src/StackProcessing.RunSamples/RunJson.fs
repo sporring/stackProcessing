@@ -282,10 +282,7 @@ let private ensureRunProject repositoryRoot job =
     let projectPath = Path.Combine(job.RunDirectory, "GraphRun.fsproj")
     let assemblyName = processNameForGraph job.Name
     let probingOutput = Path.Combine(repositoryRoot, "src", "StackProcessing.Probe", "bin", "Debug", "net10.0")
-    let simpleItkManaged = Path.Combine(repositoryRoot, "lib", "SimpleITKCSharpManaged.dll")
-    let simpleItkWindowsNative = Path.Combine(repositoryRoot, "lib", "SimpleITKCSharpNative.dll")
-    let simpleItkLinuxNative = Path.Combine(repositoryRoot, "lib", "libSimpleITKCSharpNative.so")
-    let simpleItkMacNative = Path.Combine(repositoryRoot, "lib", "libSimpleITKCSharpNative.dylib")
+    let stackProcessingProject = Path.Combine(repositoryRoot, "src", "StackProcessing", "StackProcessing.fsproj")
 
     let referenceItems =
         if Directory.Exists probingOutput then
@@ -299,10 +296,7 @@ let private ensureRunProject repositoryRoot job =
     </Reference>""")
             |> String.concat Environment.NewLine
         else
-            $"""    <Reference Include="SimpleITKCSharp">
-      <HintPath>{xml simpleItkManaged}</HintPath>
-      <Private>true</Private>
-    </Reference>"""
+            $"""    <ProjectReference Include="{xml stackProcessingProject}" />"""
 
     let projectFile =
         $"""<Project Sdk="Microsoft.NET.Sdk">
@@ -313,18 +307,6 @@ let private ensureRunProject repositoryRoot job =
   </PropertyGroup>
   <ItemGroup>
 {referenceItems}
-  </ItemGroup>
-  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
-    <None Include="{xml simpleItkWindowsNative}">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>libSimpleITKCSharpNative.dll</TargetPath>
-    </None>
-  </ItemGroup>
-  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
-    <None Include="{xml simpleItkLinuxNative}" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
-    <None Include="{xml simpleItkMacNative}" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.fs" />

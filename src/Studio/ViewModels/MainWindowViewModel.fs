@@ -3674,10 +3674,6 @@ type MainWindowViewModel() as this =
         let repositoryRoot = this.FindRepositoryRoot()
         let stackProcessingProject = Path.Combine(repositoryRoot, "src", "StackProcessing", "StackProcessing.fsproj")
         let stackProcessingCoreProject = Path.Combine(repositoryRoot, "src", "StackProcessing.Core", "StackProcessing.Core.fsproj")
-        let simpleItkManaged = Path.Combine(repositoryRoot, "lib", "SimpleITKCSharpManaged.dll")
-        let simpleItkWindowsNative = Path.Combine(repositoryRoot, "lib", "SimpleITKCSharpNative.dll")
-        let simpleItkLinuxNative = Path.Combine(repositoryRoot, "lib", "libSimpleITKCSharpNative.so")
-        let simpleItkMacNative = Path.Combine(repositoryRoot, "lib", "libSimpleITKCSharpNative.dylib")
         let projectPath = Path.Combine(runProjectDirectory, "StudioRun.fsproj")
 
         let xml value =
@@ -3697,25 +3693,9 @@ type MainWindowViewModel() as this =
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="SimpleITKCSharp">
-      <HintPath>{xml simpleItkManaged}</HintPath>
-      <Private>true</Private>
-    </Reference>
     <ProjectReference Include="{xml stackProcessingProject}" />
     <ProjectReference Include="{xml stackProcessingCoreProject}" />
 {plotlyReference}
-  </ItemGroup>
-  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
-    <None Include="{xml simpleItkWindowsNative}">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>libSimpleITKCSharpNative.dll</TargetPath>
-    </None>
-  </ItemGroup>
-  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
-    <None Include="{xml simpleItkLinuxNative}" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
-    <None Include="{xml simpleItkMacNative}" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.fs" />

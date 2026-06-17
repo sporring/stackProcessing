@@ -6,9 +6,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="../../lib/spnth.dll" Condition="$([MSBuild]::IsOSPlatform('Windows'))" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="../../lib/libspnth.so" Condition="$([MSBuild]::IsOSPlatform('Linux'))" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="../../lib/libspnth.dylib" Condition="$([MSBuild]::IsOSPlatform('OSX'))" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../lib/spnth.dll" Condition="$([MSBuild]::IsOSPlatform('Windows')) and Exists('../../lib/spnth.dll')" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../lib/libspnth.so" Condition="$([MSBuild]::IsOSPlatform('Linux')) and Exists('../../lib/libspnth.so')" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../lib/libspnth.dylib" Condition="$([MSBuild]::IsOSPlatform('OSX')) and Exists('../../lib/libspnth.dylib')" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

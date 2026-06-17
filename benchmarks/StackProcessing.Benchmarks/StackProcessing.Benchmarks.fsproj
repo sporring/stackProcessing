@@ -7,28 +7,18 @@
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
-    <Reference Include="SimpleITKCSharp">
-      <HintPath>../../lib/SimpleITKCSharpManaged.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
     <ProjectReference Include="../../../FSharpITK/src/Image/Image.fsproj" />
     <ProjectReference Include="../../src/StackProcessing/StackProcessing.fsproj" />
     <ProjectReference Include="../../../SharpFFTW/SharpFFTW/SharpFFTW.csproj" />
   </ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
-    <None Include="../../lib/SimpleITKCSharpNative.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <TargetPath>libSimpleITKCSharpNative.dll</TargetPath>
-    </None>
-    <None Include="../../lib/spnth.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../lib/spnth.dll" Condition="Exists('../../lib/spnth.dll')" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
-    <None Include="../../lib/libSimpleITKCSharpNative.so" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="../../lib/libspnth.so" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../lib/libspnth.so" Condition="Exists('../../lib/libspnth.so')" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
-    <None Include="../../lib/libSimpleITKCSharpNative.dylib" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="../../lib/libspnth.dylib" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../lib/libspnth.dylib" Condition="Exists('../../lib/libspnth.dylib')" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
