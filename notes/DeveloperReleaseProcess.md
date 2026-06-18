@@ -84,7 +84,7 @@ Install vcpkg and the native FFTW dependency:
 ```powershell
 git clone https://github.com/microsoft/vcpkg C:\dev\vcpkg
 C:\dev\vcpkg\bootstrap-vcpkg.bat
-C:\dev\vcpkg\vcpkg.exe install fftw3:x64-windows libtiff:x64-windows
+C:\dev\vcpkg\vcpkg.exe install fftw3:x64-windows tiff:x64-windows
 $env:VCPKG_ROOT = "C:\dev\vcpkg"
 ```
 
