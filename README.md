@@ -13,6 +13,7 @@ This README is for general users who want to install StackProcessing, run Studio
 More technical notes are in:
 
 - [notes/Concepts.md](notes/Concepts.md): current vocabulary and high-level architecture.
+- [notes/ChunkPayload.md](notes/ChunkPayload.md): the central Chunk payload representation.
 - [notes/SlimPipeline.md](notes/SlimPipeline.md): the streaming and deferred execution engine.
 - [notes/StackProcessing.md](notes/StackProcessing.md): how Chunk operations are bound to the streaming engine.
 - [notes/ChunkBackboneStageGaps.md](notes/ChunkBackboneStageGaps.md): current Chunk runtime status.
@@ -65,8 +66,8 @@ The current developer build expects the `Zarr.NET` checkout to sit next to
 `stackProcessing`. If it is elsewhere, pass
 `/p:ZarrNetProject=/absolute/path/to/Zarr.NET.csproj` to `dotnet build`.
 
-Some high-performance Chunk stages use native helper libraries built from the
-`native/` sources. Build or restore those native binaries before running
+Some high-performance Chunk stages use low-level native helper libraries built
+from the `lowlevel/` sources. Build or restore those native binaries before running
 samples that use median filters, convolution, FFT, resampling, signed distance
 bands, or connected components.
 

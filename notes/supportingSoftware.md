@@ -60,6 +60,9 @@ For the current calibration workflow, ladder strategy, shape filtering, fixed-th
 - [SlimPipeline.md](SlimPipeline.md)
 - [StackProcessing.md](StackProcessing.md)
 - [dsl-stage-graph-enrichment.md](dsl-stage-graph-enrichment.md)
+- [ChunkPayload.md](ChunkPayload.md)
+- [ChunkFftStreamingSummary.md](ChunkFftStreamingSummary.md)
+- [NativeTiffLowLevelNotes.md](NativeTiffLowLevelNotes.md)
 
 ## Benchmarks
 
@@ -84,4 +87,4 @@ StackProcessing builds on:
 - PureHDF and ZarrNET for HDF5/NeXus and Zarr-style array storage.
 - Expecto, YoloDev.Expecto.TestSdk, Microsoft.NET.Test.Sdk, and coverlet for tests.
 - DIKU.Graph for graph algorithms used in the core.
-- Native helper libraries from `native/` for selected Chunk kernels.
+- Low-level native helper libraries from `lowlevel/` for selected Chunk kernels.

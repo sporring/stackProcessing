@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG -dynamiclib -Wl,-headerpad_max_install_names -o /Users/jrh630/repositories/stackProcessing/lib/libspnth.dylib -install_name @rpath/libspnth.dylib CMakeFiles/spnth.dir/MedianNthElement.cpp.o  /opt/homebrew/Cellar/fftw/3.3.11/lib/libfftw3f.dylib

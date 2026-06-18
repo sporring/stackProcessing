@@ -11,13 +11,13 @@
     <ProjectReference Include="../../src/StackProcessing/StackProcessing.fsproj" />
   </ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
-    <None Include="../../lib/spnth.dll" Condition="Exists('../../lib/spnth.dll')" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../lib/lowlevel.dll" Condition="Exists('../../lib/lowlevel.dll')" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
-    <None Include="../../lib/libspnth.so" Condition="Exists('../../lib/libspnth.so')" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../lib/liblowlevel.so" Condition="Exists('../../lib/liblowlevel.so')" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
-    <None Include="../../lib/libspnth.dylib" Condition="Exists('../../lib/libspnth.dylib')" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../lib/liblowlevel.dylib" Condition="Exists('../../lib/liblowlevel.dylib')" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />

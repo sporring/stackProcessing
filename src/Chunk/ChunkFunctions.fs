@@ -120,9 +120,9 @@ module ChunkFunctions =
         for i in 0 .. span.Length - 1 do
             span[i] <- value
 
-    module NativeMedian =
+    module LowLevelNative =
         [<Literal>]
-        let LibraryPath = "spnth"
+        let LibraryPath = "lowlevel"
 
         [<DllImport(LibraryPath, EntryPoint = "sp_median_uint16_nth_slab")>]
         extern void medianUInt16NthSlab(
@@ -451,7 +451,7 @@ module ChunkFunctions =
             if NativeLibrary.TryLoad(LibraryPath, typeof<ChunkLayout>.Assembly, searchPath, &handle) then
                 NativeLibrary.Free(handle)
             else
-                invalidOp "Native StackProcessing helper 'spnth' was not found. Build it with native/StackProcessing.NativeMedian/build.sh so the platform library is placed in the solution lib directory and copied to the application output."
+                invalidOp "Native StackProcessing helper 'lowlevel' was not found. Build it with lowlevel/build.sh or lowlevel/build.ps1 so the platform library is placed in the solution lib directory and copied to the application output."
 
     let copyChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
         let output = create<'T> chunk.Size
@@ -1931,7 +1931,7 @@ module ChunkFunctions =
         nativeCall
         (chunk: Chunk<'T>)
         =
-        NativeMedian.ensureAvailable ()
+        LowLevelNative.ensureAvailable ()
         let output = Chunk.create<'T> outputSize
         let mutable inputHandle = Unchecked.defaultof<GCHandle>
         let mutable outputHandle = Unchecked.defaultof<GCHandle>
@@ -1977,7 +1977,7 @@ module ChunkFunctions =
             "sp_resample_2d"
             (uint64 outputWidth, uint64 outputHeight, 1UL)
             (fun input output ->
-                NativeMedian.resample2D(input, output, pixelType, inputWidth, inputHeight, outputWidthI, outputHeightI, spacingX, spacingY, interpolation))
+                LowLevelNative.resample2D(input, output, pixelType, inputWidth, inputHeight, outputWidthI, outputHeightI, spacingX, spacingY, interpolation))
             chunk
 
     let resize3DPairSliceNativeChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
@@ -2005,7 +2005,7 @@ module ChunkFunctions =
         let outputHeightI = checkedUIntToInt "outputHeight" outputHeight
         let pixelType = nativePixelType<'T>
         let interpolation = ResampleInterpolation.toNative interpolation
-        NativeMedian.ensureAvailable ()
+        LowLevelNative.ensureAvailable ()
         let output = Chunk.create<'T> (uint64 outputWidth, uint64 outputHeight, 1UL)
         let mutable lowerHandle = Unchecked.defaultof<GCHandle>
         let mutable upperHandle = Unchecked.defaultof<GCHandle>
@@ -2023,7 +2023,7 @@ module ChunkFunctions =
                 outputHandle <- GCHandle.Alloc(output.Bytes, GCHandleType.Pinned)
                 outputPinned <- true
 
-                NativeMedian.resize3DPairSlice(
+                LowLevelNative.resize3DPairSlice(
                     lowerHandle.AddrOfPinnedObject(),
                     upperHandle.AddrOfPinnedObject(),
                     outputHandle.AddrOfPinnedObject(),
@@ -2059,7 +2059,7 @@ module ChunkFunctions =
             "sp_euler_2d.transform"
             chunk.Size
             (fun input output ->
-                NativeMedian.euler2D(input, output, pixelType, width, height, centerX, centerY, angle, dx, dy, 1, ResampleInterpolation.toNative Linear))
+                LowLevelNative.euler2D(input, output, pixelType, width, height, centerX, centerY, angle, dx, dy, 1, ResampleInterpolation.toNative Linear))
             chunk
 
     let euler2DRotateNativeChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
@@ -2073,7 +2073,7 @@ module ChunkFunctions =
             "sp_euler_2d.rotate"
             chunk.Size
             (fun input output ->
-                NativeMedian.euler2D(input, output, pixelType, width, height, centerX, centerY, angle, 0.0, 0.0, 0, ResampleInterpolation.toNative Linear))
+                LowLevelNative.euler2D(input, output, pixelType, width, height, centerX, centerY, angle, 0.0, 0.0, 0, ResampleInterpolation.toNative Linear))
             chunk
 
     let private validateOddKernel name (kernel: float32[]) =
@@ -2126,7 +2126,7 @@ module ChunkFunctions =
 
         let width, height = validateUInt8Window "window" window
         let kernelWidth, kernelHeight, kernelDepth, nativeKernel = flattenKernel kernel
-        NativeMedian.ensureAvailable ()
+        LowLevelNative.ensureAvailable ()
 
         let outputs =
             Array.init outputCount (fun _ -> create<uint8> (uint64 width, uint64 height, 1UL))
@@ -2163,7 +2163,7 @@ module ChunkFunctions =
                 kernelHandle <- GCHandle.Alloc(nativeKernel, GCHandleType.Pinned)
                 kernelPinned <- true
 
-                NativeMedian.convolveUInt8Slices(
+                LowLevelNative.convolveUInt8Slices(
                     inputPointerHandle.AddrOfPinnedObject(),
                     outputPointerHandle.AddrOfPinnedObject(),
                     kernelHandle.AddrOfPinnedObject(),
@@ -2276,21 +2276,21 @@ module ChunkFunctions =
         =
         let t = typeof<'T>
         match axis with
-        | NativeX when t = typeof<uint8> -> NativeMedian.convolveUInt8XSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
-        | NativeY when t = typeof<uint8> -> NativeMedian.convolveUInt8YSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
-        | NativeZ when t = typeof<uint8> -> NativeMedian.convolveUInt8ZSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
-        | NativeX when t = typeof<int8> -> NativeMedian.convolveInt8XSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
-        | NativeY when t = typeof<int8> -> NativeMedian.convolveInt8YSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
-        | NativeZ when t = typeof<int8> -> NativeMedian.convolveInt8ZSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
-        | NativeX when t = typeof<uint16> -> NativeMedian.convolveUInt16XSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
-        | NativeY when t = typeof<uint16> -> NativeMedian.convolveUInt16YSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
-        | NativeZ when t = typeof<uint16> -> NativeMedian.convolveUInt16ZSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
-        | NativeX when t = typeof<int32> -> NativeMedian.convolveInt32XSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
-        | NativeY when t = typeof<int32> -> NativeMedian.convolveInt32YSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
-        | NativeZ when t = typeof<int32> -> NativeMedian.convolveInt32ZSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
-        | NativeX when t = typeof<float32> -> NativeMedian.convolveFloat32XSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
-        | NativeY when t = typeof<float32> -> NativeMedian.convolveFloat32YSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
-        | NativeZ when t = typeof<float32> -> NativeMedian.convolveFloat32ZSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
+        | NativeX when t = typeof<uint8> -> LowLevelNative.convolveUInt8XSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
+        | NativeY when t = typeof<uint8> -> LowLevelNative.convolveUInt8YSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
+        | NativeZ when t = typeof<uint8> -> LowLevelNative.convolveUInt8ZSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
+        | NativeX when t = typeof<int8> -> LowLevelNative.convolveInt8XSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
+        | NativeY when t = typeof<int8> -> LowLevelNative.convolveInt8YSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
+        | NativeZ when t = typeof<int8> -> LowLevelNative.convolveInt8ZSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
+        | NativeX when t = typeof<uint16> -> LowLevelNative.convolveUInt16XSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
+        | NativeY when t = typeof<uint16> -> LowLevelNative.convolveUInt16YSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
+        | NativeZ when t = typeof<uint16> -> LowLevelNative.convolveUInt16ZSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
+        | NativeX when t = typeof<int32> -> LowLevelNative.convolveInt32XSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
+        | NativeY when t = typeof<int32> -> LowLevelNative.convolveInt32YSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
+        | NativeZ when t = typeof<int32> -> LowLevelNative.convolveInt32ZSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
+        | NativeX when t = typeof<float32> -> LowLevelNative.convolveFloat32XSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
+        | NativeY when t = typeof<float32> -> LowLevelNative.convolveFloat32YSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
+        | NativeZ when t = typeof<float32> -> LowLevelNative.convolveFloat32ZSlices(slices, outputs, kernel, width, height, windowLength, kernelLength, outputStart, outputCount)
         | _ ->
             invalidArg "T" $"Chunk native axis convolution supports UInt8, Int8, UInt16, Int32, and Float32 chunks, got {t.Name}."
 
@@ -2308,7 +2308,7 @@ module ChunkFunctions =
             invalidArg "outputCount" $"Chunk native axis convolution expects positive outputCount, got {outputCount}."
 
         let width, height = validateScalarWindow "window" window
-        NativeMedian.ensureAvailable ()
+        LowLevelNative.ensureAvailable ()
 
         let outputs =
             Array.init outputCount (fun _ -> create<'T> (uint64 width, uint64 height, 1UL))
@@ -2456,7 +2456,7 @@ module ChunkFunctions =
         let width, height, components = validateVectorWindowFloat32 "window" window
         let spatialSize = window[0].SpatialSize
         let componentCount = window[0].Components
-        NativeMedian.ensureAvailable ()
+        LowLevelNative.ensureAvailable ()
 
         let outputs =
             Array.init outputCount (fun _ ->
@@ -2500,7 +2500,7 @@ module ChunkFunctions =
                 let status =
                     match axis with
                     | 0 ->
-                        NativeMedian.convolveFloat32VectorComponentsXSlices(
+                        LowLevelNative.convolveFloat32VectorComponentsXSlices(
                             inputPointerHandle.AddrOfPinnedObject(),
                             outputPointerHandle.AddrOfPinnedObject(),
                             kernelHandle.AddrOfPinnedObject(),
@@ -2512,7 +2512,7 @@ module ChunkFunctions =
                             outputStart,
                             outputCount)
                     | 1 ->
-                        NativeMedian.convolveFloat32VectorComponentsYSlices(
+                        LowLevelNative.convolveFloat32VectorComponentsYSlices(
                             inputPointerHandle.AddrOfPinnedObject(),
                             outputPointerHandle.AddrOfPinnedObject(),
                             kernelHandle.AddrOfPinnedObject(),
@@ -2524,7 +2524,7 @@ module ChunkFunctions =
                             outputStart,
                             outputCount)
                     | 2 ->
-                        NativeMedian.convolveFloat32VectorComponentsZSlices(
+                        LowLevelNative.convolveFloat32VectorComponentsZSlices(
                             inputPointerHandle.AddrOfPinnedObject(),
                             outputPointerHandle.AddrOfPinnedObject(),
                             kernelHandle.AddrOfPinnedObject(),
@@ -2598,7 +2598,7 @@ module ChunkFunctions =
             if window[i].Size <> (width, height, 1UL) then
                 invalidArg "window" $"Chunk signed distance band expects all slices to have size {(width, height, 1UL)}, got {window[i].Size} at window index {i}."
 
-        NativeMedian.ensureAvailable ()
+        LowLevelNative.ensureAvailable ()
 
         let outputs =
             Array.init outputCount (fun _ -> create<float32> (width, height, 1UL))
@@ -2633,7 +2633,7 @@ module ChunkFunctions =
 
                 NativeSp.checkStatus
                     "sp_signed_distance_band_uint8_slices"
-                    (NativeMedian.signedDistanceBandUInt8Slices(
+                    (LowLevelNative.signedDistanceBandUInt8Slices(
                         inputPointerHandle.AddrOfPinnedObject(),
                         outputPointerHandle.AddrOfPinnedObject(),
                         widthI,

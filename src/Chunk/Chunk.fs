@@ -164,7 +164,7 @@ type Histogram<'T when 'T: comparison> =
 
 module NativeSp =
     [<Literal>]
-    let LibraryPath = "spnth"
+    let LibraryPath = "lowlevel"
 
     [<DllImport(LibraryPath, EntryPoint = "sp_fftwf_complex_xy_inplace")>]
     extern int fftwfComplexXYInplace(
@@ -305,7 +305,7 @@ module NativeSp =
         if NativeLibrary.TryLoad(LibraryPath, typeof<ChunkLayout>.Assembly, searchPath, &handle) then
             NativeLibrary.Free(handle)
         else
-            invalidOp "Native StackProcessing helper 'spnth' was not found. Build it with native/StackProcessing.NativeMedian/build.sh so the platform library is placed in the solution lib directory and copied to the application output."
+            invalidOp "Native StackProcessing helper 'lowlevel' was not found. Build it with lowlevel/build.sh or lowlevel/build.ps1 so the platform library is placed in the solution lib directory and copied to the application output."
 
     let checkStatus operation status =
         if status <> 0 then

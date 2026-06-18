@@ -339,7 +339,7 @@ let private flattenKernelForNative (kernel: float32[,,]) =
     values
 
 let private convolveNativeFloat32Slices width height (plan: KernelPlan) (nativeKernel: float32[]) outputStart outputCount (window: Chunk<float32>[]) =
-    ChunkKernel.NativeMedian.ensureAvailable ()
+    ChunkKernel.LowLevelNative.ensureAvailable ()
 
     let outputs =
         Array.init outputCount (fun _ -> Chunk.create<float32> (uint64 width, uint64 height, 1UL))
@@ -376,7 +376,7 @@ let private convolveNativeFloat32Slices width height (plan: KernelPlan) (nativeK
             kernelHandle <- GCHandle.Alloc(nativeKernel, GCHandleType.Pinned)
             kernelPinned <- true
 
-            ChunkKernel.NativeMedian.convolveFloat32Slices(
+            ChunkKernel.LowLevelNative.convolveFloat32Slices(
                 inputPointerHandle.AddrOfPinnedObject(),
                 outputPointerHandle.AddrOfPinnedObject(),
                 kernelHandle.AddrOfPinnedObject(),
@@ -407,7 +407,7 @@ let private convolveNativeFloat32Slices width height (plan: KernelPlan) (nativeK
             inputHandles[i].Free()
 
 let private convolveNativeUInt8Slices width height (plan: KernelPlan) (nativeKernel: float32[]) outputStart outputCount (window: Chunk<uint8>[]) =
-    ChunkKernel.NativeMedian.ensureAvailable ()
+    ChunkKernel.LowLevelNative.ensureAvailable ()
 
     let outputs =
         Array.init outputCount (fun _ -> Chunk.create<uint8> (uint64 width, uint64 height, 1UL))
@@ -444,7 +444,7 @@ let private convolveNativeUInt8Slices width height (plan: KernelPlan) (nativeKer
             kernelHandle <- GCHandle.Alloc(nativeKernel, GCHandleType.Pinned)
             kernelPinned <- true
 
-            ChunkKernel.NativeMedian.convolveUInt8Slices(
+            ChunkKernel.LowLevelNative.convolveUInt8Slices(
                 inputPointerHandle.AddrOfPinnedObject(),
                 outputPointerHandle.AddrOfPinnedObject(),
                 kernelHandle.AddrOfPinnedObject(),
@@ -489,17 +489,17 @@ let private invokeNativeFixedKernelSlices<'T when 'T: equality and 'T: (new: uni
     =
     let t = typeof<'T>
     if t = typeof<uint8> then
-        ChunkKernel.NativeMedian.convolveUInt8Slices(slices, outputs, kernel, width, height, windowLength, kernelWidth, kernelHeight, kernelDepth, outputStart, outputCount)
+        ChunkKernel.LowLevelNative.convolveUInt8Slices(slices, outputs, kernel, width, height, windowLength, kernelWidth, kernelHeight, kernelDepth, outputStart, outputCount)
     elif t = typeof<int8> then
-        ChunkKernel.NativeMedian.convolveInt8Slices(slices, outputs, kernel, width, height, windowLength, kernelWidth, kernelHeight, kernelDepth, outputStart, outputCount)
+        ChunkKernel.LowLevelNative.convolveInt8Slices(slices, outputs, kernel, width, height, windowLength, kernelWidth, kernelHeight, kernelDepth, outputStart, outputCount)
     elif t = typeof<uint16> then
-        ChunkKernel.NativeMedian.convolveUInt16Slices(slices, outputs, kernel, width, height, windowLength, kernelWidth, kernelHeight, kernelDepth, outputStart, outputCount)
+        ChunkKernel.LowLevelNative.convolveUInt16Slices(slices, outputs, kernel, width, height, windowLength, kernelWidth, kernelHeight, kernelDepth, outputStart, outputCount)
     elif t = typeof<int16> then
-        ChunkKernel.NativeMedian.convolveInt16Slices(slices, outputs, kernel, width, height, windowLength, kernelWidth, kernelHeight, kernelDepth, outputStart, outputCount)
+        ChunkKernel.LowLevelNative.convolveInt16Slices(slices, outputs, kernel, width, height, windowLength, kernelWidth, kernelHeight, kernelDepth, outputStart, outputCount)
     elif t = typeof<int32> then
-        ChunkKernel.NativeMedian.convolveInt32Slices(slices, outputs, kernel, width, height, windowLength, kernelWidth, kernelHeight, kernelDepth, outputStart, outputCount)
+        ChunkKernel.LowLevelNative.convolveInt32Slices(slices, outputs, kernel, width, height, windowLength, kernelWidth, kernelHeight, kernelDepth, outputStart, outputCount)
     elif t = typeof<float32> then
-        ChunkKernel.NativeMedian.convolveFloat32Slices(slices, outputs, kernel, width, height, windowLength, kernelWidth, kernelHeight, kernelDepth, outputStart, outputCount)
+        ChunkKernel.LowLevelNative.convolveFloat32Slices(slices, outputs, kernel, width, height, windowLength, kernelWidth, kernelHeight, kernelDepth, outputStart, outputCount)
     else
         invalidArg "T" $"Native fixed-kernel chunk convolution supports UInt8, Int8, UInt16, Int16, Int32, and Float32 chunks, got {t.Name}."
 
@@ -512,7 +512,7 @@ let private convolveNativeFixedKernelSlices<'T when 'T: equality and 'T: (new: u
     outputCount
     (window: Chunk<'T>[])
     =
-    ChunkKernel.NativeMedian.ensureAvailable ()
+    ChunkKernel.LowLevelNative.ensureAvailable ()
 
     let outputs =
         Array.init outputCount (fun _ -> Chunk.create<'T> (uint64 width, uint64 height, 1UL))

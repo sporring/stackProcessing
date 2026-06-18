@@ -1,33 +1,28 @@
-Download and extract the SimpleITK CSharp Library from the release section of https://github.com/SimpleITK/SimpleITK?tab=readme-ov-file for your platform here, e.g., download and unzip SimpleITK-2.5.3-CSharp-macosx-10.9-anycpu.zip and move the dll and dylib files here. 
-Do NOT change any file names. We expect following the filenames:
+This directory holds platform-native helper libraries used by StackProcessing.
 
-[SHARED]
-SimpleITKCSharpManaged.dll
+Build the current low-level helper from the repository root:
 
-[LINUX]
-libSimpleITKCSharpNative.so
+```bash
+bash lowlevel/build.sh
+```
 
-[MACOSX]
-libSimpleITKCSharpNative.dylib
+On Windows, use:
 
-[WINDOWS]
-SimpleITKCSharpNative.dll
+```powershell
+powershell -ExecutionPolicy Bypass -File .\lowlevel\build.ps1
+```
 
-On MACOS (e.g., https://github.com/SimpleITK/SimpleITK/releases/tag/v2.5.3), you probably have to move the library out of quarantine by:
-xattr -dr com.apple.quarantine libSimpleITKCSharpNative.dylib
-
-StackProcessing also uses a small native median helper for C++ std::nth_element slab kernels.
-Build it from the repository root with:
-
-native/StackProcessing.NativeMedian/build.sh
-
-The build writes the platform-specific library into this directory. Expected names are:
+Expected helper names are:
 
 [LINUX]
-libspnth.so
+liblowlevel.so
 
 [MACOSX]
-libspnth.dylib
+liblowlevel.dylib
 
 [WINDOWS]
-spnth.dll
+lowlevel.dll
+
+The helper depends on single-precision FFTW. On Linux and macOS, install FFTW
+through the system package manager before building. On Windows, install FFTW
+with vcpkg or place the matching FFTW runtime DLL beside lowlevel.dll.

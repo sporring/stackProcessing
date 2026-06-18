@@ -369,7 +369,7 @@ Stop repeating a step aggressively when any of these happen:
 - R2 changes only in the third or fourth decimal place,
 - flagged prediction count does not decrease meaningfully,
 - the flagged rows concentrate in a lower family that was already accepted,
-- the flagged rows are mostly old or tiny shapes outside the active shape scope,
+- the flagged rows are mostly stale or tiny shapes outside the active shape scope,
 - collected record count grows but evidence-row count and fit quality barely move.
 
 Suggested hard limit:
@@ -385,7 +385,7 @@ For a clean machine-to-machine comparison, prefer this aggressive cap. If a fami
 When a step plateaus:
 
 1. Re-run `fit` and `inspect` with explicit `--shapes`.
-2. Inspect whether the request is stuck on old shapes or old graph names.
+2. Inspect whether the request is stuck on stale shapes or stale graph names.
 3. Try `--fixed-through` one level below the current family to see whether the strain is moving down the ladder.
 4. Check whether the flagged rows share a missing model factor, such as file format, pixel type, cast direction, write-vs-ignore, coordinate axis, or window radius.
 5. If the model explanation is clear, update the model terms before collecting more.
@@ -509,7 +509,7 @@ Both `fit` and `inspect` should be given the same active shape scope used for th
 --shapes 256x256x256,512x512x128,1024x1024x64
 ```
 
-This prevents old measurements from small or experimental shapes from contaminating the fit. In particular, old `64x64x64` singleton measurements can create noisy flagged rows because fixed overhead dominates such small runs.
+This prevents measurements from small or experimental shapes from contaminating the fit. In particular, `64x64x64` singleton measurements can create noisy flagged rows because fixed overhead dominates such small runs.
 
 ## IO And IO-Cast Notes
 
@@ -622,7 +622,7 @@ dotnet src/StackProcessing.Probe/bin/Debug/net10.0/StackProcessing.Probe.dll \
   bottom-up --size 128 --noisy-type Float32 --repeat 3 -j 1
 ```
 
-The current preferred workflow is `collect`, `fit`, and `inspect`. Use older compatibility commands only when reproducing older measurements.
+The current preferred workflow is `collect`, `fit`, and `inspect`. Use compatibility commands only when reproducing archived measurements.
 
 ## Main Outputs
 

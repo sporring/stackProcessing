@@ -1,16 +1,16 @@
 <Project>
   <ItemGroup>
-    <None Include="$(MSBuildThisFileDirectory)lib/spnth.dll"
-          Condition="$([MSBuild]::IsOSPlatform('Windows')) and Exists('$(MSBuildThisFileDirectory)lib/spnth.dll')"
-          Link="spnth.dll"
+    <None Include="$(MSBuildThisFileDirectory)lib/lowlevel.dll"
+          Condition="$([MSBuild]::IsOSPlatform('Windows')) and Exists('$(MSBuildThisFileDirectory)lib/lowlevel.dll')"
+          Link="lowlevel.dll"
           CopyToOutputDirectory="PreserveNewest" />
-    <None Include="$(MSBuildThisFileDirectory)lib/libspnth.so"
-          Condition="$([MSBuild]::IsOSPlatform('Linux')) and Exists('$(MSBuildThisFileDirectory)lib/libspnth.so')"
-          Link="libspnth.so"
+    <None Include="$(MSBuildThisFileDirectory)lib/liblowlevel.so"
+          Condition="$([MSBuild]::IsOSPlatform('Linux')) and Exists('$(MSBuildThisFileDirectory)lib/liblowlevel.so')"
+          Link="liblowlevel.so"
           CopyToOutputDirectory="PreserveNewest" />
-    <None Include="$(MSBuildThisFileDirectory)lib/libspnth.dylib"
-          Condition="$([MSBuild]::IsOSPlatform('OSX')) and Exists('$(MSBuildThisFileDirectory)lib/libspnth.dylib')"
-          Link="libspnth.dylib"
+    <None Include="$(MSBuildThisFileDirectory)lib/liblowlevel.dylib"
+          Condition="$([MSBuild]::IsOSPlatform('OSX')) and Exists('$(MSBuildThisFileDirectory)lib/liblowlevel.dylib')"
+          Link="liblowlevel.dylib"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -152,8 +152,8 @@ Candidates:
 - `float32 -> uint8` clamp/round
 - `float32 -> uint16` clamp/round
 
-These are important because explicit full-volume casting previously created
-memory pressure. Even when the best convolution path does casts inside C++, fast
+These are important because explicit full-volume casting creates memory
+pressure. Even when the best convolution path does casts inside C++, fast
 managed cast kernels can still matter for IO, display, normalization, and
 analysis stages.
 

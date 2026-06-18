@@ -136,7 +136,7 @@ run mkdir -p "benchmarks/results" "$figure_dir" "$tex_figure_dir" "$output_root"
 
 echo
 echo "== Build native and managed benchmark binaries =="
-run bash native/StackProcessing.NativeMedian/build.sh
+run bash lowlevel/build.sh
 run dotnet build benchmarks/StackProcessing.Benchmarks/StackProcessing.Benchmarks.fsproj -c Release --nologo --disable-build-servers -p:UseSharedCompilation=false
 run bash benchmarks/native-libtiff-shim/build-unix.sh "$(dirname "$stackprocessing_dll")"
 run cmake -S benchmarks/cpp-itk -B benchmarks/cpp-itk/build -DCMAKE_BUILD_TYPE=Release

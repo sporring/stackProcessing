@@ -45,8 +45,59 @@ Prefer immutable archives made from the tag, not from a working directory. Keep 
 Install dotnet, e.g., on Ubuntu
 
 ```bash
-sudo apt-get update && sudo apt-get install -y dotnet-sdk-10.0
+sudo apt-get update
+sudo apt-get install -y git dotnet-sdk-10.0 build-essential cmake pkg-config libfftw3-dev libtiff-dev
 ```
+
+On macOS, install Homebrew and then:
+
+```bash
+brew install git dotnet cmake pkg-config fftw libtiff
+```
+
+If multiple .NET SDKs are installed, confirm that `dotnet --version` reports a
+.NET 10 SDK before building.
+
+For Windows developer testing, use Windows 11 version 25H2 or newer on x64.
+Microsoft lists 25H2 as the broad General Availability Channel release for
+existing devices; 26H1 is scoped to selected new devices rather than normal
+in-place updates. Install:
+
+- .NET 10 SDK;
+- Git for Windows;
+- Visual Studio 2026 Build Tools or Visual Studio 2026 with the C++ desktop
+  workload;
+- CMake;
+- vcpkg, or another explicit source of FFTW and libtiff binaries.
+
+One possible PowerShell setup is:
+
+```powershell
+winget install --id Microsoft.DotNet.SDK.10 --exact
+winget install --id Git.Git --exact
+winget install --id Kitware.CMake --exact
+winget install --id Microsoft.VisualStudio.2026.BuildTools --exact
+```
+
+Install vcpkg and the native FFTW dependency:
+
+```powershell
+git clone https://github.com/microsoft/vcpkg C:\dev\vcpkg
+C:\dev\vcpkg\bootstrap-vcpkg.bat
+C:\dev\vcpkg\vcpkg.exe install fftw3:x64-windows libtiff:x64-windows
+$env:VCPKG_ROOT = "C:\dev\vcpkg"
+```
+
+The managed projects can be restored and built with the same `dotnet` commands
+as Linux and macOS. Build the low-level native helper on Windows with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\lowlevel\build.ps1
+```
+
+This writes `lib\lowlevel.dll`. If vcpkg supplies FFTW as a separate runtime
+DLL, keep the FFTW DLL beside `lowlevel.dll` or make it visible through `PATH`
+before running StackProcessing.
 
 Clone StackProcessing and the current Zarr.NET fork side by side. The Chunk
 Zarr stages use APIs that are still moving, so this developer version expects a
@@ -62,6 +113,7 @@ build and test:
 ```bash
 dotnet build Zarr.NET/Zarr.NET.csproj --configuration Release --nologo
 cd stackProcessing
+bash lowlevel/build.sh
 dotnet restore StackProcessing.sln
 dotnet build StackProcessing.sln --configuration Release --nologo
 dotnet test --configuration Release --no-build --nologo

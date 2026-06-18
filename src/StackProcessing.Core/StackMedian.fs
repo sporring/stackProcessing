@@ -1947,7 +1947,7 @@ let private medianNativeNthSlice<'T when 'T: equality and 'T: (new: unit -> 'T) 
     radius
     (window: Chunk<'T>[])
     =
-    ChunkKernel.NativeMedian.ensureAvailable ()
+    ChunkKernel.LowLevelNative.ensureAvailable ()
 
     let output = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
     let handles = Array.zeroCreate<GCHandle> window.Length
@@ -1995,7 +1995,7 @@ let private medianNativeNthSlice<'T when 'T: equality and 'T: (new: unit -> 'T) 
 let private medianNativeUInt8NthSlice width height radius (window: Chunk<uint8>[]) =
     medianNativeNthSlice<uint8>
         (fun slices output width height windowLength radius outputStart outputCount ->
-            ChunkKernel.NativeMedian.medianUInt8NthSlab(slices, output, width, height, windowLength, radius, outputStart, outputCount))
+            ChunkKernel.LowLevelNative.medianUInt8NthSlab(slices, output, width, height, windowLength, radius, outputStart, outputCount))
         width
         height
         radius
@@ -2004,7 +2004,7 @@ let private medianNativeUInt8NthSlice width height radius (window: Chunk<uint8>[
 let private medianNativeUInt16NthSlice width height radius (window: Chunk<uint16>[]) =
     medianNativeNthSlice<uint16>
         (fun slices output width height windowLength radius outputStart outputCount ->
-            ChunkKernel.NativeMedian.medianUInt16NthSlab(slices, output, width, height, windowLength, radius, outputStart, outputCount))
+            ChunkKernel.LowLevelNative.medianUInt16NthSlab(slices, output, width, height, windowLength, radius, outputStart, outputCount))
         width
         height
         radius
@@ -2013,7 +2013,7 @@ let private medianNativeUInt16NthSlice width height radius (window: Chunk<uint16
 let private medianNativeInt32NthSlice width height radius (window: Chunk<int32>[]) =
     medianNativeNthSlice<int32>
         (fun slices output width height windowLength radius outputStart outputCount ->
-            ChunkKernel.NativeMedian.medianInt32NthSlab(slices, output, width, height, windowLength, radius, outputStart, outputCount))
+            ChunkKernel.LowLevelNative.medianInt32NthSlab(slices, output, width, height, windowLength, radius, outputStart, outputCount))
         width
         height
         radius
@@ -2022,7 +2022,7 @@ let private medianNativeInt32NthSlice width height radius (window: Chunk<int32>[
 let private medianNativeFloat32NthSlice width height radius (window: Chunk<float32>[]) =
     medianNativeNthSlice<float32>
         (fun slices output width height windowLength radius outputStart outputCount ->
-            ChunkKernel.NativeMedian.medianFloat32NthSlab(slices, output, width, height, windowLength, radius, outputStart, outputCount))
+            ChunkKernel.LowLevelNative.medianFloat32NthSlab(slices, output, width, height, windowLength, radius, outputStart, outputCount))
         width
         height
         radius

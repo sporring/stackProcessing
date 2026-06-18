@@ -1,9 +1,7 @@
 # Chunk Payload
 
-The active StackProcessing image payload is `Chunk<'T>`.
-
-This file is kept only so existing links into `notes/Image.md` land on the current
-payload model. The active architecture notes are:
+The StackProcessing image payload is `Chunk<'T>`. The active architecture notes
+are:
 
 - [Concepts.md](Concepts.md)
 - [StackProcessing.md](StackProcessing.md)

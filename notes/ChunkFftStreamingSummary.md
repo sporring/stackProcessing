@@ -68,7 +68,8 @@ workspace. It must not read the full volume, transform it, and write it back.
 
 ## Native Wrapper
 
-The active backend calls a thin native wrapper through `NativeSp`:
+The active backend calls the `lowlevel` native helper through the F# low-level
+wrapper:
 
 - `fftwfComplexXYInplace`
 - `fftwfComplexZInplace`
