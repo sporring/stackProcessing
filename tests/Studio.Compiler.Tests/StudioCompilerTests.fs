@@ -1541,6 +1541,40 @@ let generatorSuite =
             Expect.stringContains code "{Expand0.Mean}" "Format placeholder should map to Mean expression."
             Expect.stringContains code $"Pixels: {{Expand0.NumPixels}}{System.Environment.NewLine}Mean: {{Expand0.Mean}}" "Generated F# string should contain a literal newline."
 
+        testCase "direct computeStats print binds reducer output" <| fun _ ->
+            let path =
+                node "path" "Scalar"
+                    [ p "type" "String" false
+                      p "value" "/tmp/julia" false ]
+
+            let read =
+                node "read" "Read"
+                    [ p "availableMemory" "1073741824" false
+                      p "type" "Float64" false
+                      p "input" "" true
+                      p "suffix" ".tiff" false ]
+
+            let stats =
+                node "stats" "ComputeStats" []
+
+            let print =
+                node "print" "Print"
+                    [ p "format" "{input1}" false
+                      p "input1" "" true ]
+
+            let code =
+                graph
+                    [ path; read; stats; print ]
+                    [ edge "path" "scalarOutput" 0 "read" "parameterInput" 2
+                      edge "read" "output" 0 "stats" "input" 0
+                      edge "stats" "reducerOutput" 0 "print" "parameterInput" 1 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "let ImageStats0 =" "Direct ComputeStats output should be drained into a binding."
+            Expect.stringContains code "|> drain" "Direct ComputeStats binding should run the reducer."
+            Expect.stringContains code "printfn $\"{ImageStats0}\"" "Print should use the concrete stats binding, not the ImageStats type name."
+            Expect.isFalse (code.Contains("printfn $\"{ImageStats}\"")) "Print should not emit the ImageStats type alias."
+
         testCase "image op image lowers selected operation to pair stage" <| fun _ ->
             let assertOperation operation expectedPairFunction =
                 let readA =

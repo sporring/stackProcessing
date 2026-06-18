@@ -11,6 +11,7 @@ target_compile_features(lowlevel PRIVATE cxx_std_17)
 
 if(WIN32)
     find_package(FFTW3 CONFIG QUIET)
+    find_package(TIFF CONFIG QUIET)
 
     if(TARGET FFTW3::fftw3f)
         target_link_libraries(lowlevel PRIVATE FFTW3::fftw3f)
@@ -27,10 +28,25 @@ if(WIN32)
         target_include_directories(lowlevel PRIVATE "${FFTW3F_INCLUDE_DIR}")
         target_link_libraries(lowlevel PRIVATE "${FFTW3F_LIBRARY}")
     endif()
+
+    if(TARGET TIFF::TIFF)
+        target_link_libraries(lowlevel PRIVATE TIFF::TIFF)
+    else()
+        find_path(TIFF_INCLUDE_DIR tiffio.h)
+        find_library(TIFF_LIBRARY NAMES tiff libtiff)
+
+        if(NOT TIFF_INCLUDE_DIR OR NOT TIFF_LIBRARY)
+            message(FATAL_ERROR "Could not find libtiff on Windows. Install tiff with vcpkg and pass -DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake, or set TIFF_INCLUDE_DIR and TIFF_LIBRARY.")
+        endif()
+
+        target_include_directories(lowlevel PRIVATE "${TIFF_INCLUDE_DIR}")
+        target_link_libraries(lowlevel PRIVATE "${TIFF_LIBRARY}")
+    endif()
 else()
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(FFTW3F REQUIRED IMPORTED_TARGET fftw3f)
-    target_link_libraries(lowlevel PRIVATE PkgConfig::FFTW3F)
+    pkg_check_modules(TIFF REQUIRED IMPORTED_TARGET libtiff-4)
+    target_link_libraries(lowlevel PRIVATE PkgConfig::FFTW3F PkgConfig::TIFF)
 endif()
 
 set_target_properties(

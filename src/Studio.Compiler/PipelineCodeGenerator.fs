@@ -542,6 +542,10 @@ module PipelineCodeGenerator =
                     | Some statsName ->
                         match nodesById |> Map.tryFind edge.FromNode with
                         | Some reducerNode when isSingleValueReducerNode reducerNode && edge.FromPort = 0 -> Some statsName
+                        | Some reducerNode when reducerNode.FunctionId = "ComputeStats" && edge.FromPort = 0 ->
+                            Some statsName
+                        | Some reducerNode when reducerNode.FunctionId = "ObjectSizeStats" && edge.FromPort = 0 ->
+                            Some statsName
                         | Some reducerNode when reducerNode.FunctionId = "Expand" ->
                             graph.Edges
                             |> Array.tryFind (fun inputEdge ->
@@ -580,16 +584,21 @@ module PipelineCodeGenerator =
                                         chunkInfoNamesByNodeId
                                         |> Map.tryFind edge.FromNode
                                         |> Option.bind (fun name ->
-                                        match nodesById |> Map.tryFind edge.FromNode with
-                                        | Some sourceNode when sourceNode.FunctionId = "Expand" ->
-                                            chunkInfoFieldExpression name edge.FromPort
-                                        | Some sourceNode when isChunkInfoNode sourceNode ->
-                                            chunkInfoFieldExpression name edge.FromPort
-                                        | Some _ when edge.FromPort = 0 ->
-                                            Some name
-                                        | _ ->
-                                            None))
+                                            match nodesById |> Map.tryFind edge.FromNode with
+                                            | Some sourceNode when sourceNode.FunctionId = "Expand" ->
+                                                chunkInfoFieldExpression name edge.FromPort
+                                            | Some sourceNode when isChunkInfoNode sourceNode ->
+                                                chunkInfoFieldExpression name edge.FromPort
+                                            | Some _ when edge.FromPort = 0 ->
+                                                Some name
+                                            | _ ->
+                                                None))
                                     |> Option.orElseWith (fun () -> serialGeometryNamesByNodeId |> Map.tryFind edge.FromNode)
+                | "output" ->
+                    imageInfoNamesByNodeId
+                    |> Map.tryFind edge.FromNode
+                    |> Option.orElseWith (fun () -> chunkInfoNamesByNodeId |> Map.tryFind edge.FromNode)
+                    |> Option.orElseWith (fun () -> serialGeometryNamesByNodeId |> Map.tryFind edge.FromNode)
                 | _ ->
                     None)
 
@@ -1921,6 +1930,16 @@ module PipelineCodeGenerator =
             |> Array.choose expandSourceNode
             |> Array.distinctBy _.Id
 
+        let statsProducerNodesWithDirectLinkedOutputs =
+            graph.Edges
+            |> Array.choose (fun edge ->
+                if edge.FromKind = "reducerOutput" && edge.ToKind = "parameterInput" then
+                    nodesById |> Map.tryFind edge.FromNode
+                else
+                    None)
+            |> Array.filter (fun node -> node.FunctionId = "ComputeStats" || node.FunctionId = "ObjectSizeStats")
+            |> Array.distinctBy _.Id
+
         let statsNodesWithLinkedFields =
             graph.Edges
             |> Array.choose (fun edge ->
@@ -1933,7 +1952,8 @@ module PipelineCodeGenerator =
 
         let statsNamesByNodeId =
             let producerNames =
-                statsProducerNodesForExpand
+                Array.concat [ statsProducerNodesForExpand; statsProducerNodesWithDirectLinkedOutputs ]
+                |> Array.distinctBy _.Id
                 |> Array.mapi (fun index node ->
                     let prefix = if node.FunctionId = "ObjectSizeStats" then "ObjectSizeStats" else "ImageStats"
                     node.Id, $"{prefix}{index}")
@@ -1993,7 +2013,7 @@ module PipelineCodeGenerator =
         let imageInfoProducerNodesWithDirectLinkedOutputs =
             graph.Edges
             |> Array.choose (fun edge ->
-                if edge.FromKind = "reducerOutput" && edge.ToKind = "parameterInput" then
+                if (edge.FromKind = "reducerOutput" || edge.FromKind = "output") && edge.ToKind = "parameterInput" then
                     nodesById |> Map.tryFind edge.FromNode
                 else
                     None)
@@ -2037,7 +2057,7 @@ module PipelineCodeGenerator =
         let chunkInfoProducerNodesWithDirectLinkedOutputs =
             graph.Edges
             |> Array.choose (fun edge ->
-                if edge.FromKind = "reducerOutput" && edge.ToKind = "parameterInput" then
+                if (edge.FromKind = "reducerOutput" || edge.FromKind = "output") && edge.ToKind = "parameterInput" then
                     nodesById |> Map.tryFind edge.FromNode
                 else
                     None)
@@ -2117,6 +2137,11 @@ module PipelineCodeGenerator =
                                     match chunkInfoNamesByNodeId |> Map.tryFind edge.FromNode with
                                     | Some name -> Some name
                                     | None -> serialGeometryNamesByNodeId |> Map.tryFind edge.FromNode
+            | "output" ->
+                imageInfoNamesByNodeId
+                |> Map.tryFind edge.FromNode
+                |> Option.orElseWith (fun () -> chunkInfoNamesByNodeId |> Map.tryFind edge.FromNode)
+                |> Option.orElseWith (fun () -> serialGeometryNamesByNodeId |> Map.tryFind edge.FromNode)
             | _ ->
                 None
 
@@ -2527,7 +2552,8 @@ module PipelineCodeGenerator =
         let orderedBindings () =
             let statsBindings =
                 let producerBindings =
-                    statsProducerNodesForExpand
+                    Array.concat [ statsProducerNodesForExpand; statsProducerNodesWithDirectLinkedOutputs ]
+                    |> Array.distinctBy _.Id
                     |> Array.map (fun node ->
                         let name = statsNamesByNodeId |> Map.find node.Id
                         let expression = pipelineExpression Set.empty node

@@ -6,6 +6,8 @@
 #include <type_traits>
 #include <vector>
 #include <fftw3.h>
+#include <tiffio.h>
+#include <string.h>
 
 #if defined(_WIN32)
 #define SP_LOWLEVEL_API __declspec(dllexport)
@@ -14,6 +16,135 @@
 #endif
 
 static std::mutex fftwf_planner_mutex;
+
+typedef struct sp_tiff_info {
+    uint32_t width;
+    uint32_t height;
+    uint32_t rows_per_strip;
+    uint32_t strips;
+    uint16_t bits_per_sample;
+    uint16_t sample_format;
+    uint16_t samples_per_pixel;
+    uint16_t planar_config;
+    uint16_t compression;
+    int32_t is_tiled;
+    int32_t is_byte_swapped;
+    uint64_t page_bytes;
+    uint64_t raw_page_bytes;
+} sp_tiff_info;
+
+enum {
+    SP_TIFF_OK = 0,
+    SP_TIFF_OPEN_FAILED = -1,
+    SP_TIFF_MISSING_FIELD = -2,
+    SP_TIFF_UNSUPPORTED_LAYOUT = -3,
+    SP_TIFF_BUFFER_TOO_SMALL = -4,
+    SP_TIFF_IO_FAILED = -5,
+    SP_TIFF_SIZE_OVERFLOW = -6
+};
+
+static int read_info_from_open_tiff(TIFF *tif, sp_tiff_info *info) {
+    uint16_t sample_format = SAMPLEFORMAT_UINT;
+    uint16_t samples_per_pixel = 1;
+    uint16_t planar_config = PLANARCONFIG_CONTIG;
+    uint16_t compression = COMPRESSION_NONE;
+    uint32_t rows_per_strip = 0;
+    uint64_t raw_page_bytes = 0;
+
+    memset(info, 0, sizeof(*info));
+
+    if (!TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &info->width) ||
+        !TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &info->height) ||
+        !TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE, &info->bits_per_sample)) {
+        return SP_TIFF_MISSING_FIELD;
+    }
+
+    TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLEFORMAT, &sample_format);
+    TIFFGetFieldDefaulted(tif, TIFFTAG_SAMPLESPERPIXEL, &samples_per_pixel);
+    TIFFGetFieldDefaulted(tif, TIFFTAG_PLANARCONFIG, &planar_config);
+    TIFFGetFieldDefaulted(tif, TIFFTAG_COMPRESSION, &compression);
+    TIFFGetFieldDefaulted(tif, TIFFTAG_ROWSPERSTRIP, &rows_per_strip);
+
+    info->sample_format = sample_format;
+    info->samples_per_pixel = samples_per_pixel;
+    info->planar_config = planar_config;
+    info->compression = compression;
+    info->rows_per_strip = rows_per_strip;
+    info->strips = TIFFNumberOfStrips(tif);
+    info->is_tiled = TIFFIsTiled(tif);
+    info->is_byte_swapped = TIFFIsByteSwapped(tif);
+
+    if (info->width == 0 || info->height == 0 || info->bits_per_sample == 0 ||
+        info->samples_per_pixel == 0 || info->bits_per_sample % 8 != 0 ||
+        info->is_tiled || info->planar_config != PLANARCONFIG_CONTIG) {
+        return SP_TIFF_UNSUPPORTED_LAYOUT;
+    }
+
+    uint64_t bytes_per_pixel = ((uint64_t)info->bits_per_sample / 8u) * (uint64_t)info->samples_per_pixel;
+    if (bytes_per_pixel == 0 ||
+        info->width > UINT64_MAX / bytes_per_pixel ||
+        (uint64_t)info->width * bytes_per_pixel > UINT64_MAX / (uint64_t)info->height) {
+        return SP_TIFF_SIZE_OVERFLOW;
+    }
+
+    info->page_bytes = (uint64_t)info->width * (uint64_t)info->height * bytes_per_pixel;
+
+    for (uint32_t strip = 0; strip < info->strips; strip++) {
+        uint64_t strip_size = TIFFRawStripSize64(tif, strip);
+        if (strip_size == UINT64_MAX || raw_page_bytes > UINT64_MAX - strip_size) {
+            return SP_TIFF_SIZE_OVERFLOW;
+        }
+        raw_page_bytes += strip_size;
+    }
+
+    info->raw_page_bytes = raw_page_bytes;
+    return SP_TIFF_OK;
+}
+
+static int select_tiff_directory(TIFF *tif, uint32_t page_index) {
+    if (page_index > (uint32_t)std::numeric_limits<tdir_t>::max()) {
+        return SP_TIFF_SIZE_OVERFLOW;
+    }
+
+    return TIFFSetDirectory(tif, (tdir_t)page_index) ? SP_TIFF_OK : SP_TIFF_IO_FAILED;
+}
+
+static int read_raw_page_from_open_tiff(
+    TIFF *tif,
+    uint8_t *buffer,
+    size_t buffer_offset,
+    size_t capacity,
+    uint64_t *bytes_read) {
+
+    sp_tiff_info info;
+    uint64_t offset = 0;
+
+    int result = read_info_from_open_tiff(tif, &info);
+    if (result != SP_TIFF_OK) {
+        return result;
+    }
+    if ((uint64_t)buffer_offset > (uint64_t)capacity ||
+        (uint64_t)capacity - (uint64_t)buffer_offset < info.raw_page_bytes) {
+        return SP_TIFF_BUFFER_TOO_SMALL;
+    }
+
+    for (uint32_t strip = 0; strip < info.strips; strip++) {
+        uint64_t strip_size_64 = TIFFRawStripSize64(tif, strip);
+        if (strip_size_64 > (uint64_t)((tmsize_t)-1)) {
+            return SP_TIFF_SIZE_OVERFLOW;
+        }
+
+        tmsize_t strip_size = (tmsize_t)strip_size_64;
+        tmsize_t got = TIFFReadRawStrip(tif, strip, buffer + buffer_offset + offset, strip_size);
+        if (got != strip_size) {
+            return SP_TIFF_IO_FAILED;
+        }
+        offset += strip_size_64;
+    }
+
+    *bytes_read = offset;
+    return SP_TIFF_OK;
+}
 
 template <typename T>
 static void median_nth_slab(
@@ -1744,6 +1875,249 @@ static int signed_distance_band_uint8_slices(
 }
 
 extern "C" {
+
+SP_LOWLEVEL_API int sp_tiff_read_info(const char *path, sp_tiff_info *info) {
+    if (path == nullptr || info == nullptr) {
+        return SP_TIFF_MISSING_FIELD;
+    }
+
+    TIFF *tif = TIFFOpen(path, "r");
+    if (tif == nullptr) {
+        return SP_TIFF_OPEN_FAILED;
+    }
+
+    int result = read_info_from_open_tiff(tif, info);
+    TIFFClose(tif);
+    return result;
+}
+
+SP_LOWLEVEL_API int sp_tiff_read_info_page(const char *path, uint32_t page_index, sp_tiff_info *info) {
+    if (path == nullptr || info == nullptr) {
+        return SP_TIFF_MISSING_FIELD;
+    }
+
+    TIFF *tif = TIFFOpen(path, "r");
+    if (tif == nullptr) {
+        return SP_TIFF_OPEN_FAILED;
+    }
+
+    int result = select_tiff_directory(tif, page_index);
+    if (result == SP_TIFF_OK) {
+        result = read_info_from_open_tiff(tif, info);
+    }
+
+    TIFFClose(tif);
+    return result;
+}
+
+SP_LOWLEVEL_API int sp_tiff_count_directories(const char *path, uint32_t *count) {
+    if (path == nullptr || count == nullptr) {
+        return SP_TIFF_MISSING_FIELD;
+    }
+
+    *count = 0;
+    TIFF *tif = TIFFOpen(path, "r");
+    if (tif == nullptr) {
+        return SP_TIFF_OPEN_FAILED;
+    }
+
+    uint32_t n = 0;
+    do {
+        if (n == UINT32_MAX) {
+            TIFFClose(tif);
+            return SP_TIFF_SIZE_OVERFLOW;
+        }
+        n++;
+    } while (TIFFReadDirectory(tif));
+
+    TIFFClose(tif);
+    if (n == 0) {
+        return SP_TIFF_IO_FAILED;
+    }
+
+    *count = n;
+    return SP_TIFF_OK;
+}
+
+SP_LOWLEVEL_API int sp_tiff_read_raw_page_into(
+    const char *path,
+    uint8_t *buffer,
+    size_t buffer_offset,
+    size_t capacity,
+    uint64_t *bytes_read) {
+
+    if (bytes_read != nullptr) {
+        *bytes_read = 0;
+    }
+    if (path == nullptr || buffer == nullptr || bytes_read == nullptr) {
+        return SP_TIFF_MISSING_FIELD;
+    }
+
+    TIFF *tif = TIFFOpen(path, "r");
+    if (tif == nullptr) {
+        return SP_TIFF_OPEN_FAILED;
+    }
+
+    int result = read_raw_page_from_open_tiff(tif, buffer, buffer_offset, capacity, bytes_read);
+    TIFFClose(tif);
+    return result;
+}
+
+SP_LOWLEVEL_API int sp_tiff_read_raw_page(const char *path, uint8_t *buffer, size_t capacity, uint64_t *bytes_read) {
+    return sp_tiff_read_raw_page_into(path, buffer, 0, capacity, bytes_read);
+}
+
+SP_LOWLEVEL_API int sp_tiff_read_raw_page_into_page(
+    const char *path,
+    uint32_t page_index,
+    uint8_t *buffer,
+    size_t buffer_offset,
+    size_t capacity,
+    uint64_t *bytes_read) {
+
+    if (bytes_read != nullptr) {
+        *bytes_read = 0;
+    }
+    if (path == nullptr || buffer == nullptr || bytes_read == nullptr) {
+        return SP_TIFF_MISSING_FIELD;
+    }
+
+    TIFF *tif = TIFFOpen(path, "r");
+    if (tif == nullptr) {
+        return SP_TIFF_OPEN_FAILED;
+    }
+
+    int result = select_tiff_directory(tif, page_index);
+    if (result == SP_TIFF_OK) {
+        result = read_raw_page_from_open_tiff(tif, buffer, buffer_offset, capacity, bytes_read);
+    }
+
+    TIFFClose(tif);
+    return result;
+}
+
+static int write_raw_page_with_samples(
+    const char *path,
+    const uint8_t *buffer,
+    size_t count,
+    uint32_t width,
+    uint32_t height,
+    uint16_t bits_per_sample,
+    uint16_t sample_format,
+    uint16_t samples_per_pixel) {
+
+    if (path == nullptr || buffer == nullptr || width == 0 || height == 0 ||
+        bits_per_sample == 0 || samples_per_pixel == 0) {
+        return SP_TIFF_MISSING_FIELD;
+    }
+    if ((uint64_t)count > (uint64_t)((tmsize_t)-1)) {
+        return SP_TIFF_SIZE_OVERFLOW;
+    }
+
+    TIFF *tif = TIFFOpen(path, "w");
+    if (tif == nullptr) {
+        return SP_TIFF_OPEN_FAILED;
+    }
+
+    uint16_t photometric =
+        (samples_per_pixel == 3 && bits_per_sample == 8 && sample_format == SAMPLEFORMAT_UINT)
+            ? PHOTOMETRIC_RGB
+            : PHOTOMETRIC_MINISBLACK;
+
+    int ok =
+        TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width) &&
+        TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height) &&
+        TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, samples_per_pixel) &&
+        TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, bits_per_sample) &&
+        TIFFSetField(tif, TIFFTAG_SAMPLEFORMAT, sample_format) &&
+        TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, photometric) &&
+        TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG) &&
+        TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, height) &&
+        TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+
+    if (ok && samples_per_pixel > 1 && photometric != PHOTOMETRIC_RGB) {
+        uint16_t extra_sample = EXTRASAMPLE_UNSPECIFIED;
+        ok = TIFFSetField(tif, TIFFTAG_EXTRASAMPLES, samples_per_pixel - 1, &extra_sample);
+    }
+
+    if (!ok) {
+        TIFFClose(tif);
+        return SP_TIFF_MISSING_FIELD;
+    }
+
+    tmsize_t written = TIFFWriteRawStrip(tif, 0, (void *)buffer, (tmsize_t)count);
+    if (written != (tmsize_t)count) {
+        TIFFClose(tif);
+        return SP_TIFF_IO_FAILED;
+    }
+
+    TIFFClose(tif);
+    return SP_TIFF_OK;
+}
+
+SP_LOWLEVEL_API int sp_tiff_write_raw_page(
+    const char *path,
+    const uint8_t *buffer,
+    size_t count,
+    uint32_t width,
+    uint32_t height,
+    uint16_t bits_per_sample,
+    uint16_t sample_format) {
+
+    return write_raw_page_with_samples(path, buffer, count, width, height, bits_per_sample, sample_format, 1);
+}
+
+SP_LOWLEVEL_API int sp_tiff_write_raw_page_from(
+    const char *path,
+    const uint8_t *buffer,
+    size_t buffer_offset,
+    size_t count,
+    size_t capacity,
+    uint32_t width,
+    uint32_t height,
+    uint16_t bits_per_sample,
+    uint16_t sample_format) {
+
+    if (buffer_offset > capacity || capacity - buffer_offset < count) {
+        return SP_TIFF_BUFFER_TOO_SMALL;
+    }
+
+    return sp_tiff_write_raw_page(
+        path,
+        buffer + buffer_offset,
+        count,
+        width,
+        height,
+        bits_per_sample,
+        sample_format);
+}
+
+SP_LOWLEVEL_API int sp_tiff_write_raw_page_from_samples(
+    const char *path,
+    const uint8_t *buffer,
+    size_t buffer_offset,
+    size_t count,
+    size_t capacity,
+    uint32_t width,
+    uint32_t height,
+    uint16_t bits_per_sample,
+    uint16_t sample_format,
+    uint16_t samples_per_pixel) {
+
+    if (buffer_offset > capacity || capacity - buffer_offset < count) {
+        return SP_TIFF_BUFFER_TOO_SMALL;
+    }
+
+    return write_raw_page_with_samples(
+        path,
+        buffer + buffer_offset,
+        count,
+        width,
+        height,
+        bits_per_sample,
+        sample_format,
+        samples_per_pixel);
+}
 
 SP_LOWLEVEL_API void sp_median_uint8_nth_slab(
     const uint8_t* const* slices,
