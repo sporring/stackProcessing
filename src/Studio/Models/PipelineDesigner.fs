@@ -27,6 +27,7 @@ type PipelineParameterViewModel(label: string, key: string, value: string, param
     let mutable useInput = forceUseInput || defaultArg initialUseInput false
     let mutable isValueEnabled = true
     let mutable isVisible = true
+    let mutable isBrowseVisible = false
     let options = ObservableCollection<ParameterOptionViewModel>(defaultArg options [])
     let canUseInput = defaultArg canUseInput true
 
@@ -73,6 +74,10 @@ type PipelineParameterViewModel(label: string, key: string, value: string, param
         with get () = isVisible
         and set v = this.SetProperty(&isVisible, v) |> ignore
 
+    member this.IsBrowseVisible
+        with get () = isBrowseVisible
+        and set v = this.SetProperty(&isBrowseVisible, v) |> ignore
+
     member this.SelectedOption
         with get () =
             options
@@ -94,12 +99,39 @@ type PipelineNodeState(definition: Function, parameters: PipelineParameterViewMo
     let mutable isPaletteDragOutside = false
     let mutable isProblemHighlighted = false
     let mutable isSelected = false
+    let mutable sourceInfoText = ""
+    let mutable sourceInfoIsError = false
+    let mutable readTypeWasUserSet = false
 
     member _.Definition = definition
     member _.Parameters = System.Collections.ObjectModel.ObservableCollection<PipelineParameterViewModel>(parameters)
     member _.Summary = definition.Summary
     member _.Description = definition.Description
     member _.HasDescription = not (System.String.IsNullOrWhiteSpace definition.Description)
+
+    member this.SourceInfoText
+        with get () = sourceInfoText
+        and set v =
+            if this.SetProperty(&sourceInfoText, v) then
+                this.OnPropertyChanged(nameof this.HasSourceInfo)
+
+    member this.SourceInfoIsError
+        with get () = sourceInfoIsError
+        and set v =
+            if this.SetProperty(&sourceInfoIsError, v) then
+                this.OnPropertyChanged(nameof this.SourceInfoBrush)
+
+    member this.HasSourceInfo = not (System.String.IsNullOrWhiteSpace sourceInfoText)
+
+    member this.SourceInfoBrush =
+        if sourceInfoIsError then
+            SolidColorBrush.Parse("#B42318") :> IBrush
+        else
+            SolidColorBrush.Parse("#52616B") :> IBrush
+
+    member this.ReadTypeWasUserSet
+        with get () = readTypeWasUserSet
+        and set v = this.SetProperty(&readTypeWasUserSet, v) |> ignore
 
     member this.RecordType
         with get () = recordType

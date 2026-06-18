@@ -627,6 +627,19 @@ let private ensureDirectTiffChunkWrite<'T> suffix =
     if not (canWriteDirectTiffStack<'T> suffix) then
         invalidArg "suffix" $"writeChunkSlices currently supports direct scalar TIFF stack output for UInt8, Int8, UInt16, Int16, UInt32, Int32, and Float32; got suffix '{suffix}' and type {typeof<'T>.Name}."
 
+let private castChunkStage<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct and 'S :> ValueType
+                                  and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<'S>, Chunk<'T>> =
+    if typeof<'S> = typeof<'T> then
+        unbox (box (identityStage "cast.identity"))
+    elif typeof<'T> = typeof<float32> then
+        unbox (box (ChunkFunctions.castToFloat32<'S>))
+    elif typeof<'T> = typeof<uint8> then
+        unbox (box (ChunkFunctions.castToUInt8<'S>))
+    elif typeof<'S> = typeof<float32> then
+        unbox (box (ChunkFunctions.castFromFloat32<'T>))
+    else
+        ChunkFunctions.castChunk<'S, 'T>
+
 let private inspectChunkTiffSlice<'T> fileName =
     let expectedBits, expectedFormat, expectedBytesPerSample = tiffPixelLayout<'T> ()
     match tryNativeTiffInfoPage fileName 0 with
@@ -1767,7 +1780,7 @@ let getFilenames (inputDir: string) (suffix: string) (filter: string[]->string[]
     Plan.createWithOptimizer stage pl.memAvail memPeak memPerElem length pl.debug pl.optimize
     |> Plan.withRuntimeOptionsFrom pl
 
-let readChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> inputDir suffix (pl: Plan<unit, unit>) : Plan<unit, Chunk<'T>> =
+let private readChunkSlicesExact<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> inputDir suffix (pl: Plan<unit, unit>) : Plan<unit, Chunk<'T>> =
     let name = "readChunkSlices"
     ensureDirectTiffChunkRead<'T> suffix
     let files = getStackFiles inputDir suffix
@@ -1825,6 +1838,39 @@ let readChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
     |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
+let private readChunkSlicesAs<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct and 'S :> ValueType
+                                      and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    inputDir
+    suffix
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+
+    let source = readChunkSlicesExact<'S> inputDir suffix pl
+    if typeof<'S> = typeof<'T> then
+        unbox (box source)
+    else
+        source >=> castChunkStage<'S, 'T>
+
+let readChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> inputDir suffix (pl: Plan<unit, unit>) : Plan<unit, Chunk<'T>> =
+    if not (isTiffStackSuffix suffix) then
+        invalidArg "suffix" $"readChunkSlices currently supports scalar TIFF stacks for UInt8, Int8, UInt16, Int16, UInt32, Int32, Float32, and Float64; got suffix '{suffix}'."
+
+    let files = getStackFiles inputDir suffix
+    if files.Length = 0 then
+        stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
+
+    match (getFileInfo files[0]).componentType with
+    | "UInt8" -> readChunkSlicesAs<uint8, 'T> inputDir suffix pl
+    | "Int8" -> readChunkSlicesAs<int8, 'T> inputDir suffix pl
+    | "UInt16" -> readChunkSlicesAs<uint16, 'T> inputDir suffix pl
+    | "Int16" -> readChunkSlicesAs<int16, 'T> inputDir suffix pl
+    | "UInt32" -> readChunkSlicesAs<uint32, 'T> inputDir suffix pl
+    | "Int32" -> readChunkSlicesAs<int32, 'T> inputDir suffix pl
+    | "Float32" -> readChunkSlicesAs<float32, 'T> inputDir suffix pl
+    | "Float64" -> readChunkSlicesAs<float, 'T> inputDir suffix pl
+    | sourceType ->
+        invalidOp $"readChunkSlices cannot read TIFF source component type '{sourceType}' as {friendlyScalarTypeName typeof<'T>}."
+
 let readComplex64ChunkSlices inputDir suffix (pl: Plan<unit, unit>) : Plan<unit, Chunk<float32>> =
     let name = "readComplex64ChunkSlices"
     if not (isTiffStackSuffix suffix) then
@@ -1852,7 +1898,7 @@ let readComplex64ChunkSlices inputDir suffix (pl: Plan<unit, unit>) : Plan<unit,
                   "storageWidth", string storageWidth
                   "height", string height
                   "depth", string files.Length
-                  "pixelType", "ComplexFloat32"
+                  "pixelType", "Complex64"
                   "samplesPerPixel", "2"
                   "scanlineSize", string readPlan.ScanlineSize ])
 
@@ -2056,7 +2102,7 @@ let readComplex64ChunkThick
                   "sourceFiles", string files.Length
                   "chunkDepth", string chunkDepth
                   "groups", string groupCount
-                  "pixelType", "ComplexFloat32"
+                  "pixelType", "Complex64"
                   "samplesPerPixel", "2"
                   "scanlineSize", string readPlan.ScanlineSize ])
 
@@ -2300,13 +2346,57 @@ let private readSelectedChunkSlices<'T when 'T: equality and 'T: (new: unit -> '
     |> Plan.withRuntimeOptionsFrom pl
     |> Plan.withSourcePeek sourcePeek
 
+let private readSelectedChunkSlicesAs<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct and 'S :> ValueType
+                                              and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    name
+    inputDir
+    suffix
+    selectPages
+    sourcePeekFields
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+
+    let source = readSelectedChunkSlices<'S> name inputDir suffix selectPages sourcePeekFields pl
+    if typeof<'S> = typeof<'T> then
+        unbox (box source)
+    else
+        source >=> castChunkStage<'S, 'T>
+
+let private readSelectedChunkSlicesCast<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    name
+    inputDir
+    suffix
+    selectPages
+    sourcePeekFields
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+
+    if not (isTiffStackSuffix suffix) then
+        invalidArg "suffix" $"{name} currently supports scalar TIFF stacks for UInt8, Int8, UInt16, Int16, UInt32, Int32, Float32, and Float64; got suffix '{suffix}'."
+
+    let files = getStackFiles inputDir suffix
+    if files.Length = 0 then
+        stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
+
+    match (getFileInfo files[0]).componentType with
+    | "UInt8" -> readSelectedChunkSlicesAs<uint8, 'T> name inputDir suffix selectPages sourcePeekFields pl
+    | "Int8" -> readSelectedChunkSlicesAs<int8, 'T> name inputDir suffix selectPages sourcePeekFields pl
+    | "UInt16" -> readSelectedChunkSlicesAs<uint16, 'T> name inputDir suffix selectPages sourcePeekFields pl
+    | "Int16" -> readSelectedChunkSlicesAs<int16, 'T> name inputDir suffix selectPages sourcePeekFields pl
+    | "UInt32" -> readSelectedChunkSlicesAs<uint32, 'T> name inputDir suffix selectPages sourcePeekFields pl
+    | "Int32" -> readSelectedChunkSlicesAs<int32, 'T> name inputDir suffix selectPages sourcePeekFields pl
+    | "Float32" -> readSelectedChunkSlicesAs<float32, 'T> name inputDir suffix selectPages sourcePeekFields pl
+    | "Float64" -> readSelectedChunkSlicesAs<float, 'T> name inputDir suffix selectPages sourcePeekFields pl
+    | sourceType ->
+        invalidOp $"{name} cannot read TIFF source component type '{sourceType}' as {friendlyScalarTypeName typeof<'T>}."
+
 let readChunkSlicesRandom<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (count: uint)
     inputDir
     suffix
     (pl: Plan<unit, unit>)
     : Plan<unit, Chunk<'T>> =
-    readSelectedChunkSlices<'T>
+    readSelectedChunkSlicesCast<'T>
         "readChunkSlicesRandom"
         inputDir
         suffix
@@ -2437,7 +2527,7 @@ let private isTiffVolumePath (filename: string) =
     | _ -> false
 
 
-let readChunkVolume<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+let private readChunkVolumeExact<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (filename: string)
     (pl: Plan<unit, unit>)
     : Plan<unit, Chunk<'T>> =
@@ -2623,6 +2713,38 @@ let readChunkVolume<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
         |> Plan.withRuntimeOptionsFrom pl
         |> Plan.withSourcePeek sourcePeek
 
+let private readChunkVolumeAs<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct and 'S :> ValueType
+                                      and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    filename
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+
+    let source = readChunkVolumeExact<'S> filename pl
+    if typeof<'S> = typeof<'T> then
+        unbox (box source)
+    else
+        source >=> castChunkStage<'S, 'T>
+
+let readChunkVolume<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (filename: string)
+    (pl: Plan<unit, unit>)
+    : Plan<unit, Chunk<'T>> =
+
+    if not (isTiffVolumePath filename) then
+        invalidArg "filename" "readChunkVolume currently supports TIFF/BigTIFF volumes only."
+
+    match (getFileInfo filename).componentType with
+    | "UInt8" -> readChunkVolumeAs<uint8, 'T> filename pl
+    | "Int8" -> readChunkVolumeAs<int8, 'T> filename pl
+    | "UInt16" -> readChunkVolumeAs<uint16, 'T> filename pl
+    | "Int16" -> readChunkVolumeAs<int16, 'T> filename pl
+    | "UInt32" -> readChunkVolumeAs<uint32, 'T> filename pl
+    | "Int32" -> readChunkVolumeAs<int32, 'T> filename pl
+    | "Float32" -> readChunkVolumeAs<float32, 'T> filename pl
+    | "Float64" -> readChunkVolumeAs<float, 'T> filename pl
+    | sourceType ->
+        invalidOp $"readChunkVolume cannot read TIFF source component type '{sourceType}' as {friendlyScalarTypeName typeof<'T>}."
+
 let private randomIndices count depth =
     if depth <= 0 then
         invalidArg "depth" "Cannot sample random slices from an empty image source."
@@ -2666,7 +2788,7 @@ let readChunkSlicesRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: 
     suffix
     (pl: Plan<unit, unit>)
     : Plan<unit, Chunk<'T>> =
-    readSelectedChunkSlices<'T>
+    readSelectedChunkSlicesCast<'T>
         "readChunkSlicesRange"
         inputDir
         suffix
@@ -3885,7 +4007,7 @@ let writeComplex64ChunkSlices (outputDir: string) (suffix: string) : Stage<Chunk
         imageIoCost<float32>
             "write"
             Iter
-            $"writeComplex64.{suffixCostLabel suffix}.ComplexFloat32"
+            $"writeComplex64.{suffixCostLabel suffix}.Complex64"
             (fun input -> inputValue input)
             (fun _ -> 1UL)
 
@@ -3918,7 +4040,7 @@ let writeComplex128ChunkSlices (outputDir: string) (suffix: string) : Stage<Chun
         imageIoCost<float>
             "write"
             Iter
-            $"writeComplex128.{suffixCostLabel suffix}.ComplexFloat64"
+            $"writeComplex128.{suffixCostLabel suffix}.Complex128"
             (fun input -> inputValue input)
             (fun _ -> 1UL)
 
@@ -3961,7 +4083,7 @@ let writeComplex64ChunkThick (outputDir: string) (suffix: string) : Stage<Chunk<
         imageIoCost<float32>
             "write"
             Iter
-            $"writeComplex64Thick.{suffixCostLabel suffix}.ComplexFloat32"
+            $"writeComplex64Thick.{suffixCostLabel suffix}.Complex64"
             (fun input -> inputValue input)
             (fun _ -> 1UL)
 
@@ -3998,7 +4120,7 @@ let writeComplex128ChunkThick (outputDir: string) (suffix: string) : Stage<Chunk
         imageIoCost<float>
             "write"
             Iter
-            $"writeComplex128Thick.{suffixCostLabel suffix}.ComplexFloat64"
+            $"writeComplex128Thick.{suffixCostLabel suffix}.Complex128"
             (fun input -> inputValue input)
             (fun _ -> 1UL)
 

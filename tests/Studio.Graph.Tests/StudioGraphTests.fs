@@ -100,6 +100,18 @@ let catalogSuite =
             Expect.containsAll ids ["Clamp"; "ShiftScale"; "IntensityStretch"; "HistogramEqualization"; "SmoothWMedian"; "SmoothWBilateral"; "GradientMagnitude"; "SobelEdge"; "Laplacian"; "ImageComparison"; "MaskLogic"; "MaskNot"] "The high-value SimpleITK filter families should be available in Studio."
             Expect.isFalse (ids |> List.contains "Mask") "mask is intentionally not exposed; use binary arithmetic/logical stages directly."
 
+        testCase "read source boxes default to Float32 image streams" <| fun _ ->
+            for functionId in [ "Read"; "ReadRandom"; "ReadRange" ] do
+                let definition = BuiltInCatalog.find functionId
+                let typeParameter = definition.Parameters |> List.find (fun parameter -> parameter.Key = "type")
+
+                Expect.equal typeParameter.DefaultValue "Float32" $"{functionId} should default its Type parameter to Float32."
+                Expect.equal definition.Outputs.[0].Type (PortType.Image NumericType.Float32) $"{functionId} should expose a Float32 image output by default."
+
+            let histogram = BuiltInCatalog.find "EstimateHistogram"
+            let histogramType = histogram.Parameters |> List.find (fun parameter -> parameter.Key = "type")
+            Expect.equal histogramType.DefaultValue "Float32" "EstimateHistogram should sample Float32 images by default."
+
         testCase "geometry measurement catalog uses mesh and scalar reducer ports" <| fun _ ->
             let ids = BuiltInCatalog.orderedFunctions |> List.map _.Id
             let surfaceArea = BuiltInCatalog.find "SurfaceArea"

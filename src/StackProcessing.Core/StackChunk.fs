@@ -1587,6 +1587,16 @@ let castFromFloat32<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
 
     Stage.map $"chunkCastFromFloat32.{typeof<'T>.Name}" mapper id id
 
+let castChunk<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct and 'S :> ValueType
+                          and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<'S>, Chunk<'T>> =
+    let mapper _debug chunk =
+        try
+            ChunkKernel.castChunk<'S, 'T> chunk
+        finally
+            Chunk.decRef chunk
+
+    Stage.map $"chunkCast.{typeof<'S>.Name}.{typeof<'T>.Name}" mapper id id
+
 let thresholdRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (lower: double)
     (upper: double)

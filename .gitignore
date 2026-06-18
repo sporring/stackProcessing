@@ -45,3 +45,4 @@ benchmarks/results/raw.before-connectedcomponents-dedup.csv
 benchmarks/results/raw.before-chunk-sauf-parallelcollect.csv
 slow
 tests/**/coverage.info
+*.info

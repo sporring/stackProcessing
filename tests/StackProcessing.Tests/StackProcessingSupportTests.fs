@@ -1239,11 +1239,18 @@ let stackProcessingSupportSuite =
                     source 1024UL
                     |> readVolume<float32> volumePath
                     |> drainList
+                let asFloat64 =
+                    source 1024UL
+                    |> readVolume<float> volumePath
+                    |> drainList
 
                 try
                     Expect.equal asFloat32.Length 2 "readVolume should preserve the TIFF page count while casting."
                     Expect.floatClose Accuracy.high (float asFloat32[1].[2, 1]) 112.0 "readVolume should cast UInt8 TIFF pixels to Float32 output."
+                    Expect.equal asFloat64.Length 2 "readVolume should preserve the TIFF page count while casting to Float64."
+                    Expect.floatClose Accuracy.high asFloat64[1].[2, 1] 112.0 "readVolume should cast UInt8 TIFF pixels to Float64 output."
                 finally
+                    disposeImages asFloat64
                     disposeImages asFloat32
             finally
                 disposeImages slices
@@ -2543,6 +2550,57 @@ let stackProcessingSupportSuite =
                 disposeImages slices
                 deleteDirectory inputDir
                 deleteDirectory outputDir
+
+        testCase "Chunk read casts TIFF slices to the requested output type" <| fun _ ->
+            let inputDir = tempDirectory "chunk-tiff-cast-input"
+            let suffix = ".tiff"
+            let slices =
+                [ array2D [ [ 4uy; 5uy; 6uy ]; [ 7uy; 8uy; 9uy ] ] |> Image<uint8>.ofArray2D
+                  array2D [ [ 10uy; 11uy; 12uy ]; [ 13uy; 14uy; 15uy ] ] |> Image<uint8>.ofArray2D ]
+            let mutable asFloat32: Image<float32> list = []
+            let mutable asFloat64: Image<float> list = []
+            let mutable asInt64: Image<int64> list = []
+            let mutable asUInt64: Image<uint64> list = []
+
+            try
+                writeSlices inputDir suffix slices
+
+                asFloat32 <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> read<float32> inputDir suffix
+                    |> drainList
+
+                Expect.hasLength asFloat32 2 "Read should preserve the TIFF slice count while casting."
+                Expect.equal (asFloat32[0].Get [ 2u; 1u ]) 9.0f "Read should cast UInt8 TIFF pixels to Float32 output."
+                Expect.equal asFloat32[0].index 0 "Read should preserve slice indices when casting."
+
+                asFloat64 <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> read<float> inputDir suffix
+                    |> drainList
+
+                Expect.floatClose Accuracy.high asFloat64[0].[2, 1] 9.0 "Read should cast UInt8 TIFF pixels to Float64 output."
+
+                asInt64 <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> read<int64> inputDir suffix
+                    |> drainList
+
+                Expect.equal asInt64[0].[2, 1] 9L "Read should cast UInt8 TIFF pixels to Int64 output."
+
+                asUInt64 <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> read<uint64> inputDir suffix
+                    |> drainList
+
+                Expect.equal asUInt64[0].[2, 1] 9UL "Read should cast UInt8 TIFF pixels to UInt64 output."
+            finally
+                disposeImages asUInt64
+                disposeImages asInt64
+                disposeImages asFloat64
+                disposeImages asFloat32
+                disposeImages slices
+                deleteDirectory inputDir
 
         testCase "histogramEqualization streams Float64 CDF values from an estimated 3D histogram" <| fun _ ->
             let input =

@@ -1462,6 +1462,86 @@ module ChunkFunctions =
         else
             int32 (MathF.Round value)
 
+    let inline private clampRoundToUInt32 (value: float32) =
+        if Single.IsNaN value || value <= 0.0f then
+            0u
+        elif value >= float32 UInt32.MaxValue then
+            UInt32.MaxValue
+        else
+            uint32 (MathF.Round value)
+
+    let inline private clampRoundDoubleToSByte (value: double) =
+        if Double.IsNaN value then
+            0y
+        elif value <= double SByte.MinValue then
+            SByte.MinValue
+        elif value >= double SByte.MaxValue then
+            SByte.MaxValue
+        else
+            sbyte (Math.Round value)
+
+    let inline private clampRoundDoubleToByte (value: double) =
+        if Double.IsNaN value || value <= 0.0 then
+            0uy
+        elif value >= double Byte.MaxValue then
+            Byte.MaxValue
+        else
+            byte (Math.Round value)
+
+    let inline private clampRoundDoubleToInt16 (value: double) =
+        if Double.IsNaN value then
+            0s
+        elif value <= double Int16.MinValue then
+            Int16.MinValue
+        elif value >= double Int16.MaxValue then
+            Int16.MaxValue
+        else
+            int16 (Math.Round value)
+
+    let inline private clampRoundDoubleToUInt16 (value: double) =
+        if Double.IsNaN value || value <= 0.0 then
+            0us
+        elif value >= double UInt16.MaxValue then
+            UInt16.MaxValue
+        else
+            uint16 (Math.Round value)
+
+    let inline private clampRoundDoubleToInt32 (value: double) =
+        if Double.IsNaN value then
+            0
+        elif value <= double Int32.MinValue then
+            Int32.MinValue
+        elif value >= double Int32.MaxValue then
+            Int32.MaxValue
+        else
+            int32 (Math.Round value)
+
+    let inline private clampRoundDoubleToUInt32 (value: double) =
+        if Double.IsNaN value || value <= 0.0 then
+            0u
+        elif value >= double UInt32.MaxValue then
+            UInt32.MaxValue
+        else
+            uint32 (Math.Round value)
+
+    let inline private clampRoundDoubleToInt64 (value: double) =
+        if Double.IsNaN value then
+            0L
+        elif value <= double Int64.MinValue then
+            Int64.MinValue
+        elif value >= double Int64.MaxValue then
+            Int64.MaxValue
+        else
+            int64 (Math.Round value)
+
+    let inline private clampRoundDoubleToUInt64 (value: double) =
+        if Double.IsNaN value || value <= 0.0 then
+            0UL
+        elif value >= double UInt64.MaxValue then
+            UInt64.MaxValue
+        else
+            uint64 (Math.Round value)
+
     let private byteVectorToSingleVectors (source: ReadOnlySpan<byte>) =
         let bytes = MemoryMarshal.Read<Vector<byte>>(source)
         let mutable lo16 = Vector<uint16>.Zero
@@ -1596,14 +1676,41 @@ module ChunkFunctions =
                     let value = inputPixels[i]
                     outputPixels[i] <- if value <= 0 then 0uy elif value >= 255 then 255uy else uint8 value
                     i <- i + 1
+            elif t = typeof<uint32> then
+                let inputPixels = MemoryMarshal.Cast<byte, uint32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+                let mutable i = 0
+                while i < inputPixels.Length do
+                    let value = inputPixels[i]
+                    outputPixels[i] <- if value >= 255u then 255uy else uint8 value
+                    i <- i + 1
+            elif t = typeof<int64> then
+                let inputPixels = MemoryMarshal.Cast<byte, int64>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+                let mutable i = 0
+                while i < inputPixels.Length do
+                    let value = inputPixels[i]
+                    outputPixels[i] <- if value <= 0L then 0uy elif value >= 255L then 255uy else uint8 value
+                    i <- i + 1
+            elif t = typeof<uint64> then
+                let inputPixels = MemoryMarshal.Cast<byte, uint64>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+                let mutable i = 0
+                while i < inputPixels.Length do
+                    let value = inputPixels[i]
+                    outputPixels[i] <- if value >= 255UL then 255uy else uint8 value
+                    i <- i + 1
             elif t = typeof<float32> then
                 let inputPixels = MemoryMarshal.Cast<byte, float32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
                 let mutable i = 0
                 while i < inputPixels.Length do
                     outputPixels[i] <- clampRoundToByte inputPixels[i]
                     i <- i + 1
+            elif t = typeof<float> then
+                let inputPixels = MemoryMarshal.Cast<byte, float>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+                let mutable i = 0
+                while i < inputPixels.Length do
+                    outputPixels[i] <- clampRoundToByte (float32 inputPixels[i])
+                    i <- i + 1
             else
-                invalidArg "T" $"ChunkFunctions.castToUInt8 supports Int8, UInt8, Int16, UInt16, Int32, and Float32 chunks, got {t.Name}."
+                invalidArg "T" $"ChunkFunctions.castToUInt8 supports real numeric chunks, got {t.Name}."
             output
         with
         | _ ->
@@ -1696,8 +1803,32 @@ module ChunkFunctions =
                 while i < inputPixels.Length do
                     outputPixels[i] <- float32 inputPixels[i]
                     i <- i + 1
+            elif t = typeof<uint32> then
+                let inputPixels = MemoryMarshal.Cast<byte, uint32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+                let mutable i = 0
+                while i < inputPixels.Length do
+                    outputPixels[i] <- float32 inputPixels[i]
+                    i <- i + 1
+            elif t = typeof<int64> then
+                let inputPixels = MemoryMarshal.Cast<byte, int64>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+                let mutable i = 0
+                while i < inputPixels.Length do
+                    outputPixels[i] <- float32 inputPixels[i]
+                    i <- i + 1
+            elif t = typeof<uint64> then
+                let inputPixels = MemoryMarshal.Cast<byte, uint64>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+                let mutable i = 0
+                while i < inputPixels.Length do
+                    outputPixels[i] <- float32 inputPixels[i]
+                    i <- i + 1
+            elif t = typeof<float> then
+                let inputPixels = MemoryMarshal.Cast<byte, float>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+                let mutable i = 0
+                while i < inputPixels.Length do
+                    outputPixels[i] <- float32 inputPixels[i]
+                    i <- i + 1
             else
-                invalidArg "T" $"ChunkFunctions.castToFloat32 supports Int8, UInt8, Int16, UInt16, Int32, and Float32 chunks, got {t.Name}."
+                invalidArg "T" $"ChunkFunctions.castToFloat32 supports real numeric chunks, got {t.Name}."
             output
         with
         | _ ->
@@ -1741,13 +1872,130 @@ module ChunkFunctions =
                 while i < inputPixels.Length do
                     outputPixels[i] <- clampRoundToInt32 inputPixels[i]
                     i <- i + 1
+            elif t = typeof<uint32> then
+                let outputPixels = MemoryMarshal.Cast<byte, uint32>(output.Bytes.AsSpan(0, output.ByteLength))
+                let mutable i = 0
+                while i < inputPixels.Length do
+                    outputPixels[i] <- clampRoundToUInt32 inputPixels[i]
+                    i <- i + 1
+            elif t = typeof<int64> then
+                let outputPixels = MemoryMarshal.Cast<byte, int64>(output.Bytes.AsSpan(0, output.ByteLength))
+                let mutable i = 0
+                while i < inputPixels.Length do
+                    outputPixels[i] <- clampRoundDoubleToInt64 (double inputPixels[i])
+                    i <- i + 1
+            elif t = typeof<uint64> then
+                let outputPixels = MemoryMarshal.Cast<byte, uint64>(output.Bytes.AsSpan(0, output.ByteLength))
+                let mutable i = 0
+                while i < inputPixels.Length do
+                    outputPixels[i] <- clampRoundDoubleToUInt64 (double inputPixels[i])
+                    i <- i + 1
+            elif t = typeof<float> then
+                let outputPixels = MemoryMarshal.Cast<byte, float>(output.Bytes.AsSpan(0, output.ByteLength))
+                let mutable i = 0
+                while i < inputPixels.Length do
+                    outputPixels[i] <- double inputPixels[i]
+                    i <- i + 1
             else
-                invalidArg "T" $"ChunkFunctions.castFromFloat32 supports Int8, UInt8, Int16, UInt16, Int32, and Float32 chunks, got {t.Name}."
+                invalidArg "T" $"ChunkFunctions.castFromFloat32 supports real numeric chunks, got {t.Name}."
             output
         with
         | _ ->
             Chunk.decRef output
             reraise()
+
+    let private readRealAsDouble<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        (chunk: Chunk<'T>)
+        index
+        =
+        let t = typeof<'T>
+        if t = typeof<uint8> then
+            double chunk.Bytes[index]
+        elif t = typeof<int8> then
+            let pixels = MemoryMarshal.Cast<byte, sbyte>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            double pixels[index]
+        elif t = typeof<uint16> then
+            let pixels = MemoryMarshal.Cast<byte, uint16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            double pixels[index]
+        elif t = typeof<int16> then
+            let pixels = MemoryMarshal.Cast<byte, int16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            double pixels[index]
+        elif t = typeof<uint32> then
+            let pixels = MemoryMarshal.Cast<byte, uint32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            double pixels[index]
+        elif t = typeof<int32> then
+            let pixels = MemoryMarshal.Cast<byte, int32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            double pixels[index]
+        elif t = typeof<uint64> then
+            let pixels = MemoryMarshal.Cast<byte, uint64>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            double pixels[index]
+        elif t = typeof<int64> then
+            let pixels = MemoryMarshal.Cast<byte, int64>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            double pixels[index]
+        elif t = typeof<float32> then
+            let pixels = MemoryMarshal.Cast<byte, float32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            double pixels[index]
+        elif t = typeof<float> then
+            let pixels = MemoryMarshal.Cast<byte, float>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+            pixels[index]
+        else
+            invalidArg "T" $"ChunkFunctions.cast supports real numeric chunks, got {t.Name}."
+
+    let private writeNumericValue<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        (output: Chunk<'T>)
+        index
+        real
+        =
+        let t = typeof<'T>
+        if t = typeof<uint8> then
+            output.Bytes[index] <- clampRoundDoubleToByte real
+        elif t = typeof<int8> then
+            let pixels = MemoryMarshal.Cast<byte, sbyte>(output.Bytes.AsSpan(0, output.ByteLength))
+            pixels[index] <- clampRoundDoubleToSByte real
+        elif t = typeof<uint16> then
+            let pixels = MemoryMarshal.Cast<byte, uint16>(output.Bytes.AsSpan(0, output.ByteLength))
+            pixels[index] <- clampRoundDoubleToUInt16 real
+        elif t = typeof<int16> then
+            let pixels = MemoryMarshal.Cast<byte, int16>(output.Bytes.AsSpan(0, output.ByteLength))
+            pixels[index] <- clampRoundDoubleToInt16 real
+        elif t = typeof<uint32> then
+            let pixels = MemoryMarshal.Cast<byte, uint32>(output.Bytes.AsSpan(0, output.ByteLength))
+            pixels[index] <- clampRoundDoubleToUInt32 real
+        elif t = typeof<int32> then
+            let pixels = MemoryMarshal.Cast<byte, int32>(output.Bytes.AsSpan(0, output.ByteLength))
+            pixels[index] <- clampRoundDoubleToInt32 real
+        elif t = typeof<uint64> then
+            let pixels = MemoryMarshal.Cast<byte, uint64>(output.Bytes.AsSpan(0, output.ByteLength))
+            pixels[index] <- clampRoundDoubleToUInt64 real
+        elif t = typeof<int64> then
+            let pixels = MemoryMarshal.Cast<byte, int64>(output.Bytes.AsSpan(0, output.ByteLength))
+            pixels[index] <- clampRoundDoubleToInt64 real
+        elif t = typeof<float32> then
+            let pixels = MemoryMarshal.Cast<byte, float32>(output.Bytes.AsSpan(0, output.ByteLength))
+            pixels[index] <- float32 real
+        elif t = typeof<float> then
+            let pixels = MemoryMarshal.Cast<byte, float>(output.Bytes.AsSpan(0, output.ByteLength))
+            pixels[index] <- real
+        else
+            invalidArg "T" $"ChunkFunctions.cast supports real numeric chunks, got {t.Name}."
+
+    let castChunk<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct and 'S :> ValueType
+                            and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        (chunk: Chunk<'S>)
+        =
+        if typeof<'S> = typeof<'T> then
+            unbox (box (copyChunk chunk))
+        else
+            let output = Chunk.create<'T> chunk.Size
+            try
+                let count = chunk.ByteLength / Marshal.SizeOf<'S>()
+                for i in 0 .. count - 1 do
+                    writeNumericValue output i (readRealAsDouble chunk i)
+                output
+            with
+            | _ ->
+                Chunk.decRef output
+                reraise()
 
     let private writeFloatToTypedOutput<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
         (output: Chunk<'T>)

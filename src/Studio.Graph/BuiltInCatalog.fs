@@ -386,14 +386,14 @@ module BuiltInCatalog =
       Category = "Sources / Sinks"
       Summary = "Read image data as a slice stream."
       Description = "Reads image stacks, single volume files, OME-Zarr datasets, or NeXus/HDF5 detector stacks as a normal stream of 2D slices. The Format selector controls which core reader is used and which metadata record is exposed on the lower output."
-      Aliases = [ "input"; "load"; "tiff"; "png"; "zarr"; "nexus"; "hdf5"; "volume"; "file"; "UInt8"; "Float64"; "type" ]
+      Aliases = [ "input"; "load"; "tiff"; "png"; "zarr"; "nexus"; "hdf5"; "volume"; "file"; "UInt8"; "Float32"; "type" ]
       Inputs = []
       Outputs =
-          [ makePort "Float64" imageFloat64
+          [ makePort "Float32" imageFloat32
             makePort "ImageInfo" imageInfo ]
       Parameters =
           [ availableMemoryParameter
-            makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "type" "Type" "Float32" BasicType.String
             readFormatParameter
             makeParameter "input" "Input" "input" BasicType.String
             readSuffixParameter ".tiff"
@@ -414,14 +414,14 @@ module BuiltInCatalog =
       Category = "Sources / Sinks"
       Summary = "Read a randomized subset of image slices."
       Description = "Reads a randomized subset of slices from image stacks, single volume files, OME-Zarr datasets, or NeXus/HDF5 detector stacks. The Format selector controls which core reader is used and which metadata record is exposed on the lower output."
-      Aliases = [ "random"; "input"; "tiff"; "png"; "zarr"; "nexus"; "hdf5"; "volume"; "file"; "UInt8"; "Float64"; "type" ]
+      Aliases = [ "random"; "input"; "tiff"; "png"; "zarr"; "nexus"; "hdf5"; "volume"; "file"; "UInt8"; "Float32"; "type" ]
       Inputs = []
       Outputs =
-          [ makePort "Float64" imageFloat64
+          [ makePort "Float32" imageFloat32
             makePort "ImageInfo" imageInfo ]
       Parameters =
           [ availableMemoryParameter
-            makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "type" "Type" "Float32" BasicType.String
             readFormatParameter
             makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32)
             makeParameter "input" "Input" "input" BasicType.String
@@ -451,7 +451,7 @@ module BuiltInCatalog =
             makePort "Holdout max CDF delta: Float64" (Scalar(BasicType.Numeric Float64)) ]
       Parameters =
           [ availableMemoryParameter
-            makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "type" "Type" "Float32" BasicType.String
             makeParameter "slices" "Slices" "16" (BasicType.Numeric UInt32)
             makeParameter "input" "Input" "input" BasicType.String
             readSuffixParameter ".tiff"
@@ -465,14 +465,14 @@ module BuiltInCatalog =
       Category = "Sources / Sinks"
       Summary = "Read a clamped range of image slices."
       Description = "Reads a regular subset of slices from image stacks, single volume files, OME-Zarr datasets, or NeXus/HDF5 detector stacks. The range is first, first+step, first+2*step and so on, stopping at or before last. Indices are zero-based. First and last are unsigned indices clamped to the available source range. Step must be non-zero; use a negative step to read backwards. The Format selector controls which core reader is used and which metadata record is exposed on the lower output."
-      Aliases = [ "range"; "subset"; "input"; "tiff"; "png"; "zarr"; "nexus"; "hdf5"; "volume"; "file"; "UInt8"; "Float64"; "type" ]
+      Aliases = [ "range"; "subset"; "input"; "tiff"; "png"; "zarr"; "nexus"; "hdf5"; "volume"; "file"; "UInt8"; "Float32"; "type" ]
       Inputs = []
       Outputs =
-          [ makePort "Float64" imageFloat64
+          [ makePort "Float32" imageFloat32
             makePort "ImageInfo" imageInfo ]
       Parameters =
           [ availableMemoryParameter
-            makeParameter "type" "Type" "Float64" BasicType.String
+            makeParameter "type" "Type" "Float32" BasicType.String
             readFormatParameter
             makeParameter "first" "First" "0" (BasicType.Numeric UInt32)
             makeParameter "step" "Step" "1" (BasicType.Numeric Int32)

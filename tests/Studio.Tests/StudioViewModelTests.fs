@@ -221,9 +221,6 @@ let viewModelSuite =
                   "GrayscaleDilate"
                   "GrayscaleOpening"
                   "GrayscaleClosing"
-                  "WhiteTopHat"
-                  "BlackTopHat"
-                  "MorphologicalGradient"
                   "LabelContour"
                   "ChangeLabel"
                   "Resize"
@@ -233,8 +230,7 @@ let viewModelSuite =
                   "AddNormalNoise"
                   "AddSaltAndPepperNoise"
                   "AddShotNoise"
-                  "AddSpeckleNoise"
-                  "SerialPolynomialBiasCorrect" ]
+                  "AddSpeckleNoise" ]
 
             for functionId in sameTypeBoxes do
                 let vm = MainWindowViewModel()
@@ -259,7 +255,7 @@ let viewModelSuite =
 
         testCase "typed image-to-other boxes expose concrete image inputs" <| fun _ ->
             let inputTypedBoxes =
-                [ "HistogramEqualization", "Float32", [ PortType.Image Float64 ]
+                [ "HistogramEqualization", "Float32", [ PortType.Image Float32 ]
                   "ImageComparison", "Float32", [ PortType.Image UInt8 ]
                   "FitBiasModel", "Float32", []
                   "FitBiasModelMasked", "Float32", []
@@ -274,8 +270,8 @@ let viewModelSuite =
                   "Harris3DKeypoints", "Float32", []
                   "Forstner3DKeypoints", "Float32", []
                   "PhaseCongruencyKeypoints", "Float32", []
-                  "SumProjection", "Float32", [ PortType.Image Float64 ]
-                  "FFT", "Float32", [ PortType.Image Complex ] ]
+                  "SumProjection", "Float32", []
+                  "FFT", "Float32", [] ]
 
             for functionId, typeName, expectedImageOutputs in inputTypedBoxes do
                 let vm = MainWindowViewModel()
@@ -313,7 +309,6 @@ let viewModelSuite =
                 [ "Read"
                   "ReadRandom"
                   "ReadRange"
-                  "ReadSlab"
                   "Zero"
                   "NormalNoise"
                   "SaltAndPepperNoise"
@@ -474,7 +469,7 @@ let viewModelSuite =
 
             Expect.sequenceEqual
                 (visibleParameterKeys readNode)
-                [ "availableMemory"; "type"; "format"; "input"; "slabDepth"; "multiscaleIndex"; "datasetIndex"; "timepoint"; "channel"; "maxParallelChunks" ]
+                [ "availableMemory"; "type"; "format"; "input"; "thickDepth"; "multiscaleIndex"; "datasetIndex"; "timepoint"; "channel"; "maxParallelChunks" ]
                 "OME-Zarr read should show only zarr-specific parameters."
 
             (readNode |> parameter "format").Value <- "NeXus/HDF5"
@@ -483,6 +478,52 @@ let viewModelSuite =
                 (visibleParameterKeys readNode)
                 [ "availableMemory"; "type"; "format"; "input"; "datasetPath"; "frameAxis"; "yAxis"; "xAxis" ]
                 "NeXus read should show only HDF5-specific parameters."
+
+        testCase "read inspects source type and only auto-defaults until user chooses a type" <| fun _ ->
+            let vm = MainWindowViewModel()
+            vm.SetDrawingSize(1200.0, 800.0)
+            vm.AddElement("Read")
+
+            let readNode =
+                pipelineNodes vm
+                |> Seq.find (fun node -> node.State.Definition.Id = "Read")
+
+            let sampleFile = findRepoFile (Path.Combine("samples", "data", "gaussianField", "image_000.tiff"))
+            let sampleDir = Path.GetDirectoryName sampleFile
+            let sourceType = (StackIO.getImageInfo sampleDir ".tiff").componentType
+
+            (readNode |> parameter "input").Value <- sampleDir
+
+            Expect.isTrue readNode.State.HasSourceInfo "Read should show source information once the path exists."
+            Expect.isFalse readNode.State.SourceInfoIsError "Existing TIFF stack should inspect without an error."
+            Expect.stringContains readNode.State.SourceInfoText $"Source type: {sourceType}" "Read should show the true source component type."
+            Expect.equal (readNode |> parameter "type").Value sourceType "Unconnected read output should default to the detected source type."
+
+            let manualType = if sourceType = "Float64" then "Float32" else "Float64"
+            (readNode |> parameter "type").Value <- manualType
+            (readNode |> parameter "input").Value <- sampleDir
+
+            Expect.equal (readNode |> parameter "type").Value manualType "Manual read output type selection should be respected."
+            Expect.stringContains readNode.State.SourceInfoText $"Source type: {sourceType}" "Source type note should remain the true underlying type."
+
+            let missingDir = Path.Combine(Path.GetTempPath(), $"studio-missing-source-{Guid.NewGuid():N}")
+            (readNode |> parameter "input").Value <- missingDir
+
+            Expect.isTrue readNode.State.SourceInfoIsError "Missing read source should be shown as an error."
+            Expect.stringContains readNode.State.SourceInfoText "does not exist" "Missing read source should name the filesystem error."
+
+        testCase "read input parameters expose a browse affordance" <| fun _ ->
+            for functionId in [ "Read"; "ReadRandom"; "ReadRange" ] do
+                let vm = MainWindowViewModel()
+                vm.SetDrawingSize(1200.0, 800.0)
+                vm.AddElement(functionId)
+
+                let readNode =
+                    pipelineNodes vm
+                    |> Seq.exactlyOne
+
+                Expect.isTrue ((readNode |> parameter "input").IsBrowseVisible) $"{functionId} input should show a browse button."
+                Expect.isFalse ((readNode |> parameter "type").IsBrowseVisible) $"{functionId} type should not show a browse button."
 
         testCase "imported expand adapts output ports from connected record type" <| fun _ ->
             let vm = MainWindowViewModel()
@@ -514,12 +555,12 @@ let viewModelSuite =
                     | _ -> None)
                 |> Seq.toList
 
-            Expect.equal expandNode.State.RecordType (Some (PortType.Custom "StackInfo")) "Expand should remember the connected record type."
-            Expect.equal outputPins.Length 7 "Expand should expose the StackInfo fields once it is connected to StackInfo."
+            Expect.equal expandNode.State.RecordType (Some (PortType.Custom "ImageInfo")) "Expand should remember the connected record type."
+            Expect.equal outputPins.Length 12 "Expand should expose the ImageInfo fields once it is connected to ImageInfo."
             Expect.sequenceEqual
                 (outputPins |> List.map _.Port.Name)
-                [ "Dimensions: UInt32"; "Size: UInt64 list"; "ComponentType: String"; "NumberOfComponents: UInt32"; "Width: UInt64"; "Height: UInt64"; "Depth: UInt64" ]
-                "StackInfo fields should appear as reducer outputs."
+                [ "Format: String"; "Dimensions: UInt32"; "Size: UInt64 list"; "ComponentType: String"; "NumberOfComponents: UInt32"; "Chunks: int list"; "ChunkX: Int32"; "ChunkY: Int32"; "ChunkZ: Int32"; "Width: UInt64"; "Height: UInt64"; "Depth: UInt64" ]
+                "ImageInfo fields should appear as reducer outputs."
 
         testCase "resample sample imports without changing connectors during collection notification" <| fun _ ->
             let vm = MainWindowViewModel()

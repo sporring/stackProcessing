@@ -16,7 +16,7 @@ type ImageGeom =
     { W: int; H: int; D: int
       Origin: V3
       Spacing: V3
-      Direction: M3 } // ITK/SimpleITK direction matrix
+      Direction: M3 }
 
 let indexToPhysical (g:ImageGeom) (i:int) (j:int) (k:int) : V3 =
     // p = origin + direction * ( [i*spx, j*spy, k*spz] )

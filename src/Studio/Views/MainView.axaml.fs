@@ -37,7 +37,9 @@ type MainView() as this =
     let mutable draggingPin: IPin option = None
     let mutable highlightedConnectionTarget: IPin option = None
     let mutable groupDragLastPoint: Point option = None
+    let mutable suppressNativeSelectionSyncOnce = false
     let mutable suppressGraphWheelUntil = DateTime.MinValue
+    let mutable blankGraphPressInProgress = false
     let minGraphWidth = 3000.
     let minGraphHeight = 2000.
 
@@ -277,6 +279,60 @@ type MainView() as this =
                     let! files = topLevel.StorageProvider.OpenFilePickerAsync(options) |> Async.AwaitTask
                     return files |> Seq.tryHead |> Option.bind localPath
                 else
+                    let options =
+                        FolderPickerOpenOptions(
+                            Title = title,
+                            AllowMultiple = false)
+
+                    let! folders = topLevel.StorageProvider.OpenFolderPickerAsync(options) |> Async.AwaitTask
+                    return folders |> Seq.tryHead |> Option.bind folderLocalPath
+        }
+
+    let readFormat (node: PipelineNodeViewModel) =
+        node.State.Parameters
+        |> Seq.tryFind (fun parameter -> parameter.Key = "format")
+        |> Option.map _.Value
+        |> Option.defaultValue "Image stack"
+
+    let resolveReadInputPathAsync (node: PipelineNodeViewModel) =
+        async {
+            match TopLevel.GetTopLevel(this) with
+            | null ->
+                return None
+            | topLevel ->
+                let format = readFormat node
+                let title = $"Select {format} input for {node.State.Title}"
+
+                match format with
+                | "Volume file" ->
+                    let fileType =
+                        FilePickerFileType(
+                            "TIFF volume",
+                            Patterns = [ "*.tif"; "*.tiff"; "*.btf"; "*.bigtiff" ])
+
+                    let options =
+                        FilePickerOpenOptions(
+                            Title = title,
+                            AllowMultiple = false,
+                            FileTypeFilter = [ fileType; FilePickerFileTypes.All ])
+
+                    let! files = topLevel.StorageProvider.OpenFilePickerAsync(options) |> Async.AwaitTask
+                    return files |> Seq.tryHead |> Option.bind localPath
+                | "NeXus/HDF5" ->
+                    let fileType =
+                        FilePickerFileType(
+                            "NeXus/HDF5",
+                            Patterns = [ "*.h5"; "*.hdf5"; "*.nxs"; "*.nx" ])
+
+                    let options =
+                        FilePickerOpenOptions(
+                            Title = title,
+                            AllowMultiple = false,
+                            FileTypeFilter = [ fileType; FilePickerFileTypes.All ])
+
+                    let! files = topLevel.StorageProvider.OpenFilePickerAsync(options) |> Async.AwaitTask
+                    return files |> Seq.tryHead |> Option.bind localPath
+                | _ ->
                     let options =
                         FolderPickerOpenOptions(
                             Title = title,
@@ -1279,6 +1335,10 @@ type MainView() as this =
 
             if selected.Length > 0 then
                 viewModel.SelectNodes selected
+                blankGraphPressInProgress <- false
+            elif blankGraphPressInProgress then
+                viewModel.ClearSelection()
+                blankGraphPressInProgress <- false
         | _ -> ()
 
     let isInsideGraphHost (point: Point) (graphHost: Grid) =
@@ -1389,6 +1449,7 @@ type MainView() as this =
         match groupDragLastPoint with
         | Some _ ->
             groupDragLastPoint <- None
+            suppressNativeSelectionSyncOnce <- true
             args.Pointer.Capture(null) |> ignore
             args.PreventGestureRecognition()
             args.Handled <- true
@@ -1583,9 +1644,9 @@ type MainView() as this =
                 miniMap.Children.Clear()
 
     let handleGraphKeyboardCommand (args: KeyEventArgs) =
-        let graphHost = this.FindControl<Grid>("GraphHost")
-        let startedInGraph = eventSourceIsInside graphHost args.Source
-        let isCtrl = args.KeyModifiers.HasFlag KeyModifiers.Control
+        let isPrimaryModifier =
+            args.KeyModifiers.HasFlag KeyModifiers.Control
+            || args.KeyModifiers.HasFlag KeyModifiers.Meta
         let isCharacterLeftDeleteKey = args.Key = Key.Back
         let isForwardDeleteKey = args.Key = Key.Delete
 
@@ -1596,12 +1657,12 @@ type MainView() as this =
                 updateMiniMap()
                 args.Handled <- true
                 true
-            | :? MainWindowViewModel as viewModel when startedInGraph && isCtrl && args.Key = Key.C ->
+            | :? MainWindowViewModel as viewModel when isPrimaryModifier && (args.Key = Key.C || args.Key = Key.V) && viewModel.HasSelectedNodes ->
                 viewModel.DuplicateSelectedElements()
                 updateMiniMap()
                 args.Handled <- true
                 true
-            | :? MainWindowViewModel as viewModel when isCtrl && args.Key = Key.S && viewModel.HasGraph ->
+            | :? MainWindowViewModel as viewModel when isPrimaryModifier && args.Key = Key.S && viewModel.HasGraph ->
                 task {
                     match viewModel.CurrentGraphPath with
                     | Some path ->
@@ -1867,7 +1928,18 @@ type MainView() as this =
                                 | None -> None
 
                             match node with
+                            | Some node when node.State.IsSelected && viewModel.SelectedNodes.Length > 1 ->
+                                blankGraphPressInProgress <- false
+                                viewModel.SelectNodeFromEditor node
+
+                                if not (isNull graphHost) then
+                                    groupDragLastPoint <- Some(viewportToGraphContent (args.GetPosition(graphHost)))
+                                    args.Pointer.Capture(this) |> ignore
+                                    args.PreventGestureRecognition()
+                                    args.Handled <- true
                             | Some node when isCtrlPressed ->
+                                blankGraphPressInProgress <- false
+
                                 if not node.State.IsSelected then
                                     viewModel.ToggleNodeSelection node
 
@@ -1877,9 +1949,10 @@ type MainView() as this =
                                     args.PreventGestureRecognition()
                                     args.Handled <- true
                             | Some node ->
+                                blankGraphPressInProgress <- false
                                 viewModel.SelectSingleNode node
                             | None ->
-                                viewModel.ClearSelection()
+                                blankGraphPressInProgress <- true
                         | _ -> ()
 
                     editor.AddHandler(
@@ -1953,11 +2026,17 @@ type MainView() as this =
                             else
                                 finishConnectionDrag args |> ignore
 
-                                Dispatcher.UIThread.Post(fun () ->
-                                    syncSelectionFromNative()
-                                    deleteSelectedNodeIfOverTrash()
-                                    clearNativeNodeSelection()
-                                    updateMiniMap())),
+                                if suppressNativeSelectionSyncOnce then
+                                    suppressNativeSelectionSyncOnce <- false
+                                    Dispatcher.UIThread.Post(fun () ->
+                                        deleteSelectedNodeIfOverTrash()
+                                        updateMiniMap())
+                                else
+                                    Dispatcher.UIThread.Post(fun () ->
+                                        syncSelectionFromNative()
+                                        deleteSelectedNodeIfOverTrash()
+                                        clearNativeNodeSelection()
+                                        updateMiniMap())),
                         RoutingStrategies.Bubble,
                         true)
 
@@ -1974,6 +2053,7 @@ type MainView() as this =
                     match this.DataContext with
                     | :? MainWindowViewModel as viewModel ->
                         viewModel.ResolveFileDirectoryPath <- resolveFileDirectoryPathAsync
+                        viewModel.ResolveReadInputPath <- resolveReadInputPathAsync
                         Dispatcher.UIThread.Post(fun () -> viewModel.ConnectSeedPipeline())
                     | _ -> ()
 
@@ -2104,6 +2184,17 @@ type MainView() as this =
             | _ -> ()
         }
         |> ignore
+
+    member _.BrowseReadInputClicked(_sender: obj, args: RoutedEventArgs) =
+        args.Handled <- true
+
+        match this.DataContext with
+        | :? MainWindowViewModel as viewModel ->
+            let command = viewModel.BrowseReadInputCommand
+            if command.CanExecute(null) then
+                command.Execute(null)
+        | _ ->
+            ()
 
     member this.InspectImagePathAsync(path: string) =
         task {

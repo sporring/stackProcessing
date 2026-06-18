@@ -303,7 +303,7 @@
                         <ItemsControl ItemsSource="{Binding SelectedNode.State.Parameters}">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="models:PipelineParameterViewModel">
-                                    <Grid ColumnDefinitions="92,72,*"
+                                    <Grid ColumnDefinitions="92,72,*,Auto"
                                           IsVisible="{Binding IsVisible}"
                                           Margin="0,0,0,10">
                                         <SelectableTextBlock Text="{Binding Label}"
@@ -321,6 +321,14 @@
                                                  IsReadOnly="{Binding IsValueReadOnly}"
                                                  IsVisible="{Binding ShowTextEditor}"
                                                  MinHeight="30" />
+                                        <Button Grid.Column="3"
+                                                Content="..."
+                                                Click="BrowseReadInputClicked"
+                                                IsVisible="{Binding IsBrowseVisible}"
+                                                IsEnabled="{Binding IsValueEditable}"
+                                                MinWidth="32"
+                                                MinHeight="30"
+                                                Margin="6,0,0,0" />
                                         <CheckBox Grid.Column="2"
                                                   IsChecked="{Binding BooleanValue, Mode=TwoWay}"
                                                   IsEnabled="{Binding IsValueEnabled}"
@@ -347,6 +355,19 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
+
+                        <Border IsVisible="{Binding SelectedNode.State.HasSourceInfo}"
+                                Background="#F7F9FC"
+                                BorderBrush="#D7DDE5"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                Padding="8"
+                                Margin="0,2,0,10">
+                            <SelectableTextBlock Text="{Binding SelectedNode.State.SourceInfoText}"
+                                                 Foreground="{Binding SelectedNode.State.SourceInfoBrush}"
+                                                 FontSize="12"
+                                                 TextWrapping="Wrap" />
+                        </Border>
 
                         <StackPanel IsVisible="{Binding SelectedNode.State.HasDescription}"
                                     Margin="0,12,0,0">

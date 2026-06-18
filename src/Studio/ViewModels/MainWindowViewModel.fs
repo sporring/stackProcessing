@@ -692,19 +692,29 @@ module private SourceImageNode =
         supportedTypes state
         |> List.map NumericType.toString
 
+    let defaultSelectedType (state: PipelineNodeState) =
+        if isReadSource state.Definition.Id then
+            Float32
+        else
+            Float64
+
     let selectedType (state: PipelineNodeState) =
         let supportedTypes = supportedTypes state
+        let defaultType = defaultSelectedType state
 
         let selected =
             state.Parameters
             |> Seq.tryFind (fun parameter -> parameter.Key = "type")
             |> Option.bind (fun parameter -> NumericType.tryParse parameter.Value)
-            |> Option.defaultValue Float64
+            |> Option.defaultValue defaultType
 
         if supportedTypes |> List.contains selected then
             selected
         else
-            supportedTypes |> List.tryHead |> Option.defaultValue Float64
+            if supportedTypes |> List.contains defaultType then
+                defaultType
+            else
+                supportedTypes |> List.tryHead |> Option.defaultValue defaultType
 
     let outputPort (state: PipelineNodeState) =
         let selectedType = selectedType state
@@ -1909,7 +1919,10 @@ type MainWindowViewModel() as this =
     let mutable paletteSearch = ""
     let mutable graphDirty = false
     let mutable currentGraphPath: string option = None
+    let mutable suppressReadTypeUserTracking = false
     let mutable resolveFileDirectoryPath: PipelineNodeViewModel -> Async<string option> =
+        fun _ -> async { return None }
+    let mutable resolveReadInputPath: PipelineNodeViewModel -> Async<string option> =
         fun _ -> async { return None }
 
     let editor =
@@ -1995,6 +2008,10 @@ type MainWindowViewModel() as this =
                         |> List.map (fun value -> ParameterOptionViewModel(value, value, true))
 
                     PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type, options, false)
+                | ("Read" | "ReadRandom" | "ReadRange"), "input" ->
+                    let viewModel = PipelineParameterViewModel(parameter.Label, parameter.Key, parameter.DefaultValue, parameter.Type)
+                    viewModel.IsBrowseVisible <- true
+                    viewModel
                 | "Write", "format" ->
                     let options =
                         SourceImageNode.writeFormatOptions
@@ -2273,10 +2290,186 @@ type MainWindowViewModel() as this =
         SourceImageNode.updateParameterVisibility state
         state
 
+    let graphRunWorkingDirectory () =
+        currentGraphPath
+        |> Option.bind (fun path ->
+            let fullPath = Path.GetFullPath(path)
+            let directory = Path.GetDirectoryName(fullPath)
+
+            if String.IsNullOrWhiteSpace directory then
+                None
+            else
+                Some directory)
+        |> Option.defaultWith (fun () ->
+            let home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+
+            if String.IsNullOrWhiteSpace home then
+                studioWorkingDirectory
+            else
+                home)
+
+    let parameter (state: PipelineNodeState) key =
+        state.Parameters
+        |> Seq.tryFind (fun parameter -> parameter.Key = key)
+
+    let parameterValue (state: PipelineNodeState) key =
+        parameter state key
+        |> Option.map _.Value
+        |> Option.defaultValue ""
+
+    let parameterUseInput (state: PipelineNodeState) key =
+        parameter state key
+        |> Option.exists _.UseInput
+
+    let resolvePath (path: string) =
+        if String.IsNullOrWhiteSpace path then
+            path
+        elif Path.IsPathRooted path then
+            Path.GetFullPath path
+        else
+            Path.GetFullPath(Path.Combine(graphRunWorkingDirectory(), path))
+
+    let pathWithSuffix input suffix =
+        if String.IsNullOrWhiteSpace input then
+            input
+        elif String.IsNullOrWhiteSpace(Path.GetExtension input) && not (String.IsNullOrWhiteSpace suffix) then
+            input + suffix
+        else
+            input
+
+    let readOutputIsConnected (node: PipelineNodeViewModel) =
+        drawing.Connectors
+        |> Seq.exists (fun connector ->
+            match connector.Start with
+            | :? PipelinePinViewModel as pin ->
+                Object.ReferenceEquals(pin.Parent, node) && pin.Kind = DataOutput
+            | _ ->
+                false)
+
+    let realSourceTypeCanBeReadAsDefault typeName =
+        [ "UInt8"; "Int8"; "UInt16"; "Int16"; "UInt32"; "Int32"; "UInt64"; "Int64"; "Float32"; "Float64" ]
+        |> List.contains typeName
+
+    let sourceInfoSummary (info: StackIO.ImageInfo) =
+        let size =
+            info.size
+            |> List.map string
+            |> String.concat "x"
+
+        let chunks =
+            match info.chunks with
+            | [] -> ""
+            | chunks ->
+                chunks
+                |> List.map string
+                |> String.concat "x"
+                |> sprintf ", chunks %s"
+
+        $"Source type: {info.componentType}; size {size}; components {info.numberOfComponents}{chunks}"
+
+    let tryReadSourceInfo (state: PipelineNodeState) =
+        if not (SourceImageNode.isReadSource state.Definition.Id) then
+            None
+        elif parameterUseInput state "input" then
+            Some(None, false, "Source input is linked from the graph; type will be known at run time.")
+        else
+            let input = parameterValue state "input"
+
+            if String.IsNullOrWhiteSpace input then
+                Some(None, false, "Source: enter an input path to inspect the reader type.")
+            else
+                let suffix = parameterValue state "suffix"
+                let format = parameterValue state "format"
+
+                try
+                    match format with
+                    | "Volume file" ->
+                        let path = pathWithSuffix input suffix |> resolvePath
+
+                        if File.Exists path then
+                            let info = StackIO.getFileInfo path
+                            Some(Some info.componentType, false, sourceInfoSummary { format = "TIFF volume"; dimensions = info.dimensions; size = info.size; chunks = []; componentType = info.componentType; numberOfComponents = info.numberOfComponents })
+                        else
+                            Some(None, true, $"Source file does not exist: {path}")
+                    | "OME-Zarr" ->
+                        let path = resolvePath input
+
+                        if Directory.Exists path then
+                            let multiscaleIndex = parameterValue state "multiscaleIndex" |> Int32.Parse
+                            let datasetIndex = parameterValue state "datasetIndex" |> Int32.Parse
+                            let info = StackIO.getZarrInfo path multiscaleIndex datasetIndex
+                            Some(Some info.componentType, false, sourceInfoSummary info)
+                        else
+                            Some(None, true, $"Source directory does not exist: {path}")
+                    | "NeXus/HDF5" ->
+                        let path = resolvePath input
+
+                        if File.Exists path then
+                            let datasetPath = parameterValue state "datasetPath"
+                            let frameAxis = parameterValue state "frameAxis" |> Int32.Parse
+                            let yAxis = parameterValue state "yAxis" |> Int32.Parse
+                            let xAxis = parameterValue state "xAxis" |> Int32.Parse
+                            let info = StackIO.getNexusInfo path datasetPath frameAxis yAxis xAxis
+                            Some(Some info.componentType, false, sourceInfoSummary info)
+                        else
+                            Some(None, true, $"Source file does not exist: {path}")
+                    | _ ->
+                        let path = resolvePath input
+
+                        if Directory.Exists path then
+                            let info = StackIO.getImageInfo path suffix
+                            Some(Some info.componentType, false, sourceInfoSummary info)
+                        else
+                            Some(None, true, $"Source directory does not exist: {path}")
+                with ex ->
+                    Some(None, true, $"Could not inspect source: {ex.Message}")
+
+    let updateReadSourceInfo (node: PipelineNodeViewModel) =
+        match tryReadSourceInfo node.State with
+        | None -> ()
+        | Some(sourceType, isError, text) ->
+            node.State.SourceInfoIsError <- isError
+            node.State.SourceInfoText <- text
+
+            match sourceType, parameter node.State "type" with
+            | Some typeName, Some typeParameter
+                when not isError
+                     && not node.State.ReadTypeWasUserSet
+                     && not (readOutputIsConnected node)
+                     && realSourceTypeCanBeReadAsDefault typeName
+                     && typeParameter.Value <> typeName ->
+                suppressReadTypeUserTracking <- true
+                try
+                    typeParameter.Value <- typeName
+                finally
+                    suppressReadTypeUserTracking <- false
+            | _ ->
+                ()
+
     let watchState (state: PipelineNodeState) =
+        let nodeForState () =
+            drawing.Nodes
+            |> Seq.choose (function
+                | :? PipelineNodeViewModel as node when Object.ReferenceEquals(node.State, state) -> Some node
+                | _ -> None)
+            |> Seq.tryHead
+
         state.Parameters
         |> Seq.iter (fun parameter ->
-            parameter.PropertyChanged.Add(fun _ -> this.MarkGraphDirty()))
+            parameter.PropertyChanged.Add(fun args ->
+                if SourceImageNode.isReadSource state.Definition.Id
+                   && parameter.Key = "type"
+                   && args.PropertyName = nameof parameter.Value
+                   && not suppressReadTypeUserTracking then
+                    state.ReadTypeWasUserSet <- true
+
+                if SourceImageNode.isReadSource state.Definition.Id
+                   && (args.PropertyName = nameof parameter.Value || args.PropertyName = nameof parameter.UseInput)
+                   && [ "input"; "suffix"; "format"; "type"; "multiscaleIndex"; "datasetIndex"; "datasetPath"; "frameAxis"; "yAxis"; "xAxis" ] |> List.contains parameter.Key then
+                    nodeForState()
+                    |> Option.iter updateReadSourceInfo
+
+                this.MarkGraphDirty()))
 
     let pipelineNodes () =
         drawing.Nodes
@@ -2563,47 +2756,106 @@ type MainWindowViewModel() as this =
                 pin.Name <- port.Name)
 
     let refreshConnectedImageInputPins () =
-        let dynamicInputNodeIds = Set.ofList [ "ImHistogram"; "ImHistogramData" ]
+        let concreteImageType portType =
+            match portType with
+            | Image Number -> None
+            | Image numericType -> Some numericType
+            | _ -> None
+
+        let pinImageType (pin: IPin) =
+            match pin with
+            | :? PipelinePinViewModel as pipelinePin -> concreteImageType pipelinePin.Port.Type
+            | _ -> None
 
         let connectedImageInputType (inputPin: PipelinePinViewModel) =
             drawing.Connectors
             |> Seq.tryPick (fun connector ->
                 if Object.ReferenceEquals(connector.End, inputPin) then
-                    match connector.Start with
-                    | :? PipelinePinViewModel as outputPin ->
-                        match outputPin.Port.Type with
-                        | Image Number -> None
-                        | Image numericType -> Some numericType
-                        | _ -> None
-                    | _ ->
-                        None
+                    pinImageType connector.Start
                 else
                     None)
 
-        pipelineNodes ()
-        |> Seq.filter (fun node -> dynamicInputNodeIds |> Set.contains node.State.Definition.Id)
-        |> Seq.iter (fun node ->
-            let defaultInputs = node.State.Definition.Inputs
+        let connectedImageOutputType (outputPin: PipelinePinViewModel) =
+            drawing.Connectors
+            |> Seq.tryPick (fun connector ->
+                if Object.ReferenceEquals(connector.Start, outputPin) then
+                    pinImageType connector.End
+                else
+                    None)
 
+        let defaultDataPort kind index (node: PipelineNodeViewModel) =
+            let ports =
+                match kind with
+                | DataInput -> node.State.Definition.Inputs
+                | DataOutput -> node.State.Definition.Outputs
+                | _ -> []
+
+            ports
+            |> List.tryItem index
+
+        let specializedImagePort numericType =
+            { Name = NumericType.toString numericType
+              Type = PortType.numericToImage numericType }
+
+        let hasTypeParameter (node: PipelineNodeViewModel) =
+            node.State.Parameters
+            |> Seq.exists (fun parameter -> parameter.Key = "type")
+
+        let dataPins kind (node: PipelineNodeViewModel) =
             node.Pins
             |> Seq.choose (function
-                | :? PipelinePinViewModel as pin when pin.Kind = DataInput -> Some pin
+                | :? PipelinePinViewModel as pin when pin.Kind = kind -> Some pin
                 | _ -> None)
+            |> Seq.toArray
+
+        pipelineNodes ()
+        |> Seq.iter (fun node ->
+            let inputTypes =
+                dataPins DataInput node
+                |> Array.mapi (fun index pin ->
+                    let defaultPort = defaultDataPort DataInput index node |> Option.defaultValue pin.Port
+
+                    let port =
+                        if defaultPort.Type = Image Number then
+                            connectedImageInputType pin
+                            |> Option.map specializedImagePort
+                            |> Option.defaultWith (fun () ->
+                                if hasTypeParameter node then
+                                    pin.Port
+                                else
+                                    defaultPort)
+                        else
+                            pin.Port
+
+                    pin.Port <- port
+                    pin.Name <- port.Name
+
+                    match defaultPort.Type, port.Type with
+                    | Image Number, Image numericType when numericType <> Number -> Some numericType
+                    | _ -> None)
+                |> Array.choose id
+
+            let primaryInputType = inputTypes |> Array.tryHead
+
+            dataPins DataOutput node
             |> Seq.iteri (fun index pin ->
-                let defaultPort =
-                    defaultInputs
-                    |> List.tryItem index
-                    |> Option.defaultValue pin.Port
+                let defaultPort = defaultDataPort DataOutput index node |> Option.defaultValue pin.Port
 
                 let port =
-                    connectedImageInputType pin
-                    |> Option.map (fun numericType ->
-                        { Name = NumericType.toString numericType
-                          Type = PortType.numericToImage numericType })
-                    |> Option.defaultValue defaultPort
+                    if defaultPort.Type = Image Number then
+                        primaryInputType
+                        |> Option.orElseWith (fun () -> connectedImageOutputType pin)
+                        |> Option.map specializedImagePort
+                        |> Option.defaultWith (fun () ->
+                            if hasTypeParameter node then
+                                pin.Port
+                            else
+                                defaultPort)
+                    else
+                        pin.Port
 
                 pin.Port <- port
-                pin.Name <- port.Name))
+                pin.Name <- PortMapping.streamValueName port.Type))
 
     let refreshImageFormatOptions () =
         pipelineNodes ()
@@ -2810,6 +3062,9 @@ type MainWindowViewModel() as this =
                 parameter.UseInput <- savedParameter.UseInput
             | None -> ()
 
+        if SourceImageNode.isReadSource state.Definition.Id && values |> Map.containsKey "type" then
+            state.ReadTypeWasUserSet <- true
+
     let tryPin alignment (node: INode) =
         node.Pins
         |> Seq.tryFind (fun pin -> pin.Alignment = alignment)
@@ -2974,8 +3229,24 @@ type MainWindowViewModel() as this =
                 |> Array.exists (fun pin -> Object.ReferenceEquals(pin, connector.Start) || Object.ReferenceEquals(pin, connector.End)))
             |> Seq.toArray
 
+        let readOutputNodes =
+            connectors
+            |> Array.choose (fun connector ->
+                match connector.Start with
+                | :? PipelinePinViewModel as pin ->
+                    match pin.Parent with
+                    | :? PipelineNodeViewModel as node when SourceImageNode.isReadSource node.State.Definition.Id -> Some node
+                    | _ -> None
+                | _ -> None)
+            |> Array.distinctBy id
+
         for connector in connectors do
             drawing.Connectors.Remove(connector) |> ignore
+
+        refreshConnectedImageInputPins()
+
+        for node in readOutputNodes do
+            updateReadSourceInfo node
 
     let refreshNodePins (node: PipelineNodeViewModel) =
         if drawing.Nodes.Contains(node :> INode) then
@@ -3302,6 +3573,7 @@ type MainWindowViewModel() as this =
         node.Y <- 66.
         node.ClampToDrawing()
         node.SyncMoveOrigin()
+        updateReadSourceInfo node
         node
 
     let addConnector (startPin: IPin) (endPin: IPin) =
@@ -3310,6 +3582,14 @@ type MainWindowViewModel() as this =
         connector.End <- endPin
         connector.Orientation <- connectorOrientation startPin endPin
         drawing.Connectors.Add(connector :> IConnector)
+
+        match startPin with
+        | :? PipelinePinViewModel as outputPin ->
+            match outputPin.Parent with
+            | :? PipelineNodeViewModel as node when SourceImageNode.isReadSource node.State.Definition.Id ->
+                updateReadSourceInfo node
+            | _ -> ()
+        | _ -> ()
 
         match endPin with
         | :? PipelinePinViewModel as inputPin ->
@@ -3651,22 +3931,7 @@ type MainWindowViewModel() as this =
             "dotnet"
 
     member private _.GraphRunWorkingDirectory() =
-        currentGraphPath
-        |> Option.bind (fun path ->
-            let fullPath = Path.GetFullPath(path)
-            let directory = Path.GetDirectoryName(fullPath)
-
-            if String.IsNullOrWhiteSpace directory then
-                None
-            else
-                Some directory)
-        |> Option.defaultWith (fun () ->
-            let home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
-
-            if String.IsNullOrWhiteSpace home then
-                studioWorkingDirectory
-            else
-                home)
+        graphRunWorkingDirectory()
 
     member private this.EnsureRunProject(includePlotly: bool) =
         Directory.CreateDirectory(runProjectDirectory) |> ignore
@@ -3843,6 +4108,45 @@ type MainWindowViewModel() as this =
     member this.ResolveFileDirectoryPath
         with get () = resolveFileDirectoryPath
         and set value = resolveFileDirectoryPath <- value
+
+    member this.ResolveReadInputPath
+        with get () = resolveReadInputPath
+        and set value = resolveReadInputPath <- value
+
+    member private this.SetReadInputValue(node: PipelineNodeViewModel, path: string) =
+        let apply () =
+            node.State.Parameters
+            |> Seq.tryFind (fun parameter -> parameter.Key = "input")
+            |> Option.iter (fun parameter -> parameter.Value <- path)
+
+            this.MarkGraphDirty()
+
+        if Dispatcher.UIThread.CheckAccess() then
+            apply()
+        else
+            Dispatcher.UIThread.Post(apply)
+
+    member this.BrowseReadInputCommand =
+        SimpleCommand(
+            (fun _ ->
+                match selectedNode with
+                | null -> ()
+                | node when SourceImageNode.isReadSource node.State.Definition.Id ->
+                    async {
+                        let! selectedPath = resolveReadInputPath node
+                        match selectedPath with
+                        | Some path when not (String.IsNullOrWhiteSpace path) ->
+                            this.SetReadInputValue(node, path)
+                        | _ ->
+                            ()
+                    }
+                    |> Async.StartImmediate
+                | _ ->
+                    ()),
+            (fun _ ->
+                not (isNull selectedNode)
+                && SourceImageNode.isReadSource selectedNode.State.Definition.Id))
+        :> ICommand
 
     member private _.SetFileDirectoryPromptHighlight(node: PipelineNodeViewModel, isHighlighted: bool) =
         let apply () =
@@ -4392,6 +4696,11 @@ type MainWindowViewModel() as this =
                     invalidOp $"Saved edge refers to a missing port: {edge.FromNode}[{edge.FromPort}] -> {edge.ToNode}[{edge.ToPort}]"
             | _ ->
                 invalidOp $"Saved edge refers to a missing node: {edge.FromNode} -> {edge.ToNode}"
+
+        loadedNodes
+        |> Map.iter (fun _ node ->
+            if SourceImageNode.isReadSource node.State.Definition.Id then
+                updateReadSourceInfo node)
 
         this.MarkGraphSaved()
         this.RaiseGraphStateChanged()
