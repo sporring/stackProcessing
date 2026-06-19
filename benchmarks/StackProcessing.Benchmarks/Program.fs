@@ -107,6 +107,7 @@ ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-native-libtiff-raw-strip-chunk-copy --operation copy --pixel-type UInt8 --input DIR --output DIR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-native-libtiff-raw-strip-volume-chunk-copy --operation copy --pixel-type UInt8 --input DIR --output DIR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-stack-read-write --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--available-memory BYTES] [--debug-level N]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-stack-tiff-path-copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--write-byte-order native|opposite] [--write-compression none|lzw|deflate|packbits] [--available-memory BYTES] [--debug-level N]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-native-libtiff-raw-strip-readonly --pixel-type UInt8|UInt16|Float32 --input DIR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-native-libtiff-raw-strip-chunk-readonly --pixel-type UInt8 --input DIR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-native-libtiff-raw-strip-writeonly --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
@@ -172,6 +173,20 @@ let private parsePixelType value =
     | "Int32" | "int32" | "Int" | "int" -> Int32
     | "Float32" | "float32" -> Float32
     | _ -> failwith $"unsupported pixel type '{value}'"
+
+let private parseTiffByteOrder value =
+    match value with
+    | "native" | "Native" | "NATIVE" -> StackIO.TiffByteOrder.Native
+    | "opposite" | "Opposite" | "OPPOSITE" | "swapped" | "Swapped" -> StackIO.TiffByteOrder.Opposite
+    | _ -> failwith $"unsupported TIFF byte order '{value}'"
+
+let private parseTiffCompression value =
+    match value with
+    | "none" | "None" | "NONE" | "uncompressed" | "Uncompressed" -> StackIO.TiffCompression.None
+    | "lzw" | "Lzw" | "LZW" -> StackIO.TiffCompression.Lzw
+    | "deflate" | "Deflate" | "DEFLATE" | "zip" | "Zip" | "ZIP" -> StackIO.TiffCompression.Deflate
+    | "packbits" | "PackBits" | "PACKBITS" -> StackIO.TiffCompression.PackBits
+    | _ -> failwith $"unsupported TIFF compression '{value}'"
 
 let private parseChunkConvolvePixelType value =
     match value with
@@ -1301,6 +1316,14 @@ let private runChunkReadWriteTyped<'T when 'T: equality and 'T: (new: unit -> 'T
     src
     |> read<'T> input ".tiff"
     >=> write<'T> output ".tiff"
+    |> sink
+    0
+
+let private runChunkReadWriteWithTiffOptionsTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> input output availableMemory debugLevel options =
+    let src = benchmarkSourceWithDebug debugLevel availableMemory
+    src
+    |> read<'T> input ".tiff"
+    >=> writeTiffWithOptions<'T> options output ".tiff"
     |> sink
     0
 
@@ -5286,6 +5309,30 @@ let private runStackReadWrite opts =
     writeInternalSeconds stopwatch.Elapsed
     exitCode
 
+let private runStackTiffPathCopy opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let output = require "output" opts
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+    let debugLevel = optional "debug-level" "0" opts |> UInt32.Parse
+    let options: StackIO.TiffWriteOptions =
+        { Compression = optional "write-compression" "none" opts |> parseTiffCompression
+          ByteOrder = optional "write-byte-order" "native" opts |> parseTiffByteOrder }
+
+    ensureCleanDirectory output
+    let stopwatch = Stopwatch.StartNew()
+    let exitCode =
+        match pixelType with
+        | UInt8 -> runChunkReadWriteWithTiffOptionsTyped<uint8> input output availableMemory debugLevel options
+        | UInt16 -> runChunkReadWriteWithTiffOptionsTyped<uint16> input output availableMemory debugLevel options
+        | Float32 -> runChunkReadWriteWithTiffOptionsTyped<float32> input output availableMemory debugLevel options
+        | UInt32
+        | Int32 -> failwith $"Stack TIFF path benchmark currently supports UInt8, UInt16, and Float32; got {pixelType}."
+
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    exitCode
+
 let private runNativeLibTiffRawStripReadOnly opts =
     let pixelType = require "pixel-type" opts |> parsePixelType
     let input = require "input" opts
@@ -5655,6 +5702,7 @@ let main args =
         | _ when args[0] = "run-native-libtiff-raw-strip-chunk-copy" -> args[1..] |> parseArgs |> runNativeLibTiffRawStripChunkCopy
         | _ when args[0] = "run-native-libtiff-raw-strip-volume-chunk-copy" -> args[1..] |> parseArgs |> runNativeLibTiffRawStripVolumeChunkCopy
         | _ when args[0] = "run-stack-read-write" -> args[1..] |> parseArgs |> runStackReadWrite
+        | _ when args[0] = "run-stack-tiff-path-copy" -> args[1..] |> parseArgs |> runStackTiffPathCopy
         | _ when args[0] = "run-native-libtiff-raw-strip-readonly" -> args[1..] |> parseArgs |> runNativeLibTiffRawStripReadOnly
         | _ when args[0] = "run-native-libtiff-raw-strip-chunk-readonly" -> args[1..] |> parseArgs |> runNativeLibTiffRawStripChunkReadOnly
         | _ when args[0] = "run-native-libtiff-raw-strip-writeonly" -> args[1..] |> parseArgs |> runNativeLibTiffRawStripWriteOnly
