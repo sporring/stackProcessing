@@ -46,13 +46,13 @@ Install dotnet, e.g., on Ubuntu
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y git dotnet-sdk-10.0 build-essential cmake pkg-config libfftw3-dev libtiff-dev
+sudo apt-get install -y git dotnet-sdk-10.0 build-essential cmake pkg-config libfftw3-dev
 ```
 
 On macOS, install Homebrew and then:
 
 ```bash
-brew install git dotnet cmake pkg-config fftw libtiff
+brew install git dotnet cmake pkg-config fftw
 ```
 
 If multiple .NET SDKs are installed, confirm that `dotnet --version` reports a
@@ -68,7 +68,7 @@ in-place updates. Install:
 - Visual Studio 2026 Build Tools or Visual Studio 2026 with the C++ desktop
   workload;
 - CMake;
-- vcpkg, or another explicit source of FFTW and libtiff binaries.
+- vcpkg, or another explicit source of FFTW binaries.
 
 One possible PowerShell setup is:
 
@@ -84,7 +84,7 @@ Install vcpkg and the native FFTW dependency:
 ```powershell
 git clone https://github.com/microsoft/vcpkg C:\dev\vcpkg
 C:\dev\vcpkg\bootstrap-vcpkg.bat
-C:\dev\vcpkg\vcpkg.exe install fftw3:x64-windows tiff:x64-windows
+C:\dev\vcpkg\vcpkg.exe install fftw3:x64-windows
 $env:VCPKG_ROOT = "C:\dev\vcpkg"
 ```
 

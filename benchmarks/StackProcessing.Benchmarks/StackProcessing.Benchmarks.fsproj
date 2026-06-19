@@ -3,12 +3,41 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
+  <PropertyGroup>
+    <SimpleITKLibDir>$(MSBuildThisFileDirectory)..\..\..\FSharpITK\lib\</SimpleITKLibDir>
+    <SimpleITKMacOSArchive>$(SimpleITKLibDir)SimpleITK-2.5.3-CSharp-macosx-11.0-anycpu.zip</SimpleITKMacOSArchive>
+    <SimpleITKManagedPath>$(SimpleITKLibDir)SimpleITKCSharpManaged.dll</SimpleITKManagedPath>
+    <SimpleITKNativeSourceName Condition="$([MSBuild]::IsOSPlatform('Windows'))">SimpleITKCSharpNative.dll</SimpleITKNativeSourceName>
+    <SimpleITKNativeSourceName Condition="$([MSBuild]::IsOSPlatform('Linux'))">libSimpleITKCSharpNative.so</SimpleITKNativeSourceName>
+    <SimpleITKNativeSourceName Condition="$([MSBuild]::IsOSPlatform('OSX'))">libSimpleITKCSharpNative.dylib</SimpleITKNativeSourceName>
+    <SimpleITKNativeOutputName Condition="$([MSBuild]::IsOSPlatform('Windows'))">libSimpleITKCSharpNative.dll</SimpleITKNativeOutputName>
+    <SimpleITKNativeOutputName Condition="'$(SimpleITKNativeOutputName)'==''">$(SimpleITKNativeSourceName)</SimpleITKNativeOutputName>
+    <SimpleITKNativePath Condition="'$(SimpleITKNativeSourceName)'!=''">$(SimpleITKLibDir)$(SimpleITKNativeSourceName)</SimpleITKNativePath>
+  </PropertyGroup>
+  <Target Name="ExtractBundledMacOSSimpleITK" BeforeTargets="EnsureSimpleITKLibraries" Condition="$([MSBuild]::IsOSPlatform('OSX')) and Exists('$(SimpleITKMacOSArchive)') and (!Exists('$(SimpleITKManagedPath)') or !Exists('$(SimpleITKNativePath)'))">
+    <Exec Command="unzip -q -j &quot;$(SimpleITKMacOSArchive)&quot; &quot;*/SimpleITKCSharpManaged.dll&quot; &quot;*/libSimpleITKCSharpNative.dylib&quot; -d &quot;$(SimpleITKLibDir)&quot;" />
+  </Target>
+  <Target Name="EnsureSimpleITKLibraries" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(SimpleITKManagedPath)')" Text="Missing SimpleITK managed assembly: $(SimpleITKManagedPath). Download the SimpleITK CSharp release for your platform and extract it into the FSharpITK lib directory." />
+    <Error Condition="'$(SimpleITKNativeSourceName)'==''" Text="Unsupported platform for SimpleITK native library copy. Expected Windows, Linux, or OSX." />
+    <Error Condition="'$(SimpleITKNativePath)'!='' and !Exists('$(SimpleITKNativePath)')" Text="Missing SimpleITK native library: $(SimpleITKNativePath). Download the SimpleITK CSharp release for your platform and extract it into the FSharpITK lib directory." />
+  </Target>
   <ItemGroup>
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../../FSharpITK/src/Image/Image.fsproj" />
     <ProjectReference Include="../../src/StackProcessing/StackProcessing.fsproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="SimpleITKCSharp">
+      <HintPath>$(SimpleITKManagedPath)</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <None Include="$(SimpleITKNativePath)" Condition="'$(SimpleITKNativePath)'!='' and Exists('$(SimpleITKNativePath)')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>$(SimpleITKNativeOutputName)</TargetPath>
+    </None>
   </ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
     <None Include="../../lib/lowlevel.dll" Condition="Exists('../../lib/lowlevel.dll')" CopyToOutputDirectory="PreserveNewest" />

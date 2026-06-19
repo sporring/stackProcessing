@@ -26,6 +26,9 @@ type PixelType =
     | Int32
     | Float32
 
+let private unsupportedPixelType context supported pixelType =
+    invalidArg "pixelType" $"{context} supports {supported}; got {pixelType}."
+
 type ChunkConvolvePixelType =
     | ChunkUInt8
     | ChunkInt8
@@ -103,6 +106,7 @@ ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-threshold-kernel --pixel-type UInt8|UInt16|Float32 --shape WxHxD --output-type mask|intype [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-raw-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-bitmiracle-raw-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-native-libtiff-raw-strip-copy --operation copy --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-native-libtiff-raw-strip-chunk-copy --operation copy --pixel-type UInt8 --input DIR --output DIR
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-native-libtiff-raw-strip-volume-chunk-copy --operation copy --pixel-type UInt8 --input DIR --output DIR
@@ -544,6 +548,7 @@ let private scalarNativeTiffLayoutForPixelType pixelType =
     | UInt16 -> 16us, NativeLibTiff.SampleFormatUInt, 2
     | Int32 -> 32us, NativeLibTiff.SampleFormatInt, 4
     | Float32 -> 32us, NativeLibTiff.SampleFormatIeeeFp, 4
+    | _ -> unsupportedPixelType "Native libtiff scalar layout" "UInt8, UInt16, Int32, and Float32" pixelType
 
 let private scalarTiffLibraryLayoutForPixelType pixelType =
     match pixelType with
@@ -551,6 +556,7 @@ let private scalarTiffLibraryLayoutForPixelType pixelType =
     | UInt16 -> 16us, 1us, 2
     | Int32 -> 32us, 2us, 4
     | Float32 -> 32us, 3us, 4
+    | _ -> unsupportedPixelType "TiffLibrary scalar layout" "UInt8, UInt16, Int32, and Float32" pixelType
 
 let private awaitTask (task: System.Threading.Tasks.Task<'T>) =
     task.GetAwaiter().GetResult()
@@ -1864,8 +1870,8 @@ let private runZarr opts =
         match pixelType with
         | UInt8 -> runZarrTyped<uint8> operation shape input output radius kernelSize thresholdValue workers chunkSize availableMemory
         | UInt16 -> runZarrTyped<uint16> operation shape input output radius kernelSize thresholdValue workers chunkSize availableMemory
-        | Int32 -> failwith "run-zarr benchmark currently supports UInt8, UInt16, and Float32 only."
         | Float32 -> runZarrTyped<float32> operation shape input output radius kernelSize thresholdValue workers chunkSize availableMemory
+        | _ -> unsupportedPixelType "run-zarr benchmark" "UInt8, UInt16, and Float32" pixelType
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
     exitCode
@@ -1958,8 +1964,8 @@ let private runZarrConvolveBreakdown opts =
         match pixelType with
         | UInt8 -> runZarrConvolveBreakdownTyped<uint8> variant shape input output kernelSize workers availableMemory
         | UInt16 -> runZarrConvolveBreakdownTyped<uint16> variant shape input output kernelSize workers availableMemory
-        | Int32 -> failwith "run-zarr-convolve-breakdown currently supports UInt8, UInt16, and Float32 only."
         | Float32 -> runZarrConvolveBreakdownTyped<float32> variant shape input output kernelSize workers availableMemory
+        | _ -> unsupportedPixelType "run-zarr-convolve-breakdown" "UInt8, UInt16, and Float32" pixelType
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
     exitCode
@@ -1972,7 +1978,7 @@ let private openZarrLevel (path: string) =
     |> runTask
 
 let private openZarrArray (path: string) =
-    let store = LocalFileSystemStore(path)
+    let store = new LocalFileSystemStore(path)
     let group = ZarrGroup.OpenRootAsync(store, Threading.CancellationToken.None) |> runTask
     group.OpenArrayAsync("0", Threading.CancellationToken.None) |> runTask
 
@@ -2020,6 +2026,7 @@ let private bytesPerPixelType pixelType =
     | UInt16 -> 2
     | Int32 -> 4
     | Float32 -> 4
+    | _ -> unsupportedPixelType "bytesPerPixelType" "UInt8, UInt16, Int32, and Float32" pixelType
 
 let private chunkElementBytes<'T>() =
     match typeof<'T> with
@@ -2274,8 +2281,8 @@ let private thresholdDecodedChunkToPooledByteChunk (pixelType: PixelType) (thres
         match pixelType with
         | UInt8 -> decoded.Length
         | UInt16 -> decoded.Length / sizeof<uint16>
-        | Int32 -> failwith "Zarr direct threshold currently supports UInt8, UInt16, and Float32 only."
         | Float32 -> decoded.Length / sizeof<float32>
+        | _ -> unsupportedPixelType "Zarr direct threshold" "UInt8, UInt16, and Float32" pixelType
     let output = ArrayPool<byte>.Shared.Rent(outputLength)
     let outputChunk written =
         if written <> outputLength then
@@ -2293,12 +2300,11 @@ let private thresholdDecodedChunkToPooledByteChunk (pixelType: PixelType) (thres
         let chunk = chunkFromDecodedBytes<uint16> array chunkRef decoded
         let written = thresholdUInt16ChunkToByteInto thresholdValue chunk output
         outputChunk written
-    | Int32 ->
-        invalidArg "pixelType" "Zarr direct threshold currently supports UInt8, UInt16, and Float32 only."
     | Float32 ->
         let chunk = chunkFromDecodedBytes<float32> array chunkRef decoded
         let written = thresholdFloat32ChunkToByteInto thresholdValue chunk output
         outputChunk written
+    | _ -> unsupportedPixelType "Zarr direct threshold" "UInt8, UInt16, and Float32" pixelType
 
 let private thresholdUInt8DecodedBytesSimdInto (thresholdValue: double) (input: byte[]) (output: byte[]) =
     let threshold = byte (Math.Clamp(Math.Ceiling(thresholdValue), 0.0, 255.0))
@@ -2390,8 +2396,8 @@ let private thresholdDirectPageSimdInto pixelType thresholdValue inputLength inp
     match pixelType with
     | UInt8 -> thresholdUInt8PageSimdInto thresholdValue inputLength input output
     | UInt16 -> thresholdUInt16PageSimdInto thresholdValue inputLength input output
-    | Int32 -> invalidArg "pixelType" "Direct threshold page SIMD currently supports UInt8, UInt16, and Float32 only."
     | Float32 -> thresholdFloat32PageSimdInto thresholdValue inputLength input output
+    | _ -> unsupportedPixelType "Direct threshold page SIMD" "UInt8, UInt16, and Float32" pixelType
 
 let private thresholdUInt8PageInTypeSimdInto (thresholdValue: double) inputLength (input: byte[]) (output: byte[]) =
     thresholdUInt8PageSimdInto thresholdValue inputLength input output
@@ -2497,8 +2503,8 @@ let private thresholdDirectPageInTypeInto pixelType thresholdValue inputLength i
     match pixelType with
     | UInt8 -> thresholdUInt8PageInTypeSimdInto thresholdValue inputLength input output
     | UInt16 -> thresholdUInt16PageInTypeSimdInto thresholdValue inputLength input output
-    | Int32 -> invalidArg "pixelType" "Direct in-type threshold page SIMD currently supports UInt8, UInt16, and Float32 only."
     | Float32 -> thresholdFloat32PageInTypeInto thresholdValue inputLength input output
+    | _ -> unsupportedPixelType "Direct in-type threshold page SIMD" "UInt8, UInt16, and Float32" pixelType
 
 [<MethodImpl(MethodImplOptions.AggressiveOptimization)>]
 let private thresholdTypedUInt8MaxVector (thresholdValue: double) length (input: byte[]) (output: byte[]) =
@@ -2581,12 +2587,11 @@ let private fillThresholdKernelInput pixelType inputLength (input: byte[]) =
         let values = MemoryMarshal.Cast<byte, uint16>(input.AsSpan(0, inputLength))
         for i in 0 .. values.Length - 1 do
             values[i] <- uint16 (i &&& 0xFFFF)
-    | Int32 ->
-        invalidArg "pixelType" "Threshold kernel microbenchmark currently supports UInt8, UInt16, and Float32 only."
     | Float32 ->
         let values = MemoryMarshal.Cast<byte, float32>(input.AsSpan(0, inputLength))
         for i in 0 .. values.Length - 1 do
             values[i] <- float32 (i &&& 0xFF)
+    | _ -> unsupportedPixelType "Threshold kernel microbenchmark" "UInt8, UInt16, and Float32" pixelType
 
 let private runThresholdKernel opts =
     let pixelType = require "pixel-type" opts |> parsePixelType
@@ -2646,15 +2651,15 @@ let private thresholdDecodedBytesToPooledByteMemoryRaw (pixelType: PixelType) (t
         match pixelType with
         | UInt8 -> decoded.Length
         | UInt16 -> decoded.Length / sizeof<uint16>
-        | Int32 -> failwith "Raw Zarr threshold currently supports UInt8, UInt16, and Float32 only."
         | Float32 -> decoded.Length / sizeof<float32>
+        | _ -> unsupportedPixelType "Raw Zarr threshold" "UInt8, UInt16, and Float32" pixelType
     let output = ArrayPool<byte>.Shared.Rent(outputLength)
     let written =
         match pixelType with
         | UInt8 -> thresholdUInt8DecodedBytesSimdInto thresholdValue decoded output
         | UInt16 -> thresholdUInt16DecodedBytesInto thresholdValue decoded output
-        | Int32 -> failwith "Raw Zarr threshold currently supports UInt8, UInt16, and Float32 only."
         | Float32 -> thresholdFloat32DecodedBytesInto thresholdValue decoded output
+        | _ -> unsupportedPixelType "Raw Zarr threshold" "UInt8, UInt16, and Float32" pixelType
     if written <> outputLength then
         failwith $"Raw threshold wrote {written} bytes, expected {outputLength}."
     output, outputLength
@@ -2664,8 +2669,8 @@ let private thresholdDecodedBytesToPooledInTypeMemory (pixelType: PixelType) (th
     match pixelType with
     | UInt8 -> thresholdUInt8PageSimdInto thresholdValue decoded.Length decoded output
     | UInt16 -> thresholdUInt16PageInTypeSimdInto thresholdValue decoded.Length decoded output
-    | Int32 -> invalidArg "pixelType" "Zarr in-type threshold currently supports UInt8, UInt16, and Float32 only."
     | Float32 -> thresholdFloat32PageInTypeOneVectorInto thresholdValue decoded.Length decoded output
+    | _ -> unsupportedPixelType "Zarr in-type threshold" "UInt8, UInt16, and Float32" pixelType
     output, decoded.Length
 
 let private runZarrDirectThreshold opts =
@@ -2817,6 +2822,7 @@ let private runZarrChunkCopy opts =
         | UInt16 -> runZarrChunkCopyTyped<uint16> shape input output availableMemory
         | Int32 -> runZarrChunkCopyTyped<int32> shape input output availableMemory
         | Float32 -> runZarrChunkCopyTyped<float32> shape input output availableMemory
+        | _ -> unsupportedPixelType "Zarr chunk copy benchmark" "UInt8, UInt16, Int32, and Float32" pixelType
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
     exitCode
@@ -2841,6 +2847,7 @@ let private runZarrReadOnly opts =
         | UInt16 -> runZarrReadOnlyTyped<uint16> input availableMemory
         | Int32 -> runZarrReadOnlyTyped<int32> input availableMemory
         | Float32 -> runZarrReadOnlyTyped<float32> input availableMemory
+        | _ -> unsupportedPixelType "Zarr read-only benchmark" "UInt8, UInt16, Int32, and Float32" pixelType
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
     exitCode
@@ -2869,6 +2876,7 @@ let private runZarrWriteOnly opts =
         | UInt16 -> runZarrWriteOnlyTyped<uint16> shape output chunkSize availableMemory
         | Int32 -> runZarrWriteOnlyTyped<int32> shape output chunkSize availableMemory
         | Float32 -> runZarrWriteOnlyTyped<float32> shape output chunkSize availableMemory
+        | _ -> unsupportedPixelType "Zarr write-only benchmark" "UInt8, UInt16, Int32, and Float32" pixelType
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
     exitCode
@@ -4062,6 +4070,7 @@ let private runChunkThresholdParallelCollect opts =
         | UInt16 -> runChunkThresholdParallelCollectTyped<uint16> input output thresholdValue workers availableMemory
         | Int32 -> runChunkThresholdParallelCollectTyped<int32> input output thresholdValue workers availableMemory
         | Float32 -> runChunkThresholdParallelCollectTyped<float32> input output thresholdValue workers availableMemory
+        | _ -> unsupportedPixelType "Chunk threshold parallelCollect benchmark" "UInt8, UInt16, Int32, and Float32" pixelType
 
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
@@ -4179,6 +4188,7 @@ let private runArrayPool opts =
         | _, UInt16 -> runArrayPoolTyped<uint16> operation input output thresholdValue
         | _, Int32 -> runArrayPoolTyped<int32> operation input output thresholdValue
         | _, Float32 -> runArrayPoolTyped<float32> operation input output thresholdValue
+        | _, _ -> unsupportedPixelType "ArrayPool benchmark" "UInt8, UInt16, Int32, and Float32" pixelType
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
     exitCode
@@ -4221,6 +4231,7 @@ let private runArrayPoolSlice opts =
         | _, UInt16 -> runArrayPoolSliceTyped<uint16> operation input output thresholdValue
         | _, Int32 -> runArrayPoolSliceTyped<int32> operation input output thresholdValue
         | _, Float32 -> runArrayPoolSliceTyped<float32> operation input output thresholdValue
+        | _, _ -> unsupportedPixelType "Slice ArrayPool benchmark" "UInt8, UInt16, Int32, and Float32" pixelType
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
     exitCode
@@ -4301,6 +4312,7 @@ let private runArrayPoolSliceReuse opts =
         | _, UInt16 -> runArrayPoolSliceReuseTyped<uint16> operation input output thresholdValue
         | _, Int32 -> runArrayPoolSliceReuseTyped<int32> operation input output thresholdValue
         | _, Float32 -> runArrayPoolSliceReuseTyped<float32> operation input output thresholdValue
+        | _, _ -> unsupportedPixelType "Reusable slice ArrayPool benchmark" "UInt8, UInt16, Int32, and Float32" pixelType
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
     exitCode
@@ -5588,10 +5600,7 @@ let private runImageSharpCopy opts =
         runImageSharpCopyAs<SixLabors.ImageSharp.PixelFormats.L8> SixLabors.ImageSharp.Formats.Tiff.TiffBitsPerPixel.Bit8 files output
     | UInt16 ->
         runImageSharpCopyAs<SixLabors.ImageSharp.PixelFormats.L16> SixLabors.ImageSharp.Formats.Tiff.TiffBitsPerPixel.Bit16 files output
-    | Int32 ->
-        failwith "ImageSharp copy benchmark currently supports UInt8 and UInt16 grayscale only; Int32 grayscale is not available through the public encoder path used here."
-    | Float32 ->
-        failwith "ImageSharp copy benchmark currently supports UInt8 and UInt16 grayscale only; Float32 grayscale would not be a like-for-like TIFF copy through the public encoder."
+    | _ -> unsupportedPixelType "ImageSharp copy benchmark" "UInt8 and UInt16 grayscale" pixelType
 
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
@@ -5698,6 +5707,7 @@ let main args =
         | _ when args[0] = "run-threshold-kernel" -> args[1..] |> parseArgs |> runThresholdKernel
         | _ when args[0] = "run-libtiff-strip-copy" -> args[1..] |> parseArgs |> runLibTiffStripCopy
         | _ when args[0] = "run-libtiff-raw-strip-copy" -> args[1..] |> parseArgs |> runLibTiffRawStripCopy
+        | _ when args[0] = "run-bitmiracle-raw-strip-copy" -> args[1..] |> parseArgs |> runLibTiffRawStripCopy
         | _ when args[0] = "run-native-libtiff-raw-strip-copy" -> args[1..] |> parseArgs |> runNativeLibTiffRawStripCopy
         | _ when args[0] = "run-native-libtiff-raw-strip-chunk-copy" -> args[1..] |> parseArgs |> runNativeLibTiffRawStripChunkCopy
         | _ when args[0] = "run-native-libtiff-raw-strip-volume-chunk-copy" -> args[1..] |> parseArgs |> runNativeLibTiffRawStripVolumeChunkCopy

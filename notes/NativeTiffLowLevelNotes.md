@@ -1,4 +1,9 @@
-# Native TIFF Low-Level Notes
+# BitMiracle Missing TIFF Decisions
+
+This note tracks the TIFF cases that StackProcessing has deliberately not
+normalised yet. The current production TIFF engine is BitMiracle's managed TIFF
+package. StackProcessing owns image memory through `Chunk<'T>.Bytes`; BitMiracle
+only reads from or writes to caller-owned byte arrays during a TIFF call.
 
 StackProcessing's user-facing TIFF surface is the Chunk DSL:
 
@@ -14,18 +19,18 @@ StackProcessing's user-facing TIFF surface is the Chunk DSL:
 - `writeThick`
 - `getImageInfo`
 
-The implementation goal is that these stages move TIFF pages directly into and
-out of `Chunk<'T>` buffers with as little copying as possible. Users should not
-select an implementation backend in graphs or DSL code.
+The implementation goal is that these stages move accepted TIFF pages directly
+into and out of `Chunk<'T>.Bytes` buffers with as little copying as possible.
+Users should not select an implementation backend in graphs or DSL code.
 
-## Reader Strategy
+## Current Reader Strategy
 
 TIFF reads are planned once from the first slice/page in the stack or volume.
 The resulting strategy is reused for all emitted chunks so StackIO does not
 make a layout decision inside the stream loop. The current reader split is:
 
 - `RawFastPath`
-- `GeneralLibtiffPath`
+- `GeneralBitMiraclePath`
 
 `RawFastPath` is the benchmark-sensitive path:
 
@@ -34,12 +39,13 @@ make a layout decision inside the stream loop. The current reader split is:
 - native-endian data
 - accepted scalar storage types
 - single-page slice stacks and multi-page TIFF volumes
-- direct reads into `Chunk.Bytes`
+- direct BitMiracle `ReadRawStrip` reads into `Chunk.Bytes`
 - offset reads for thick chunks
 
-`GeneralLibtiffPath` is the correctness/interoperability path:
+`GeneralBitMiraclePath` is the correctness/interoperability path for supported
+stripped layouts:
 
-- libtiff decoded reads
+- BitMiracle `ReadEncodedStrip` decoded reads
 - compressed stripped TIFFs
 - non-native-endian TIFFs
 - scalar, complex, and RGB layouts that StackProcessing explicitly accepts
@@ -52,43 +58,43 @@ complex `readComplex64`/`readComplex128` and thick variants, and RGB
 
 Tiled TIFF assembly, planar/sample rearrangement, palette/indexed colour,
 sub-byte samples, non-RGB photometrics, and other broad TIFF normalisation
-choices are deliberately postponed. They belong in `GeneralLibtiffPath`, but
+choices are deliberately postponed. They belong in future general-path work, but
 the exact accepted output layouts still need explicit design.
 
-BitMiracle/LibTiff.NET has been retired from production TIFF IO. If native
-metadata inspection or native page IO cannot handle a TIFF case, StackIO now
-reports it as unsupported instead of using a managed fallback.
+Unsupported TIFF cases should fail explicitly for now. Tiling, non-RGB colour
+representations, planar-separated data, sub-byte samples, and broader TIFF
+normalisation must not sneak into the raw path or silently pick a lossy
+representation.
 
-## Writer Strategy
+## Current Writer Strategy
 
-The default writer remains the raw native uncompressed path so existing graphs
-and benchmarks keep the same performance contract. Option-bearing TIFF writers
-select their write strategy before streaming:
+The default writer remains the raw uncompressed BitMiracle path so existing
+graphs and benchmarks keep the fast raw performance contract. Option-bearing
+TIFF writers select their write strategy before streaming:
 
-- default options use raw native uncompressed output
-- compression uses libtiff encoded output
-- requested opposite-endian output uses a separate libtiff write entry point
+- default options use `WriteRawStrip`
+- compression uses `WriteEncodedStrip`
+- requested byte order is selected in the BitMiracle open mode
 
 The public DSL keeps `write` and `writeThick` as the fast defaults and exposes
 TIFF-specific option writers for callers that need compression or byte-order
 control.
 
-## Native Helper Shape
+## Memory Contract
 
-Native TIFF calls should live with the other low-level C/C++ helpers under
-`lowlevel/` and be built through the same CMake path. The public managed layer
-should stay in `StackIO.fs`, where TIFF metadata and page IO become Chunk
-sources and sinks.
+The managed TIFF helper layer lives in `StackIO.fs`, where TIFF metadata and
+page IO become Chunk sources and sinks. BitMiracle is used only as a TIFF file
+reader/writer over caller-owned byte arrays:
 
-The native side should expose a small C ABI for:
+- metadata inspection reads the first page/slice once to choose a strategy
+- raw reads call `ReadRawStrip` into `Chunk.Bytes`
+- general reads call `ReadEncodedStrip` into `Chunk.Bytes`
+- raw writes call `WriteRawStrip` from `Chunk.Bytes`
+- general writes call `WriteEncodedStrip` from `Chunk.Bytes`
 
-- reading TIFF image metadata into a format-neutral `ImageInfo`
-- reading a page into a caller-owned byte buffer
-- reading a page into a caller-owned byte buffer at an offset
-- reading a decoded page into a caller-owned byte buffer at an offset
-- writing a page from a caller-owned byte buffer
-- writing a page from a caller-owned byte buffer at an offset
-- writing an encoded page from a caller-owned byte buffer at an offset
+BitMiracle does not own Chunk storage. StackProcessing's `Chunk.create`,
+`incRef`, and `decRef` remain responsible for borrowing and returning the
+underlying `ArrayPool<byte>` buffer.
 
 ## Chunk Integration
 
@@ -104,14 +110,14 @@ The important StackProcessing-side contracts are:
   starts and cleanup after the timer stops
 
 The benchmark promotion criterion is simple: production `read -> write` should
-stay close to the low-level raw page benchmark for `uint8`, `uint16`, and
-`float32` at representative 256^3, 512^3, and 1024^3 stack sizes.
+stay close to the direct BitMiracle raw-strip benchmark for `uint8`, `uint16`,
+and `float32` at representative 256^3, 512^3, and 1024^3 stack sizes.
 
-## Remaining Work
+## Missing TIFF Decisions
 
 1. Decide and implement tile assembly.
 
-   `GeneralLibtiffPath` is the right place for tiled TIFFs, including
+   `GeneralBitMiraclePath` is the right place for tiled TIFFs, including
    compressed tiled TIFFs. The open design question is how tile assembly should
    map into StackProcessing's contiguous `Chunk.Bytes` layout without adding
    unnecessary copies or hot-loop branching.
@@ -123,14 +129,14 @@ stay close to the low-level raw page benchmark for `uint8`, `uint16`, and
    photometrics should remain explicit unsupported cases until StackProcessing
    defines the output representation for each.
 
-3. Expand write options deliberately.
+3. Decide which write options become public contracts.
 
    Compression and byte-order control exist for scalar TIFF output. Predictor,
    row-per-strip, tiled output, colour/complex option writers, and multipage
    chunk-file compression should be added only when their user-facing contract
    is clear.
 
-4. Verify with smoke tests and benchmarks.
+4. Keep verification tied to user-visible DSL paths.
 
    Required checks:
 
@@ -138,5 +144,5 @@ stay close to the low-level raw page benchmark for `uint8`, `uint16`, and
    - run TIFF JSON samples through Studio/RunSamples
    - run `read -> write`, threshold, and convolve smoke benchmarks for
      `uint8`, `uint16`, and `float32`
-   - compare production copy timing against the low-level raw-page benchmark
+   - compare production copy timing against the direct BitMiracle raw-strip benchmark
    - check peak Chunk allocation and RSS for thin and thick read/write paths

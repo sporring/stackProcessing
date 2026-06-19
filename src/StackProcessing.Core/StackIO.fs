@@ -11,6 +11,7 @@ open System.Text.Json.Nodes
 open System.Text.RegularExpressions
 open System.Threading
 open System.Threading.Tasks
+open BitMiracle.LibTiff.Classic
 open FSharp.Control
 open StackCore
 open PureHDF
@@ -180,72 +181,27 @@ let private TiffSampleFormatInt = 2us
 [<Literal>]
 let private TiffSampleFormatIeeeFp = 3us
 
-[<Struct; StructLayout(LayoutKind.Sequential)>]
-type private NativeTiffInfo =
-    val mutable Width: uint32
-    val mutable Height: uint32
-    val mutable RowsPerStrip: uint32
-    val mutable Strips: uint32
-    val mutable BitsPerSample: uint16
-    val mutable SampleFormat: uint16
-    val mutable SamplesPerPixel: uint16
-    val mutable PlanarConfig: uint16
-    val mutable Compression: uint16
-    val mutable IsTiled: int32
-    val mutable IsByteSwapped: int32
-    val mutable PageBytes: uint64
-    val mutable RawPageBytes: uint64
+type private TiffPageInfo =
+    { Width: uint32
+      Height: uint32
+      RowsPerStrip: uint32
+      Strips: uint32
+      BitsPerSample: uint16
+      SampleFormat: uint16
+      SamplesPerPixel: uint16
+      PlanarConfig: uint16
+      Compression: uint16
+      IsTiled: int32
+      IsByteSwapped: int32
+      PageBytes: uint64
+      RawPageBytes: uint64 }
 
-module private NativeLibTiff =
-    [<Literal>]
-    let Ok = 0
-
+module private TiffConstants =
     [<Literal>]
     let CompressionNone = 1us
 
     [<Literal>]
     let PlanarConfigContig = 1us
-
-    [<DllImport("lowlevel", EntryPoint = "sp_tiff_read_info", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
-    extern int readInfo(string path, NativeTiffInfo& info)
-
-    [<DllImport("lowlevel", EntryPoint = "sp_tiff_read_info_page", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
-    extern int readInfoPage(string path, uint32 pageIndex, NativeTiffInfo& info)
-
-    [<DllImport("lowlevel", EntryPoint = "sp_tiff_count_directories", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
-    extern int countDirectories(string path, uint32& count)
-
-    [<DllImport("lowlevel", EntryPoint = "sp_tiff_read_raw_page_into", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
-    extern int readRawPageInto(string path, byte[] buffer, UIntPtr bufferOffset, UIntPtr capacity, uint64& bytesRead)
-
-    [<DllImport("lowlevel", EntryPoint = "sp_tiff_read_raw_page_into_page", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
-    extern int readRawPageIntoPage(string path, uint32 pageIndex, byte[] buffer, UIntPtr bufferOffset, UIntPtr capacity, uint64& bytesRead)
-
-    [<DllImport("lowlevel", EntryPoint = "sp_tiff_read_decoded_page_into_page", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
-    extern int readDecodedPageIntoPage(string path, uint32 pageIndex, byte[] buffer, UIntPtr bufferOffset, UIntPtr capacity, uint64& bytesRead)
-
-    [<DllImport("lowlevel", EntryPoint = "sp_tiff_write_raw_page_from", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
-    extern int writeRawPageFrom(string path, byte[] buffer, UIntPtr bufferOffset, UIntPtr count, UIntPtr capacity, uint32 width, uint32 height, uint16 bitsPerSample, uint16 sampleFormat)
-
-    [<DllImport("lowlevel", EntryPoint = "sp_tiff_write_raw_page_from_samples", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
-    extern int writeRawPageFromSamples(string path, byte[] buffer, UIntPtr bufferOffset, UIntPtr count, UIntPtr capacity, uint32 width, uint32 height, uint16 bitsPerSample, uint16 sampleFormat, uint16 samplesPerPixel)
-
-    [<DllImport("lowlevel", EntryPoint = "sp_tiff_write_encoded_page_from_samples", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
-    extern int writeEncodedPageFromSamples(string path, byte[] buffer, UIntPtr bufferOffset, UIntPtr count, UIntPtr capacity, uint32 width, uint32 height, uint16 bitsPerSample, uint16 sampleFormat, uint16 samplesPerPixel, uint16 compression)
-
-    [<DllImport("lowlevel", EntryPoint = "sp_tiff_write_encoded_page_from_samples_opposite_endian", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
-    extern int writeEncodedPageFromSamplesOppositeEndian(string path, byte[] buffer, UIntPtr bufferOffset, UIntPtr count, UIntPtr capacity, uint32 width, uint32 height, uint16 bitsPerSample, uint16 sampleFormat, uint16 samplesPerPixel, uint16 compression)
-
-let private nativeTiffStatusName status =
-    match status with
-    | 0 -> "OK"
-    | -1 -> "open failed"
-    | -2 -> "missing field"
-    | -3 -> "unsupported layout"
-    | -4 -> "buffer too small"
-    | -5 -> "IO failed"
-    | -6 -> "size overflow"
-    | other -> $"status {other}"
 
 type TiffCompression =
     | None = 1
@@ -267,43 +223,98 @@ let defaultTiffWriteOptions =
 
 type private TiffReadStrategy =
     | RawFastPath
-    | GeneralLibtiffPath
+    | GeneralBitMiraclePath
 
 let private tiffReadStrategyName strategy =
     match strategy with
     | RawFastPath -> "raw-fast-path"
-    | GeneralLibtiffPath -> "general-libtiff-path"
+    | GeneralBitMiraclePath -> "general-bitmiracle-path"
 
-let private tryNativeTiffInfoPage fileName pageIndex =
+let private tiffFieldInt (tiff: Tiff) tag fallback =
+    let field = tiff.GetField(tag)
+    if isNull field || field.Length = 0 then fallback else field[0].ToInt()
+
+let private tiffFieldIntDefaulted (tiff: Tiff) tag fallback =
+    let field = tiff.GetFieldDefaulted(tag)
+    if isNull field || field.Length = 0 then fallback else field[0].ToInt()
+
+let private openTiffOrFail fileName mode =
+    let tiff = Tiff.Open(fileName, mode)
+    if isNull tiff then
+        invalidOp $"Could not open TIFF file '{fileName}' with mode '{mode}'."
+    tiff
+
+let private setTiffDirectoryOrFail (tiff: Tiff) fileName pageIndex =
+    if pageIndex < 0 || pageIndex > int Int16.MaxValue then
+        invalidArg "pageIndex" $"TIFF page index {pageIndex} is outside the supported BitMiracle directory range."
+    if pageIndex <> 0 && not (tiff.SetDirectory(int16 pageIndex)) then
+        invalidOp $"Could not select TIFF page {pageIndex} in '{fileName}'."
+
+let private inspectOpenTiffPage fileName pageIndex (tiff: Tiff) =
+    setTiffDirectoryOrFail tiff fileName pageIndex
+
+    let width = uint32 (tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
+    let height = uint32 (tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
+    let bitsPerSample = uint16 (tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 1)
+    let samplesPerPixel = uint16 (tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 1)
+    let sampleFormat = uint16 (tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT))
+    let planarConfig = uint16 (tiffFieldIntDefaulted tiff TiffTag.PLANARCONFIG (int PlanarConfig.CONTIG))
+    let compression = uint16 (tiffFieldIntDefaulted tiff TiffTag.COMPRESSION (int Compression.NONE))
+    let rowsPerStrip = uint32 (tiffFieldIntDefaulted tiff TiffTag.ROWSPERSTRIP (int height))
+
+    if width = 0u || height = 0u || bitsPerSample = 0us || samplesPerPixel = 0us || bitsPerSample % 8us <> 0us then
+        invalidOp $"TIFF page {pageIndex} in '{fileName}' has unsupported dimensions or sample layout."
+
+    let bytesPerPixel = uint64 bitsPerSample / 8UL * uint64 samplesPerPixel
+    let pageBytes = uint64 width * uint64 height * bytesPerPixel
+    if pageBytes > uint64 Int32.MaxValue then
+        invalidOp $"TIFF page {pageIndex} in '{fileName}' has {pageBytes} bytes, which exceeds the current Chunk byte[] limit."
+
+    let strips = tiff.NumberOfStrips()
+    if strips < 1 then
+        invalidOp $"TIFF page {pageIndex} in '{fileName}' has no strips."
+
+    let mutable rawPageBytes = 0UL
+    for strip in 0 .. strips - 1 do
+        let stripBytes = tiff.RawStripSize(strip)
+        if stripBytes <= 0L then
+            invalidOp $"TIFF page {pageIndex} in '{fileName}' has invalid raw strip {strip} byte count {stripBytes}."
+        rawPageBytes <- rawPageBytes + uint64 stripBytes
+
+    { Width = width
+      Height = height
+      RowsPerStrip = rowsPerStrip
+      Strips = uint32 strips
+      BitsPerSample = bitsPerSample
+      SampleFormat = sampleFormat
+      SamplesPerPixel = samplesPerPixel
+      PlanarConfig = planarConfig
+      Compression = compression
+      IsTiled = if tiff.IsTiled() then 1 else 0
+      IsByteSwapped = if tiff.IsByteSwapped() then 1 else 0
+      PageBytes = pageBytes
+      RawPageBytes = rawPageBytes }
+
+let private tryBitMiracleTiffInfoPage fileName pageIndex =
     try
-        let mutable info = NativeTiffInfo()
-        let status = NativeLibTiff.readInfoPage(fileName, uint32 pageIndex, &info)
-        if status = NativeLibTiff.Ok then Some info else None
+        use tiff = openTiffOrFail fileName "r"
+        Some(inspectOpenTiffPage fileName pageIndex tiff)
     with
-    | :? DllNotFoundException
-    | :? EntryPointNotFoundException
-    | :? BadImageFormatException ->
-        None
+    | _ -> None
 
-let private nativeTiffInfoPageOrFail fileName pageIndex =
-    let mutable info = NativeTiffInfo()
-    let status = NativeLibTiff.readInfoPage(fileName, uint32 pageIndex, &info)
-    if status <> NativeLibTiff.Ok then
-        invalidOp $"Could not inspect TIFF page {pageIndex} in '{fileName}' through native libtiff: {nativeTiffStatusName status}."
-    info
+let private bitMiracleTiffInfoPageOrFail fileName pageIndex =
+    use tiff = openTiffOrFail fileName "r"
+    inspectOpenTiffPage fileName pageIndex tiff
 
-let private tryNativeTiffDirectoryCount fileName =
+let private tryBitMiracleTiffDirectoryCount fileName =
     try
-        let mutable count = 0u
-        let status = NativeLibTiff.countDirectories(fileName, &count)
-        if status = NativeLibTiff.Ok && count > 0u then Some count else None
+        use tiff = openTiffOrFail fileName "r"
+        let count = tiff.NumberOfDirectories()
+        if count > 0s then Some(uint32 count) else None
     with
-    | :? DllNotFoundException
-    | :? EntryPointNotFoundException
-    | :? BadImageFormatException ->
-        None
+    | _ -> None
 
-let private nativeTiffFastPathLayout<'T> () =
+let private bitMiracleTiffFastPathLayout<'T> () =
     let bitsPerSample, sampleFormat, bytesPerSample = tiffPixelLayout<'T> ()
     let supported =
         typeof<'T> = typeof<uint8>
@@ -319,302 +330,106 @@ let private nativeTiffFastPathLayout<'T> () =
     else
         None
 
-let private isNativeScalarTiffPage expectedWidth expectedHeight expectedBits expectedSampleFormat expectedBytesPerSample (info: NativeTiffInfo) =
+let private isBitMiracleScalarTiffPage expectedWidth expectedHeight expectedBits expectedSampleFormat expectedBytesPerSample (info: TiffPageInfo) =
     info.Width = expectedWidth &&
     info.Height = expectedHeight &&
     info.BitsPerSample = expectedBits &&
     info.SampleFormat = expectedSampleFormat &&
     info.SamplesPerPixel = 1us &&
-    info.PlanarConfig = NativeLibTiff.PlanarConfigContig &&
-    info.Compression = NativeLibTiff.CompressionNone &&
+    info.PlanarConfig = TiffConstants.PlanarConfigContig &&
+    info.Compression = TiffConstants.CompressionNone &&
     info.IsTiled = 0 &&
     info.IsByteSwapped = 0 &&
     info.PageBytes = info.RawPageBytes &&
     info.PageBytes = uint64 expectedWidth * uint64 expectedHeight * uint64 expectedBytesPerSample
 
-let private isNativeComplexTiffPage expectedWidth expectedHeight bitsPerSample bytesPerSample (info: NativeTiffInfo) =
+let private isBitMiracleComplexTiffPage expectedWidth expectedHeight bitsPerSample bytesPerSample (info: TiffPageInfo) =
     info.Width = expectedWidth &&
     info.Height = expectedHeight &&
     info.BitsPerSample = bitsPerSample &&
     info.SampleFormat = TiffSampleFormatIeeeFp &&
     info.SamplesPerPixel = 2us &&
-    info.PlanarConfig = NativeLibTiff.PlanarConfigContig &&
-    info.Compression = NativeLibTiff.CompressionNone &&
+    info.PlanarConfig = TiffConstants.PlanarConfigContig &&
+    info.Compression = TiffConstants.CompressionNone &&
     info.IsTiled = 0 &&
     info.IsByteSwapped = 0 &&
     info.PageBytes = info.RawPageBytes &&
     info.PageBytes = uint64 expectedWidth * uint64 expectedHeight * 2UL * uint64 bytesPerSample
 
-let private isNativeComplex64TiffPage expectedWidth expectedHeight (info: NativeTiffInfo) =
-    isNativeComplexTiffPage expectedWidth expectedHeight 32us sizeof<float32> info
-
-let private isNativeComplex128TiffPage expectedWidth expectedHeight (info: NativeTiffInfo) =
-    isNativeComplexTiffPage expectedWidth expectedHeight 64us sizeof<float> info
-
-let private isNativeRgbTiffPage expectedWidth expectedHeight (info: NativeTiffInfo) =
+let private isBitMiracleRgbTiffPage expectedWidth expectedHeight (info: TiffPageInfo) =
     info.Width = expectedWidth &&
     info.Height = expectedHeight &&
     info.BitsPerSample = 8us &&
     info.SampleFormat = TiffSampleFormatUInt &&
     info.SamplesPerPixel = 3us &&
-    info.PlanarConfig = NativeLibTiff.PlanarConfigContig &&
-    info.Compression = NativeLibTiff.CompressionNone &&
+    info.PlanarConfig = TiffConstants.PlanarConfigContig &&
+    info.Compression = TiffConstants.CompressionNone &&
     info.IsTiled = 0 &&
     info.PageBytes = info.RawPageBytes &&
     info.PageBytes = uint64 expectedWidth * uint64 expectedHeight * 3UL
 
-let private tryReadNativeRawTiffSliceInto<'T when 'T: equality> fileName pageIndex expectedWidth expectedHeight sliceOffsetBytes (chunk: Chunk<'T>) =
-    try
-        match nativeTiffFastPathLayout<'T> () with
-        | None -> false
-        | Some(expectedBits, expectedSampleFormat, expectedBytesPerSample) ->
-            let mutable info = NativeTiffInfo()
-            if NativeLibTiff.readInfoPage(fileName, uint32 pageIndex, &info) <> NativeLibTiff.Ok ||
-               not (isNativeScalarTiffPage expectedWidth expectedHeight expectedBits expectedSampleFormat expectedBytesPerSample info) ||
-               info.PageBytes > uint64 Int32.MaxValue ||
-               sliceOffsetBytes < 0 ||
-               chunk.ByteLength < sliceOffsetBytes + int info.PageBytes then
-                false
-            else
-                let mutable bytesRead = 0UL
-                let status =
-                    NativeLibTiff.readRawPageIntoPage(
-                        fileName,
-                        uint32 pageIndex,
-                        chunk.Bytes,
-                        UIntPtr(uint64 sliceOffsetBytes),
-                        UIntPtr(uint64 chunk.ByteLength),
-                        &bytesRead)
-                status = NativeLibTiff.Ok && bytesRead = info.PageBytes
-    with
-    | :? DllNotFoundException
-    | :? EntryPointNotFoundException
-    | :? BadImageFormatException ->
-        false
+let private bitMiracleCompression compression =
+    match compression with
+    | TiffCompression.None -> Compression.NONE
+    | TiffCompression.Lzw -> Compression.LZW
+    | TiffCompression.Deflate -> Compression.DEFLATE
+    | TiffCompression.PackBits -> Compression.PACKBITS
+    | other -> invalidArg "compression" $"Unsupported TIFF compression option {other}."
 
-let private tryReadNativeRawTiffSlice<'T when 'T: equality> fileName expectedWidth expectedHeight (chunk: Chunk<'T>) =
-    tryReadNativeRawTiffSliceInto fileName 0 expectedWidth expectedHeight 0 chunk
+let private bitMiracleWriteMode byteOrder =
+    match byteOrder with
+    | TiffByteOrder.Native ->
+        if BitConverter.IsLittleEndian then "wl" else "wb"
+    | TiffByteOrder.Opposite ->
+        if BitConverter.IsLittleEndian then "wb" else "wl"
+    | other ->
+        invalidArg "byteOrder" $"Unsupported TIFF byte order option {other}."
 
-let private tryReadNativeComplexTiffSliceInto fileName pageIndex expectedWidth expectedHeight bytesPerSample sliceOffsetBytes (chunk: Chunk<'T>) =
-    try
-        let mutable info = NativeTiffInfo()
-        if NativeLibTiff.readInfoPage(fileName, uint32 pageIndex, &info) <> NativeLibTiff.Ok ||
-           not (isNativeComplexTiffPage expectedWidth expectedHeight (uint16 (bytesPerSample * 8)) bytesPerSample info) ||
-           info.PageBytes > uint64 Int32.MaxValue ||
-           sliceOffsetBytes < 0 ||
-           chunk.ByteLength < sliceOffsetBytes + int info.PageBytes then
-            false
-        else
-            let mutable bytesRead = 0UL
-            let status =
-                NativeLibTiff.readRawPageIntoPage(
-                    fileName,
-                    uint32 pageIndex,
-                    chunk.Bytes,
-                    UIntPtr(uint64 sliceOffsetBytes),
-                    UIntPtr(uint64 chunk.ByteLength),
-                    &bytesRead)
-            status = NativeLibTiff.Ok && bytesRead = info.PageBytes
-    with
-    | :? DllNotFoundException
-    | :? EntryPointNotFoundException
-    | :? BadImageFormatException ->
-        false
+let private bitMiracleSampleFormat sampleFormat =
+    enum<SampleFormat> (int sampleFormat)
 
-let private tryReadNativeComplex64TiffSliceInto fileName pageIndex expectedWidth expectedHeight sliceOffsetBytes (chunk: Chunk<float32>) =
-    tryReadNativeComplexTiffSliceInto fileName pageIndex expectedWidth expectedHeight sizeof<float32> sliceOffsetBytes chunk
+let private bitMiracleSetCommonFields (tiff: Tiff) width height bitsPerSample sampleFormat samplesPerPixel compression =
+    tiff.SetField(TiffTag.IMAGEWIDTH, [| box (int width) |]) |> ignore
+    tiff.SetField(TiffTag.IMAGELENGTH, [| box (int height) |]) |> ignore
+    tiff.SetField(TiffTag.SAMPLESPERPIXEL, [| box (int samplesPerPixel) |]) |> ignore
+    tiff.SetField(TiffTag.BITSPERSAMPLE, [| box (int bitsPerSample) |]) |> ignore
+    tiff.SetField(TiffTag.SAMPLEFORMAT, [| box (bitMiracleSampleFormat sampleFormat) |]) |> ignore
+    tiff.SetField(TiffTag.PHOTOMETRIC, [| box (if samplesPerPixel = 3us then Photometric.RGB else Photometric.MINISBLACK) |]) |> ignore
+    tiff.SetField(TiffTag.PLANARCONFIG, [| box PlanarConfig.CONTIG |]) |> ignore
+    tiff.SetField(TiffTag.ROWSPERSTRIP, [| box (int height) |]) |> ignore
+    tiff.SetField(TiffTag.COMPRESSION, [| box compression |]) |> ignore
 
-let private tryReadNativeComplex128TiffSliceInto fileName pageIndex expectedWidth expectedHeight sliceOffsetBytes (chunk: Chunk<float>) =
-    tryReadNativeComplexTiffSliceInto fileName pageIndex expectedWidth expectedHeight sizeof<float> sliceOffsetBytes chunk
+let private validateBitMiracleWriteBuffer pageBytes sliceOffsetBytes (chunk: Chunk<'T>) =
+    if pageBytes > uint64 Int32.MaxValue ||
+       sliceOffsetBytes < 0 ||
+       chunk.ByteLength < sliceOffsetBytes + int pageBytes then
+        invalidArg "chunk" $"Chunk byte length {chunk.ByteLength} is too small for TIFF page payload {pageBytes} at offset {sliceOffsetBytes}."
 
-let private tryReadNativeRgbTiffSliceInto fileName expectedWidth expectedHeight (chunk: Chunk<uint8>) =
-    try
-        let mutable info = NativeTiffInfo()
-        if NativeLibTiff.readInfoPage(fileName, 0u, &info) <> NativeLibTiff.Ok ||
-           not (isNativeRgbTiffPage expectedWidth expectedHeight info) ||
-           info.PageBytes > uint64 Int32.MaxValue ||
-           chunk.ByteLength < int info.PageBytes then
-            false
-        else
-            let mutable bytesRead = 0UL
-            let status =
-                NativeLibTiff.readRawPageIntoPage(
-                    fileName,
-                    0u,
-                    chunk.Bytes,
-                    UIntPtr.Zero,
-                    UIntPtr(uint64 chunk.ByteLength),
-                    &bytesRead)
-            status = NativeLibTiff.Ok && bytesRead = info.PageBytes
-    with
-    | :? DllNotFoundException
-    | :? EntryPointNotFoundException
-    | :? BadImageFormatException ->
-        false
+let private writeBitMiracleRawTiffPageFrom fileName width height bitsPerSample sampleFormat samplesPerPixel pageBytes sliceOffsetBytes (chunk: Chunk<'T>) =
+    validateBitMiracleWriteBuffer pageBytes sliceOffsetBytes chunk
+    use tiff = openTiffOrFail fileName (bitMiracleWriteMode TiffByteOrder.Native)
+    bitMiracleSetCommonFields tiff width height bitsPerSample sampleFormat samplesPerPixel Compression.NONE
+    let written = tiff.WriteRawStrip(0, chunk.Bytes, sliceOffsetBytes, int pageBytes)
+    if written <> int pageBytes then
+        invalidOp $"BitMiracle raw TIFF write wrote {written} bytes to '{fileName}', expected {pageBytes}."
+    if not (tiff.WriteDirectory()) then
+        invalidOp $"BitMiracle could not write TIFF directory to '{fileName}'."
 
-let private tryWriteNativeRawTiffSliceFrom<'T when 'T: equality> fileName width height sliceOffsetBytes (chunk: Chunk<'T>) =
-    try
-        match nativeTiffFastPathLayout<'T> () with
-        | None -> false
-        | Some(bitsPerSample, sampleFormat, bytesPerSample) ->
-            let pageBytes = uint64 width * uint64 height * uint64 bytesPerSample
-            if pageBytes > uint64 Int32.MaxValue ||
-               sliceOffsetBytes < 0 ||
-               chunk.ByteLength < sliceOffsetBytes + int pageBytes then
-                false
-            else
-                let status =
-                    NativeLibTiff.writeRawPageFrom(
-                        fileName,
-                        chunk.Bytes,
-                        UIntPtr(uint64 sliceOffsetBytes),
-                        UIntPtr pageBytes,
-                        UIntPtr(uint64 chunk.ByteLength),
-                        uint32 width,
-                        uint32 height,
-                        bitsPerSample,
-                        sampleFormat)
-                status = NativeLibTiff.Ok
-    with
-    | :? DllNotFoundException
-    | :? EntryPointNotFoundException
-    | :? BadImageFormatException ->
-        false
-
-let private tryWriteNativeEncodedTiffSliceFrom<'T when 'T: equality> (options: TiffWriteOptions) fileName width height sliceOffsetBytes (chunk: Chunk<'T>) =
-    try
-        match nativeTiffFastPathLayout<'T> () with
-        | None -> false
-        | Some(bitsPerSample, sampleFormat, bytesPerSample) ->
-            let pageBytes = uint64 width * uint64 height * uint64 bytesPerSample
-            if pageBytes > uint64 Int32.MaxValue ||
-                 sliceOffsetBytes < 0 ||
-                 chunk.ByteLength < sliceOffsetBytes + int pageBytes then
-                false
-            else
-                let compression = uint16 (int options.Compression)
-                let status =
-                    match options.ByteOrder with
-                    | TiffByteOrder.Native ->
-                        NativeLibTiff.writeEncodedPageFromSamples(
-                            fileName,
-                            chunk.Bytes,
-                            UIntPtr(uint64 sliceOffsetBytes),
-                            UIntPtr pageBytes,
-                            UIntPtr(uint64 chunk.ByteLength),
-                            uint32 width,
-                            uint32 height,
-                            bitsPerSample,
-                            sampleFormat,
-                            1us,
-                            compression)
-                    | TiffByteOrder.Opposite ->
-                        NativeLibTiff.writeEncodedPageFromSamplesOppositeEndian(
-                            fileName,
-                            chunk.Bytes,
-                            UIntPtr(uint64 sliceOffsetBytes),
-                            UIntPtr pageBytes,
-                            UIntPtr(uint64 chunk.ByteLength),
-                            uint32 width,
-                            uint32 height,
-                            bitsPerSample,
-                            sampleFormat,
-                            1us,
-                            compression)
-                    | _ ->
-                        NativeLibTiff.writeEncodedPageFromSamples(
-                            fileName,
-                            chunk.Bytes,
-                            UIntPtr(uint64 sliceOffsetBytes),
-                            UIntPtr pageBytes,
-                            UIntPtr(uint64 chunk.ByteLength),
-                            uint32 width,
-                            uint32 height,
-                            bitsPerSample,
-                            sampleFormat,
-                            1us,
-                            compression)
-                status = NativeLibTiff.Ok
-    with
-    | :? DllNotFoundException
-    | :? EntryPointNotFoundException
-    | :? BadImageFormatException ->
-        false
-
-let private tryWriteNativeComplexTiffSliceFrom fileName logicalWidth height bytesPerSample sliceOffsetBytes (chunk: Chunk<'T>) =
-    try
-        let pageBytes = uint64 logicalWidth * uint64 height * 2UL * uint64 bytesPerSample
-        if pageBytes > uint64 Int32.MaxValue ||
-           sliceOffsetBytes < 0 ||
-           chunk.ByteLength < sliceOffsetBytes + int pageBytes then
-            false
-        else
-            let status =
-                NativeLibTiff.writeRawPageFromSamples(
-                    fileName,
-                    chunk.Bytes,
-                    UIntPtr(uint64 sliceOffsetBytes),
-                    UIntPtr pageBytes,
-                    UIntPtr(uint64 chunk.ByteLength),
-                    uint32 logicalWidth,
-                    uint32 height,
-                    uint16 (bytesPerSample * 8),
-                    TiffSampleFormatIeeeFp,
-                    2us)
-            status = NativeLibTiff.Ok
-    with
-    | :? DllNotFoundException
-    | :? EntryPointNotFoundException
-    | :? BadImageFormatException ->
-        false
-
-let private tryWriteNativeComplex64TiffSliceFrom fileName logicalWidth height sliceOffsetBytes (chunk: Chunk<float32>) =
-    tryWriteNativeComplexTiffSliceFrom fileName logicalWidth height sizeof<float32> sliceOffsetBytes chunk
-
-let private tryWriteNativeComplex128TiffSliceFrom fileName logicalWidth height sliceOffsetBytes (chunk: Chunk<float>) =
-    tryWriteNativeComplexTiffSliceFrom fileName logicalWidth height sizeof<float> sliceOffsetBytes chunk
-
-let private tryWriteNativeRgbTiffSlice fileName (vector: VectorChunk<uint8>) =
-    try
-        if vector.Components <> 3u then
-            false
-        else
-            let width, height, depth = vector.SpatialSize
-            if depth <> 1UL ||
-               vector.Chunk.Size <> (width * 3UL, height, 1UL) ||
-               width > uint64 UInt32.MaxValue ||
-               height > uint64 UInt32.MaxValue then
-                false
-            else
-                let pageBytes = width * height * 3UL
-                if pageBytes > uint64 Int32.MaxValue ||
-                   vector.Chunk.ByteLength < int pageBytes then
-                    false
-                else
-                    let status =
-                        NativeLibTiff.writeRawPageFromSamples(
-                            fileName,
-                            vector.Chunk.Bytes,
-                            UIntPtr.Zero,
-                            UIntPtr pageBytes,
-                            UIntPtr(uint64 vector.Chunk.ByteLength),
-                            uint32 width,
-                            uint32 height,
-                            8us,
-                            TiffSampleFormatUInt,
-                            3us)
-                    status = NativeLibTiff.Ok
-    with
-    | :? DllNotFoundException
-    | :? EntryPointNotFoundException
-    | :? BadImageFormatException ->
-        false
+let private writeBitMiracleEncodedTiffPageFrom options fileName width height bitsPerSample sampleFormat samplesPerPixel pageBytes sliceOffsetBytes (chunk: Chunk<'T>) =
+    validateBitMiracleWriteBuffer pageBytes sliceOffsetBytes chunk
+    use tiff = openTiffOrFail fileName (bitMiracleWriteMode options.ByteOrder)
+    bitMiracleSetCommonFields tiff width height bitsPerSample sampleFormat samplesPerPixel (bitMiracleCompression options.Compression)
+    let written = tiff.WriteEncodedStrip(0, chunk.Bytes, sliceOffsetBytes, int pageBytes)
+    if written <> int pageBytes then
+        invalidOp $"BitMiracle encoded TIFF write wrote {written} bytes to '{fileName}', expected {pageBytes}."
+    if not (tiff.WriteDirectory()) then
+        invalidOp $"BitMiracle could not write TIFF directory to '{fileName}'."
 
 let private tiffDirectoryCount (filename: string) =
-    match tryNativeTiffDirectoryCount filename with
+    match tryBitMiracleTiffDirectoryCount filename with
     | Some count -> count
     | None ->
-        invalidOp $"Could not count TIFF directories in '{filename}' through native libtiff. This TIFF layout is currently unsupported."
+        invalidOp $"Could not count TIFF directories in '{filename}' through BitMiracle. This TIFF layout is currently unsupported."
 
 let private tiffBytesPerSample bitsPerSample sampleFormat =
     match sampleFormat, bitsPerSample with
@@ -653,7 +468,7 @@ let getFileInfo (filename: string) : FileInfo =
     if not isTiffVolume then
         invalidArg "filename" $"getFileInfo currently supports TIFF/BigTIFF files only: {filename}"
 
-    let info = nativeTiffInfoPageOrFail filename 0
+    let info = bitMiracleTiffInfoPageOrFail filename 0
     let depth = tiffDirectoryCount filename |> uint64
     let dimensions = if depth > 1UL then 3u else 2u
     let size =
@@ -701,7 +516,7 @@ type private ChunkTiffReadPlan =
 
 let private inspectChunkTiffSliceForRead<'T> fileName =
     let expectedBits, expectedFormat, expectedBytesPerSample = tiffPixelLayout<'T> ()
-    let info = nativeTiffInfoPageOrFail fileName 0
+    let info = bitMiracleTiffInfoPageOrFail fileName 0
     let width = uint info.Width
     let height = uint info.Height
     if width = 0u || height = 0u then
@@ -714,14 +529,14 @@ let private inspectChunkTiffSliceForRead<'T> fileName =
         let rowBytes = int width * expectedBytesPerSample
         let pageBytes = uint64 rowBytes * uint64 height
         let strategy =
-            if info.IsTiled <> 0 || info.PlanarConfig <> NativeLibTiff.PlanarConfigContig then
+            if info.IsTiled <> 0 || info.PlanarConfig <> TiffConstants.PlanarConfigContig then
                 invalidOp $"TIFF slice '{fileName}' uses an unsupported tiled or planar layout for Chunk reading."
             elif info.PageBytes <> pageBytes then
                 invalidOp $"TIFF slice '{fileName}' has page byte count {info.PageBytes}, expected {pageBytes}."
-            elif info.Compression = NativeLibTiff.CompressionNone && info.RawPageBytes = pageBytes && info.IsByteSwapped = 0 then
+            elif info.Compression = TiffConstants.CompressionNone && info.RawPageBytes = pageBytes && info.IsByteSwapped = 0 then
                 RawFastPath
             else
-                GeneralLibtiffPath
+                GeneralBitMiraclePath
 
         { Width = width
           Height = height
@@ -729,55 +544,71 @@ let private inspectChunkTiffSliceForRead<'T> fileName =
           Strategy = strategy
           ConvertUInt8ToFloat32 = false }
     elif typeof<'T> = typeof<float32> && bitsPerSample = 8 && sampleFormat = TiffSampleFormatUInt then
-        if info.IsTiled <> 0 || info.PlanarConfig <> NativeLibTiff.PlanarConfigContig then
+        if info.IsTiled <> 0 || info.PlanarConfig <> TiffConstants.PlanarConfigContig then
             invalidOp $"TIFF slice '{fileName}' uses an unsupported tiled or planar layout for UInt8-to-Float32 reading."
         { Width = width
           Height = height
           RowBytes = int width * sizeof<float32>
-          Strategy = GeneralLibtiffPath
+          Strategy = GeneralBitMiraclePath
           ConvertUInt8ToFloat32 = true }
     else
         invalidOp $"Input slice '{fileName}' does not match {typeof<'T>.Name}: got {bitsPerSample}-bit sample format {sampleFormat}."
 
-let private readNativeRawTiffPageIntoOffsetNoMetadata fileName pageIndex expectedBytes sliceOffsetBytes (chunk: Chunk<'T>) =
+let private validateBitMiracleReadBuffer fileName expectedBytes sliceOffsetBytes (chunk: Chunk<'T>) =
     if expectedBytes > uint64 Int32.MaxValue ||
        sliceOffsetBytes < 0 ||
        chunk.ByteLength < sliceOffsetBytes + int expectedBytes then
         invalidArg "chunk" $"Chunk byte length {chunk.ByteLength} is too small to read TIFF page '{fileName}' at offset {sliceOffsetBytes} with length {expectedBytes}."
 
+let private readBitMiracleRawTiffPageIntoOffsetNoMetadata fileName pageIndex expectedBytes sliceOffsetBytes (chunk: Chunk<'T>) =
+    validateBitMiracleReadBuffer fileName expectedBytes sliceOffsetBytes chunk
+    use tiff = openTiffOrFail fileName "r"
+    setTiffDirectoryOrFail tiff fileName pageIndex
+
+    let mutable offset = sliceOffsetBytes
     let mutable bytesRead = 0UL
-    let status =
-        NativeLibTiff.readRawPageIntoPage(
-            fileName,
-            uint32 pageIndex,
-            chunk.Bytes,
-            UIntPtr(uint64 sliceOffsetBytes),
-            UIntPtr(uint64 chunk.ByteLength),
-            &bytesRead)
+    let strips = tiff.NumberOfStrips()
+    for strip in 0 .. strips - 1 do
+        let stripBytes64 = tiff.RawStripSize(strip)
+        if stripBytes64 <= 0L || stripBytes64 > int64 Int32.MaxValue then
+            invalidOp $"BitMiracle raw read saw invalid strip {strip} byte count {stripBytes64} in '{fileName}'."
+        let stripBytes = int stripBytes64
+        if bytesRead + uint64 stripBytes > expectedBytes then
+            invalidOp $"BitMiracle raw read for page {pageIndex} in '{fileName}' exceeded expected payload {expectedBytes} bytes."
+        let got = tiff.ReadRawStrip(strip, chunk.Bytes, offset, stripBytes)
+        if got <> stripBytes then
+            invalidOp $"BitMiracle raw read got {got} bytes from strip {strip} in '{fileName}', expected {stripBytes}."
+        offset <- offset + stripBytes
+        bytesRead <- bytesRead + uint64 stripBytes
 
-    if status <> NativeLibTiff.Ok || bytesRead <> expectedBytes then
-        invalidOp $"Native libtiff raw read failed for page {pageIndex} in '{fileName}': {nativeTiffStatusName status}, read {bytesRead} bytes, expected {expectedBytes}."
+    if bytesRead <> expectedBytes then
+        invalidOp $"BitMiracle raw read produced {bytesRead} bytes for page {pageIndex} in '{fileName}', expected {expectedBytes}."
 
-let private readNativeDecodedTiffPageIntoOffsetNoMetadata fileName pageIndex expectedBytes sliceOffsetBytes (chunk: Chunk<'T>) =
-    if expectedBytes > uint64 Int32.MaxValue ||
-       sliceOffsetBytes < 0 ||
-       chunk.ByteLength < sliceOffsetBytes + int expectedBytes then
-        invalidArg "chunk" $"Chunk byte length {chunk.ByteLength} is too small to read decoded TIFF page '{fileName}' at offset {sliceOffsetBytes} with length {expectedBytes}."
+let private readBitMiracleDecodedTiffPageIntoOffsetNoMetadata fileName pageIndex expectedBytes sliceOffsetBytes (chunk: Chunk<'T>) =
+    validateBitMiracleReadBuffer fileName expectedBytes sliceOffsetBytes chunk
+    use tiff = openTiffOrFail fileName "r"
+    setTiffDirectoryOrFail tiff fileName pageIndex
 
+    let stripBytes = tiff.StripSize()
+    if stripBytes <= 0 then
+        invalidOp $"BitMiracle decoded read saw invalid decoded strip size {stripBytes} in '{fileName}'."
+
+    let mutable offset = sliceOffsetBytes
     let mutable bytesRead = 0UL
-    let status =
-        NativeLibTiff.readDecodedPageIntoPage(
-            fileName,
-            uint32 pageIndex,
-            chunk.Bytes,
-            UIntPtr(uint64 sliceOffsetBytes),
-            UIntPtr(uint64 chunk.ByteLength),
-            &bytesRead)
+    let strips = tiff.NumberOfStrips()
+    for strip in 0 .. strips - 1 do
+        let remaining = int expectedBytes - int bytesRead
+        let requested = min stripBytes remaining
+        let got = tiff.ReadEncodedStrip(strip, chunk.Bytes, offset, requested)
+        if got < 0 || got > requested then
+            invalidOp $"BitMiracle decoded read got {got} bytes from strip {strip} in '{fileName}', expected at most {requested}."
+        offset <- offset + got
+        bytesRead <- bytesRead + uint64 got
 
-    if status <> NativeLibTiff.Ok || bytesRead <> expectedBytes then
-        invalidOp $"Native libtiff decoded read failed for page {pageIndex} in '{fileName}': {nativeTiffStatusName status}, read {bytesRead} bytes, expected {expectedBytes}."
+    if bytesRead <> expectedBytes then
+        invalidOp $"BitMiracle decoded read produced {bytesRead} bytes for page {pageIndex} in '{fileName}', expected {expectedBytes}."
 
-let private readNativeUInt8TiffPageAsFloat32IntoOffset fileName pageIndex expectedWidth expectedHeight sliceOffsetBytes (chunk: Chunk<float32>) =
+let private readBitMiracleUInt8TiffPageAsFloat32IntoOffset fileName pageIndex expectedWidth expectedHeight sliceOffsetBytes (chunk: Chunk<float32>) =
     let widthI = int expectedWidth
     let heightI = int expectedHeight
     let sourceBytes = widthI * heightI
@@ -787,18 +618,24 @@ let private readNativeUInt8TiffPageAsFloat32IntoOffset fileName pageIndex expect
 
     let scratch = ArrayPool<byte>.Shared.Rent(sourceBytes)
     try
-        let mutable bytesRead = 0UL
-        let status =
-            NativeLibTiff.readDecodedPageIntoPage(
-                fileName,
-                uint32 pageIndex,
-                scratch,
-                UIntPtr.Zero,
-                UIntPtr(uint64 scratch.Length),
-                &bytesRead)
+        use tiff = openTiffOrFail fileName "r"
+        setTiffDirectoryOrFail tiff fileName pageIndex
+        let stripBytes = tiff.StripSize()
+        if stripBytes <= 0 then
+            invalidOp $"BitMiracle UInt8-to-Float32 read saw invalid decoded strip size {stripBytes} in '{fileName}'."
 
-        if status <> NativeLibTiff.Ok || bytesRead <> uint64 sourceBytes then
-            invalidOp $"Native libtiff decoded UInt8 read failed for page {pageIndex} in '{fileName}': {nativeTiffStatusName status}, read {bytesRead} bytes, expected {sourceBytes}."
+        let mutable offset = 0
+        let strips = tiff.NumberOfStrips()
+        for strip in 0 .. strips - 1 do
+            let remaining = sourceBytes - offset
+            let requested = min stripBytes remaining
+            let got = tiff.ReadEncodedStrip(strip, scratch, offset, requested)
+            if got < 0 || got > requested then
+                invalidOp $"BitMiracle UInt8-to-Float32 read got {got} bytes from strip {strip} in '{fileName}', expected at most {requested}."
+            offset <- offset + got
+
+        if offset <> sourceBytes then
+            invalidOp $"BitMiracle UInt8-to-Float32 read produced {offset} bytes for page {pageIndex} in '{fileName}', expected {sourceBytes}."
 
         let outputBytes = chunk.Bytes.AsSpan(sliceOffsetBytes, targetBytes)
         let output = MemoryMarshal.Cast<byte, float32>(outputBytes)
@@ -807,24 +644,23 @@ let private readNativeUInt8TiffPageAsFloat32IntoOffset fileName pageIndex expect
     finally
         ArrayPool<byte>.Shared.Return(scratch)
 
-let private readChunkTiffSliceByPlanIntoOffset<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+let private scalarTiffReaderForPlan<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (plan: ChunkTiffReadPlan)
-    fileName
-    pageIndex
-    (chunk: Chunk<'T>)
-    sliceOffsetBytes
-    =
+    : string -> int -> Chunk<'T> -> int -> unit =
+
     if plan.ConvertUInt8ToFloat32 then
-        let floatChunk = box chunk :?> Chunk<float32>
-        readNativeUInt8TiffPageAsFloat32IntoOffset fileName pageIndex plan.Width plan.Height sliceOffsetBytes floatChunk
+        fun fileName pageIndex chunk sliceOffsetBytes ->
+            let floatChunk = box chunk :?> Chunk<float32>
+            readBitMiracleUInt8TiffPageAsFloat32IntoOffset fileName pageIndex plan.Width plan.Height sliceOffsetBytes floatChunk
     else
         let sliceBytes = uint64 plan.RowBytes * uint64 plan.Height
-
         match plan.Strategy with
         | RawFastPath ->
-            readNativeRawTiffPageIntoOffsetNoMetadata fileName pageIndex sliceBytes sliceOffsetBytes chunk
-        | GeneralLibtiffPath ->
-            readNativeDecodedTiffPageIntoOffsetNoMetadata fileName pageIndex sliceBytes sliceOffsetBytes chunk
+            fun fileName pageIndex chunk sliceOffsetBytes ->
+                readBitMiracleRawTiffPageIntoOffsetNoMetadata fileName pageIndex sliceBytes sliceOffsetBytes chunk
+        | GeneralBitMiraclePath ->
+            fun fileName pageIndex chunk sliceOffsetBytes ->
+                readBitMiracleDecodedTiffPageIntoOffsetNoMetadata fileName pageIndex sliceBytes sliceOffsetBytes chunk
 
 type private ComplexTiffReadPlan =
     { LogicalWidth: uint
@@ -833,7 +669,7 @@ type private ComplexTiffReadPlan =
       Strategy: TiffReadStrategy }
 
 let private inspectComplexTiffSlice bytesPerSample typeLabel fileName =
-    let info = nativeTiffInfoPageOrFail fileName 0
+    let info = bitMiracleTiffInfoPageOrFail fileName 0
     let width = uint info.Width
     let height = uint info.Height
     if width = 0u || height = 0u then
@@ -843,7 +679,7 @@ let private inspectComplexTiffSlice bytesPerSample typeLabel fileName =
        info.BitsPerSample <> uint16 (bytesPerSample * 8) ||
        info.SampleFormat <> TiffSampleFormatIeeeFp ||
        info.SamplesPerPixel <> 2us ||
-       info.PlanarConfig <> NativeLibTiff.PlanarConfigContig ||
+       info.PlanarConfig <> TiffConstants.PlanarConfigContig ||
        info.IsTiled <> 0 then
         invalidOp $"{typeLabel} TIFF slices must be contiguous two-sample Float{bytesPerSample * 8} pixels, got bits={info.BitsPerSample}, format={info.SampleFormat}, samples={info.SamplesPerPixel}, planar={info.PlanarConfig} in '{fileName}'."
 
@@ -852,10 +688,10 @@ let private inspectComplexTiffSlice bytesPerSample typeLabel fileName =
     if info.PageBytes <> pageBytes then
         invalidOp $"{typeLabel} TIFF slice '{fileName}' has page byte count {info.PageBytes}, expected {pageBytes}."
     let strategy =
-        if info.Compression = NativeLibTiff.CompressionNone && info.RawPageBytes = pageBytes && info.IsByteSwapped = 0 then
+        if info.Compression = TiffConstants.CompressionNone && info.RawPageBytes = pageBytes && info.IsByteSwapped = 0 then
             RawFastPath
         else
-            GeneralLibtiffPath
+            GeneralBitMiraclePath
     { LogicalWidth = width
       Height = height
       RowBytes = rowBytes
@@ -883,9 +719,9 @@ let private readComplexTiffSliceIntoOffset
 
     match strategy with
     | RawFastPath ->
-        readNativeRawTiffPageIntoOffsetNoMetadata fileName pageIndex pageBytes sliceOffsetBytes chunk
-    | GeneralLibtiffPath ->
-        readNativeDecodedTiffPageIntoOffsetNoMetadata fileName pageIndex pageBytes sliceOffsetBytes chunk
+        readBitMiracleRawTiffPageIntoOffsetNoMetadata fileName pageIndex pageBytes sliceOffsetBytes chunk
+    | GeneralBitMiraclePath ->
+        readBitMiracleDecodedTiffPageIntoOffsetNoMetadata fileName pageIndex pageBytes sliceOffsetBytes chunk
 
 let private readComplex64TiffSliceIntoOffset strategy fileName pageIndex (chunk: Chunk<float32>) expectedWidth expectedHeight sliceOffsetBytes =
     readComplexTiffSliceIntoOffset strategy fileName pageIndex chunk sizeof<float32> "Complex64" expectedWidth expectedHeight sliceOffsetBytes
@@ -894,25 +730,35 @@ let private readComplex128TiffSliceIntoOffset strategy fileName pageIndex (chunk
     readComplexTiffSliceIntoOffset strategy fileName pageIndex chunk sizeof<float> "Complex128" expectedWidth expectedHeight sliceOffsetBytes
 
 let private writeComplex64TiffSliceFromOffset fileName (chunk: Chunk<float32>) logicalWidth height sliceOffsetBytes =
-    if not (tryWriteNativeComplex64TiffSliceFrom fileName logicalWidth height sliceOffsetBytes chunk) then
-        invalidOp $"Native libtiff could not write Complex64 TIFF page '{fileName}'."
+    let pageBytes = uint64 logicalWidth * uint64 height * 2UL * uint64 sizeof<float32>
+    writeBitMiracleRawTiffPageFrom fileName logicalWidth height 32us TiffSampleFormatIeeeFp 2us pageBytes sliceOffsetBytes chunk
 
 let private writeComplex128TiffSliceFromOffset fileName (chunk: Chunk<float>) logicalWidth height sliceOffsetBytes =
-    if not (tryWriteNativeComplex128TiffSliceFrom fileName logicalWidth height sliceOffsetBytes chunk) then
-        invalidOp $"Native libtiff could not write Complex128 TIFF page '{fileName}'."
+    let pageBytes = uint64 logicalWidth * uint64 height * 2UL * uint64 sizeof<float>
+    writeBitMiracleRawTiffPageFrom fileName logicalWidth height 64us TiffSampleFormatIeeeFp 2us pageBytes sliceOffsetBytes chunk
 
 let private writeChunkTiffSliceFromOffset<'T when 'T: equality> fileName (chunk: Chunk<'T>) width height sliceOffsetBytes =
-    let writtenNative =
-        tryWriteNativeRawTiffSliceFrom fileName width height sliceOffsetBytes chunk
+    match bitMiracleTiffFastPathLayout<'T> () with
+    | None -> invalidArg "T" $"BitMiracle TIFF raw write does not support chunk type {typeof<'T>.Name}."
+    | Some(bitsPerSample, sampleFormat, bytesPerSample) ->
+        let pageBytes = uint64 width * uint64 height * uint64 bytesPerSample
+        writeBitMiracleRawTiffPageFrom fileName width height bitsPerSample sampleFormat 1us pageBytes sliceOffsetBytes chunk
 
-    if not writtenNative then
-        invalidOp $"Native libtiff could not write raw TIFF page '{fileName}'."
+let private writeEncodedChunkTiffSliceFromOffset<'T when 'T: equality> options fileName (chunk: Chunk<'T>) width height sliceOffsetBytes =
+    match bitMiracleTiffFastPathLayout<'T> () with
+    | None -> invalidArg "T" $"BitMiracle TIFF encoded write does not support chunk type {typeof<'T>.Name}."
+    | Some(bitsPerSample, sampleFormat, bytesPerSample) ->
+        let pageBytes = uint64 width * uint64 height * uint64 bytesPerSample
+        writeBitMiracleEncodedTiffPageFrom options fileName width height bitsPerSample sampleFormat 1us pageBytes sliceOffsetBytes chunk
 
-let private writeChunkTiffSliceFromOffsetWithOptions<'T when 'T: equality> options fileName (chunk: Chunk<'T>) width height sliceOffsetBytes =
+let private scalarTiffWriterForOptions<'T when 'T: equality>
+    options
+    : string -> Chunk<'T> -> uint64 -> uint64 -> int -> unit =
+
     if options = defaultTiffWriteOptions then
-        writeChunkTiffSliceFromOffset<'T> fileName chunk width height sliceOffsetBytes
-    elif not (tryWriteNativeEncodedTiffSliceFrom options fileName width height sliceOffsetBytes chunk) then
-        invalidOp $"Native libtiff could not write TIFF page '{fileName}' with compression {options.Compression} and byte order {options.ByteOrder}."
+        writeChunkTiffSliceFromOffset<'T>
+    else
+        writeEncodedChunkTiffSliceFromOffset<'T> options
 
 let private writeChunkTiffSlice<'T when 'T: equality> fileName (chunk: Chunk<'T>) =
     let width, height, depth = chunk.Size
@@ -922,7 +768,7 @@ let private writeChunkTiffSlice<'T when 'T: equality> fileName (chunk: Chunk<'T>
     writeChunkTiffSliceFromOffset<'T> fileName chunk width height 0
 
 let private writeChunkTiffFile<'T when 'T: equality> fileName (_chunk: Chunk<'T>) =
-    invalidOp $"Writing a multi-page TIFF chunk file is currently unsupported after retiring BitMiracle. Use split slice TIFF output for '{fileName}'."
+    invalidOp $"Writing a multi-page TIFF chunk file is currently unsupported in the BitMiracle TIFF path. Use split slice TIFF output for '{fileName}'."
 
 type private ColorTiffReadPlan =
     { Width: uint
@@ -931,7 +777,7 @@ type private ColorTiffReadPlan =
       Strategy: TiffReadStrategy }
 
 let private inspectColorChunkTiffSlice fileName =
-    let info = nativeTiffInfoPageOrFail fileName 0
+    let info = bitMiracleTiffInfoPageOrFail fileName 0
     let width = uint info.Width
     let height = uint info.Height
     if width = 0u || height = 0u then
@@ -939,7 +785,7 @@ let private inspectColorChunkTiffSlice fileName =
     if info.BitsPerSample <> 8us ||
        info.SampleFormat <> TiffSampleFormatUInt ||
        info.SamplesPerPixel <> 3us ||
-       info.PlanarConfig <> NativeLibTiff.PlanarConfigContig ||
+       info.PlanarConfig <> TiffConstants.PlanarConfigContig ||
        info.IsTiled <> 0 then
         invalidOp $"RGB TIFF slices must be contiguous 8-bit unsigned RGB, got bits={info.BitsPerSample}, format={info.SampleFormat}, samples={info.SamplesPerPixel}, planar={info.PlanarConfig} in '{fileName}'."
 
@@ -948,10 +794,10 @@ let private inspectColorChunkTiffSlice fileName =
     if info.PageBytes <> pageBytes then
         invalidOp $"RGB TIFF slice '{fileName}' has page byte count {info.PageBytes}, expected {pageBytes}."
     let strategy =
-        if info.Compression = NativeLibTiff.CompressionNone && info.RawPageBytes = pageBytes && info.IsByteSwapped = 0 then
+        if info.Compression = TiffConstants.CompressionNone && info.RawPageBytes = pageBytes && info.IsByteSwapped = 0 then
             RawFastPath
         else
-            GeneralLibtiffPath
+            GeneralBitMiraclePath
     { Width = width
       Height = height
       RowBytes = rowBytes
@@ -969,9 +815,9 @@ let private readColorChunkTiffSliceByPlan (plan: ColorTiffReadPlan) fileName : V
     try
         match plan.Strategy with
         | RawFastPath ->
-            readNativeRawTiffPageIntoOffsetNoMetadata fileName 0 (uint64 rowBytes * uint64 height) 0 chunk
-        | GeneralLibtiffPath ->
-            readNativeDecodedTiffPageIntoOffsetNoMetadata fileName 0 (uint64 rowBytes * uint64 height) 0 chunk
+            readBitMiracleRawTiffPageIntoOffsetNoMetadata fileName 0 (uint64 rowBytes * uint64 height) 0 chunk
+        | GeneralBitMiraclePath ->
+            readBitMiracleDecodedTiffPageIntoOffsetNoMetadata fileName 0 (uint64 rowBytes * uint64 height) 0 chunk
         vector
     with
     | _ ->
@@ -991,8 +837,8 @@ let private writeColorChunkTiffSlice fileName (vector: VectorChunk<uint8>) =
     if vector.Chunk.ByteLength < rowBytes * int height then
         invalidArg "vector" $"RGB vector chunk byte length {vector.Chunk.ByteLength} is smaller than the TIFF page payload {rowBytes * int height}."
 
-    if not (tryWriteNativeRgbTiffSlice fileName vector) then
-        invalidOp $"Native libtiff could not write RGB TIFF page '{fileName}'."
+    let pageBytes = uint64 rowBytes * uint64 height
+    writeBitMiracleRawTiffPageFrom fileName width height 8us TiffSampleFormatUInt 3us pageBytes 0 vector.Chunk
 
 let private runTask (task: Task<'T>) : 'T =
     task.GetAwaiter().GetResult()
@@ -1479,6 +1325,7 @@ let private readChunkSlicesExact<'T when 'T: equality and 'T: (new: unit -> 'T) 
     let readPlan = inspectChunkTiffSliceForRead<'T> files[0]
     let width = readPlan.Width
     let height = readPlan.Height
+    let readSliceIntoOffset = scalarTiffReaderForPlan<'T> readPlan
     let elementBytes = uint64 readPlan.RowBytes * uint64 height
     let sourcePeek =
         SourcePeek.create
@@ -1502,7 +1349,7 @@ let private readChunkSlicesExact<'T when 'T: equality and 'T: (new: unit -> 'T) 
             printfn $"[{name}] Reading chunk slice {i}: {fileName} as {typeof<'T>.Name}"
         let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
         try
-            readChunkTiffSliceByPlanIntoOffset readPlan fileName 0 chunk 0
+            readSliceIntoOffset fileName 0 chunk 0
             chunk
         with
         | _ ->
@@ -1695,6 +1542,7 @@ let readChunkThick<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct
     let readPlan = inspectChunkTiffSliceForRead<'T> files[0]
     let width = readPlan.Width
     let height = readPlan.Height
+    let readSliceIntoOffset = scalarTiffReaderForPlan<'T> readPlan
     let sliceBytes = readPlan.RowBytes * int height
     let groupCount = (pages.Length + chunkDepth - 1) / chunkDepth
     let elementBytes = uint64 sliceBytes * uint64 chunkDepth
@@ -1728,7 +1576,7 @@ let readChunkThick<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct
             for localZ in 0 .. zCount - 1 do
                 let fileName, pageIndex = pages[firstSlice + localZ]
                 let sliceOffset = localZ * sliceBytes
-                readChunkTiffSliceByPlanIntoOffset readPlan fileName pageIndex chunk sliceOffset
+                readSliceIntoOffset fileName pageIndex chunk sliceOffset
             chunk
         with
         | _ ->
@@ -1915,6 +1763,7 @@ let readChunkThickFiles<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: s
     let readPlan = inspectChunkTiffSliceForRead<'T> files[0]
     let width = readPlan.Width
     let height = readPlan.Height
+    let readSliceIntoOffset = scalarTiffReaderForPlan<'T> readPlan
     let sliceBytes = readPlan.RowBytes * int height
     let maxPagesPerFile = pageCounts |> Array.max
     let elementBytes = uint64 sliceBytes * uint64 maxPagesPerFile
@@ -1946,7 +1795,7 @@ let readChunkThickFiles<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: s
         try
             for localZ in 0 .. zCount - 1 do
                 let sliceOffset = localZ * sliceBytes
-                readChunkTiffSliceByPlanIntoOffset readPlan fileName localZ chunk sliceOffset
+                readSliceIntoOffset fileName localZ chunk sliceOffset
             chunk
         with
         | _ ->
@@ -1989,6 +1838,7 @@ let private readSelectedChunkSlices<'T when 'T: equality and 'T: (new: unit -> '
     let readPlan = inspectChunkTiffSliceForRead<'T> sourceFiles[0]
     let width = readPlan.Width
     let height = readPlan.Height
+    let readSliceIntoOffset = scalarTiffReaderForPlan<'T> readPlan
     let elementBytes = uint64 readPlan.RowBytes * uint64 height
     let sourcePeek =
         SourcePeek.create
@@ -2015,7 +1865,7 @@ let private readSelectedChunkSlices<'T when 'T: equality and 'T: (new: unit -> '
             printfn $"[{name}] Reading chunk slice {i}: {fileName} page {pageIndex} as {typeof<'T>.Name}"
         let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
         try
-            readChunkTiffSliceByPlanIntoOffset readPlan fileName pageIndex chunk 0
+            readSliceIntoOffset fileName pageIndex chunk 0
             chunk
         with
         | _ ->
@@ -2232,8 +2082,9 @@ let private readChunkVolumeExact<'T when 'T: equality and 'T: (new: unit -> 'T) 
     let readPlan = inspectChunkTiffSliceForRead<'T> filename
     let width = readPlan.Width
     let height = readPlan.Height
+    let readSliceIntoOffset = scalarTiffReaderForPlan<'T> readPlan
     let depth =
-        tryNativeTiffDirectoryCount filename
+        tryBitMiracleTiffDirectoryCount filename
         |> Option.defaultWith (fun () -> tiffDirectoryCount filename)
     let elementBytes = uint64 readPlan.RowBytes * uint64 height
     let sourcePeek =
@@ -2256,7 +2107,7 @@ let private readChunkVolumeExact<'T when 'T: equality and 'T: (new: unit -> 'T) 
 
         let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
         try
-            readChunkTiffSliceByPlanIntoOffset readPlan filename index chunk 0
+            readSliceIntoOffset filename index chunk 0
             chunk
         with
         | _ ->
@@ -3453,10 +3304,14 @@ let private cleanChunkFiles outputDir suffix =
 
 let private writeChunkThickCoreWithOptions<'T when 'T: equality> options split3DChunks (outputDir: string) (suffix: string) : Stage<Chunk<'T>, unit> =
     ensureDirectTiffChunkWrite<'T> suffix
+    if not split3DChunks && options <> defaultTiffWriteOptions then
+        invalidArg "options" "Compressed TIFF writeThickFiles output is not supported for multipage chunk files yet. Use split writeThick or default TIFF options."
+
     Directory.CreateDirectory(outputDir) |> ignore
     let cleaned = lazy (cleanImageSeriesFiles outputDir suffix)
     let indexLock = obj()
     let mutable nextSliceIndex = 0L
+    let writeSliceFromOffset = scalarTiffWriterForOptions<'T> options
 
     let mapper (debug: bool) (idx: int64) (chunk: Chunk<'T>) =
         cleaned.Force()
@@ -3486,11 +3341,8 @@ let private writeChunkThickCoreWithOptions<'T when 'T: equality> options split3D
                             printfn $"[writeChunkThick] Saved chunk slice {sliceIndex} to {fileName} as {typeof<'T>.Name}"
                         else
                             printfn $"[writeChunkThick] Saved chunk {idx} local z {localZ} as slice {sliceIndex} to {fileName} as {typeof<'T>.Name}"
-                    writeChunkTiffSliceFromOffsetWithOptions<'T> options fileName chunk width height sliceOffset
+                    writeSliceFromOffset fileName chunk width height sliceOffset
             else
-                if options <> defaultTiffWriteOptions then
-                    invalidArg "options" "Compressed TIFF writeThickFiles output is not supported for multipage chunk files yet. Use split writeThick or default TIFF options."
-
                 let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
                 if debug then
                     printfn $"[writeChunkThick] Saved chunk {idx} with depth {depth} to {fileName} as {typeof<'T>.Name}"
@@ -3518,6 +3370,7 @@ let writeChunkSlicesWithOptions<'T when 'T: equality> options (outputDir: string
     ensureDirectTiffChunkWrite<'T> suffix
     Directory.CreateDirectory(outputDir) |> ignore
     let cleaned = lazy (cleanImageSeriesFiles outputDir suffix)
+    let writeSliceFromOffset = scalarTiffWriterForOptions<'T> options
 
     let mapper (debug: bool) (idx: int64) (chunk: Chunk<'T>) =
         cleaned.Force()
@@ -3529,7 +3382,7 @@ let writeChunkSlicesWithOptions<'T when 'T: equality> options (outputDir: string
             let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
             if debug then
                 printfn $"[writeChunkSlices] Saved chunk slice {idx} to {fileName} as {typeof<'T>.Name}"
-            writeChunkTiffSliceFromOffsetWithOptions<'T> options fileName chunk width height 0
+            writeSliceFromOffset fileName chunk width height 0
         finally
             Chunk.decRef chunk
 
