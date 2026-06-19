@@ -225,11 +225,20 @@ module private NativeLibTiff =
     [<DllImport("lowlevel", EntryPoint = "sp_tiff_read_raw_page_into_page", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
     extern int readRawPageIntoPage(string path, uint32 pageIndex, byte[] buffer, UIntPtr bufferOffset, UIntPtr capacity, uint64& bytesRead)
 
+    [<DllImport("lowlevel", EntryPoint = "sp_tiff_read_decoded_page_into_page", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
+    extern int readDecodedPageIntoPage(string path, uint32 pageIndex, byte[] buffer, UIntPtr bufferOffset, UIntPtr capacity, uint64& bytesRead)
+
     [<DllImport("lowlevel", EntryPoint = "sp_tiff_write_raw_page_from", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
     extern int writeRawPageFrom(string path, byte[] buffer, UIntPtr bufferOffset, UIntPtr count, UIntPtr capacity, uint32 width, uint32 height, uint16 bitsPerSample, uint16 sampleFormat)
 
     [<DllImport("lowlevel", EntryPoint = "sp_tiff_write_raw_page_from_samples", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
     extern int writeRawPageFromSamples(string path, byte[] buffer, UIntPtr bufferOffset, UIntPtr count, UIntPtr capacity, uint32 width, uint32 height, uint16 bitsPerSample, uint16 sampleFormat, uint16 samplesPerPixel)
+
+    [<DllImport("lowlevel", EntryPoint = "sp_tiff_write_encoded_page_from_samples", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
+    extern int writeEncodedPageFromSamples(string path, byte[] buffer, UIntPtr bufferOffset, UIntPtr count, UIntPtr capacity, uint32 width, uint32 height, uint16 bitsPerSample, uint16 sampleFormat, uint16 samplesPerPixel, uint16 compression)
+
+    [<DllImport("lowlevel", EntryPoint = "sp_tiff_write_encoded_page_from_samples_opposite_endian", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)>]
+    extern int writeEncodedPageFromSamplesOppositeEndian(string path, byte[] buffer, UIntPtr bufferOffset, UIntPtr count, UIntPtr capacity, uint32 width, uint32 height, uint16 bitsPerSample, uint16 sampleFormat, uint16 samplesPerPixel, uint16 compression)
 
 let private nativeTiffSampleFormat (sampleFormat: SampleFormat) =
     uint16 (int sampleFormat)
@@ -244,6 +253,33 @@ let private nativeTiffStatusName status =
     | -5 -> "IO failed"
     | -6 -> "size overflow"
     | other -> $"status {other}"
+
+type TiffCompression =
+    | None = 1
+    | Lzw = 5
+    | Deflate = 32946
+    | PackBits = 32773
+
+type TiffByteOrder =
+    | Native = 0
+    | Opposite = 1
+
+type TiffWriteOptions =
+    { Compression: TiffCompression
+      ByteOrder: TiffByteOrder }
+
+let defaultTiffWriteOptions =
+    { Compression = TiffCompression.None
+      ByteOrder = TiffByteOrder.Native }
+
+type private TiffReadStrategy =
+    | RawFastPath
+    | GeneralLibtiffPath
+
+let private tiffReadStrategyName strategy =
+    match strategy with
+    | RawFastPath -> "raw-fast-path"
+    | GeneralLibtiffPath -> "general-libtiff-path"
 
 let private tryNativeTiffInfoPage fileName pageIndex =
     try
@@ -445,6 +481,66 @@ let private tryWriteNativeRawTiffSliceFrom<'T when 'T: equality> fileName width 
                         uint32 height,
                         bitsPerSample,
                         sampleFormat)
+                status = NativeLibTiff.Ok
+    with
+    | :? DllNotFoundException
+    | :? EntryPointNotFoundException
+    | :? BadImageFormatException ->
+        false
+
+let private tryWriteNativeEncodedTiffSliceFrom<'T when 'T: equality> (options: TiffWriteOptions) fileName width height sliceOffsetBytes (chunk: Chunk<'T>) =
+    try
+        match nativeTiffFastPathLayout<'T> () with
+        | None -> false
+        | Some(bitsPerSample, sampleFormat, bytesPerSample) ->
+            let pageBytes = uint64 width * uint64 height * uint64 bytesPerSample
+            if pageBytes > uint64 Int32.MaxValue ||
+                 sliceOffsetBytes < 0 ||
+                 chunk.ByteLength < sliceOffsetBytes + int pageBytes then
+                false
+            else
+                let compression = uint16 (int options.Compression)
+                let status =
+                    match options.ByteOrder with
+                    | TiffByteOrder.Native ->
+                        NativeLibTiff.writeEncodedPageFromSamples(
+                            fileName,
+                            chunk.Bytes,
+                            UIntPtr(uint64 sliceOffsetBytes),
+                            UIntPtr pageBytes,
+                            UIntPtr(uint64 chunk.ByteLength),
+                            uint32 width,
+                            uint32 height,
+                            bitsPerSample,
+                            sampleFormat,
+                            1us,
+                            compression)
+                    | TiffByteOrder.Opposite ->
+                        NativeLibTiff.writeEncodedPageFromSamplesOppositeEndian(
+                            fileName,
+                            chunk.Bytes,
+                            UIntPtr(uint64 sliceOffsetBytes),
+                            UIntPtr pageBytes,
+                            UIntPtr(uint64 chunk.ByteLength),
+                            uint32 width,
+                            uint32 height,
+                            bitsPerSample,
+                            sampleFormat,
+                            1us,
+                            compression)
+                    | _ ->
+                        NativeLibTiff.writeEncodedPageFromSamples(
+                            fileName,
+                            chunk.Bytes,
+                            UIntPtr(uint64 sliceOffsetBytes),
+                            UIntPtr pageBytes,
+                            UIntPtr(uint64 chunk.ByteLength),
+                            uint32 width,
+                            uint32 height,
+                            bitsPerSample,
+                            sampleFormat,
+                            1us,
+                            compression)
                 status = NativeLibTiff.Ok
     with
     | :? DllNotFoundException
@@ -683,6 +779,7 @@ type private ChunkTiffReadPlan =
       Height: uint
       RowBytes: int
       ScanlineSize: int
+      Strategy: TiffReadStrategy
       ConvertUInt8ToFloat32: bool }
 
 let private inspectChunkTiffSliceForRead<'T> fileName =
@@ -699,16 +796,29 @@ let private inspectChunkTiffSliceForRead<'T> fileName =
         let sampleFormat = enum<SampleFormat> (int info.SampleFormat)
         if bitsPerSample = expectedBits && sampleFormat = expectedFormat then
             let rowBytes = int width * expectedBytesPerSample
+            let pageBytes = uint64 rowBytes * uint64 height
+            let strategy =
+                if info.IsTiled <> 0 || info.PlanarConfig <> NativeLibTiff.PlanarConfigContig then
+                    invalidOp $"TIFF slice '{fileName}' uses an unsupported tiled or planar layout for Chunk reading."
+                elif info.PageBytes <> pageBytes then
+                    invalidOp $"TIFF slice '{fileName}' has page byte count {info.PageBytes}, expected {pageBytes}."
+                elif info.Compression = NativeLibTiff.CompressionNone && info.RawPageBytes = pageBytes && info.IsByteSwapped = 0 then
+                    RawFastPath
+                else
+                    GeneralLibtiffPath
+
             { Width = width
               Height = height
               RowBytes = rowBytes
               ScanlineSize = rowBytes
+              Strategy = strategy
               ConvertUInt8ToFloat32 = false }
         elif typeof<'T> = typeof<float32> && bitsPerSample = 8 && sampleFormat = SampleFormat.UINT then
             { Width = width
               Height = height
               RowBytes = int width * sizeof<float32>
               ScanlineSize = int width
+              Strategy = GeneralLibtiffPath
               ConvertUInt8ToFloat32 = true }
         else
             invalidOp $"Input slice '{fileName}' does not match {typeof<'T>.Name}: got {bitsPerSample}-bit {sampleFormat}."
@@ -738,6 +848,7 @@ let private inspectChunkTiffSliceForRead<'T> fileName =
               Height = height
               RowBytes = int width * expectedBytesPerSample
               ScanlineSize = max (int width * expectedBytesPerSample) (tiff.ScanlineSize())
+              Strategy = GeneralLibtiffPath
               ConvertUInt8ToFloat32 = false }
         elif typeof<'T> = typeof<float32> && bitsPerSample = 8 && sampleFormat = SampleFormat.UINT then
             let rowBytes = int width * sizeof<float32>
@@ -745,6 +856,7 @@ let private inspectChunkTiffSliceForRead<'T> fileName =
               Height = height
               RowBytes = rowBytes
               ScanlineSize = max (int width) (tiff.ScanlineSize())
+              Strategy = GeneralLibtiffPath
               ConvertUInt8ToFloat32 = true }
         else
             invalidOp $"Input slice '{fileName}' does not match {typeof<'T>.Name}: got {bitsPerSample}-bit {sampleFormat}."
@@ -942,6 +1054,44 @@ let private readChunkTiffUInt8SliceAsFloat32IntoOffset
     finally
         ArrayPool<byte>.Shared.Return(scratch)
 
+let private readNativeRawTiffPageIntoOffsetNoMetadata fileName pageIndex expectedBytes sliceOffsetBytes (chunk: Chunk<'T>) =
+    if expectedBytes > uint64 Int32.MaxValue ||
+       sliceOffsetBytes < 0 ||
+       chunk.ByteLength < sliceOffsetBytes + int expectedBytes then
+        invalidArg "chunk" $"Chunk byte length {chunk.ByteLength} is too small to read TIFF page '{fileName}' at offset {sliceOffsetBytes} with length {expectedBytes}."
+
+    let mutable bytesRead = 0UL
+    let status =
+        NativeLibTiff.readRawPageIntoPage(
+            fileName,
+            uint32 pageIndex,
+            chunk.Bytes,
+            UIntPtr(uint64 sliceOffsetBytes),
+            UIntPtr(uint64 chunk.ByteLength),
+            &bytesRead)
+
+    if status <> NativeLibTiff.Ok || bytesRead <> expectedBytes then
+        invalidOp $"Native libtiff raw read failed for page {pageIndex} in '{fileName}': {nativeTiffStatusName status}, read {bytesRead} bytes, expected {expectedBytes}."
+
+let private readNativeDecodedTiffPageIntoOffsetNoMetadata fileName pageIndex expectedBytes sliceOffsetBytes (chunk: Chunk<'T>) =
+    if expectedBytes > uint64 Int32.MaxValue ||
+       sliceOffsetBytes < 0 ||
+       chunk.ByteLength < sliceOffsetBytes + int expectedBytes then
+        invalidArg "chunk" $"Chunk byte length {chunk.ByteLength} is too small to read decoded TIFF page '{fileName}' at offset {sliceOffsetBytes} with length {expectedBytes}."
+
+    let mutable bytesRead = 0UL
+    let status =
+        NativeLibTiff.readDecodedPageIntoPage(
+            fileName,
+            uint32 pageIndex,
+            chunk.Bytes,
+            UIntPtr(uint64 sliceOffsetBytes),
+            UIntPtr(uint64 chunk.ByteLength),
+            &bytesRead)
+
+    if status <> NativeLibTiff.Ok || bytesRead <> expectedBytes then
+        invalidOp $"Native libtiff decoded read failed for page {pageIndex} in '{fileName}': {nativeTiffStatusName status}, read {bytesRead} bytes, expected {expectedBytes}."
+
 let private readChunkTiffSliceByPlanIntoOffset<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (plan: ChunkTiffReadPlan)
     fileName
@@ -952,10 +1102,20 @@ let private readChunkTiffSliceByPlanIntoOffset<'T when 'T: equality and 'T: (new
     if plan.ConvertUInt8ToFloat32 then
         let floatChunk = box chunk :?> Chunk<float32>
         readChunkTiffUInt8SliceAsFloat32IntoOffset fileName pageIndex floatChunk plan.Width plan.Height sliceOffsetBytes
-    elif tryReadNativeRawTiffSliceInto fileName pageIndex plan.Width plan.Height sliceOffsetBytes chunk then
-        ()
     else
-        readChunkTiffSliceIntoOffset<'T> fileName pageIndex chunk plan.Width plan.Height sliceOffsetBytes
+        let sliceBytes = uint64 plan.RowBytes * uint64 plan.Height
+
+        match plan.Strategy with
+        | RawFastPath ->
+            readNativeRawTiffPageIntoOffsetNoMetadata fileName pageIndex sliceBytes sliceOffsetBytes chunk
+        | GeneralLibtiffPath ->
+            try
+                readNativeDecodedTiffPageIntoOffsetNoMetadata fileName pageIndex sliceBytes sliceOffsetBytes chunk
+            with
+            | :? DllNotFoundException
+            | :? EntryPointNotFoundException
+            | :? BadImageFormatException ->
+                readChunkTiffSliceIntoOffset<'T> fileName pageIndex chunk plan.Width plan.Height sliceOffsetBytes
 
 let private readChunkTiffSlice<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> fileName =
     let width, height, rowBytes, _scanlineSize = inspectChunkTiffSlice<'T> fileName
@@ -972,7 +1132,8 @@ type private ComplexTiffReadPlan =
     { LogicalWidth: uint
       Height: uint
       RowBytes: int
-      ScanlineSize: int }
+      ScanlineSize: int
+      Strategy: TiffReadStrategy }
 
 let private inspectComplexTiffSlice bytesPerSample typeLabel fileName =
     match tryNativeTiffInfoPage fileName 0 with
@@ -981,14 +1142,29 @@ let private inspectComplexTiffSlice bytesPerSample typeLabel fileName =
         let height = uint info.Height
         if width = 0u || height = 0u then
             invalidOp $"{typeLabel} TIFF slice '{fileName}' has invalid page dimensions {width}x{height}."
-        if not (isNativeComplexTiffPage width height (uint16 (bytesPerSample * 8)) bytesPerSample info) then
+        if info.Width <> uint32 width ||
+           info.Height <> uint32 height ||
+           info.BitsPerSample <> uint16 (bytesPerSample * 8) ||
+           info.SampleFormat <> nativeTiffSampleFormat SampleFormat.IEEEFP ||
+           info.SamplesPerPixel <> 2us ||
+           info.PlanarConfig <> NativeLibTiff.PlanarConfigContig ||
+           info.IsTiled <> 0 then
             invalidOp $"{typeLabel} TIFF slices must be contiguous two-sample Float{bytesPerSample * 8} pixels, got bits={info.BitsPerSample}, format={enum<SampleFormat> (int info.SampleFormat)}, samples={info.SamplesPerPixel}, planar={info.PlanarConfig} in '{fileName}'."
 
         let rowBytes = int width * 2 * bytesPerSample
+        let pageBytes = uint64 rowBytes * uint64 height
+        if info.PageBytes <> pageBytes then
+            invalidOp $"{typeLabel} TIFF slice '{fileName}' has page byte count {info.PageBytes}, expected {pageBytes}."
+        let strategy =
+            if info.Compression = NativeLibTiff.CompressionNone && info.RawPageBytes = pageBytes && info.IsByteSwapped = 0 then
+                RawFastPath
+            else
+                GeneralLibtiffPath
         { LogicalWidth = width
           Height = height
           RowBytes = rowBytes
-          ScanlineSize = rowBytes }
+          ScanlineSize = rowBytes
+          Strategy = strategy }
     | None ->
         use tiff = Tiff.Open(fileName, "r")
         if isNull tiff then
@@ -1018,7 +1194,8 @@ let private inspectComplexTiffSlice bytesPerSample typeLabel fileName =
         { LogicalWidth = width
           Height = height
           RowBytes = rowBytes
-          ScanlineSize = max rowBytes (tiff.ScanlineSize()) }
+          ScanlineSize = max rowBytes (tiff.ScanlineSize())
+          Strategy = GeneralLibtiffPath }
 
 let private inspectComplex64TiffSlice fileName =
     inspectComplexTiffSlice sizeof<float32> "Complex64" fileName
@@ -1027,6 +1204,7 @@ let private inspectComplex128TiffSlice fileName =
     inspectComplexTiffSlice sizeof<float> "Complex128" fileName
 
 let private readComplexTiffSliceIntoOffset
+    strategy
     fileName
     pageIndex
     (chunk: Chunk<'T>)
@@ -1037,61 +1215,70 @@ let private readComplexTiffSliceIntoOffset
     sliceOffsetBytes
     =
 
-    if tryReadNativeComplexTiffSliceInto fileName pageIndex expectedWidth expectedHeight bytesPerSample sliceOffsetBytes chunk then
-        ()
-    else
-        use tiff = Tiff.Open(fileName, "r")
-        if isNull tiff then
-            invalidOp $"Could not open '{fileName}' for {typeLabel} TIFF reading."
-        if not (tiff.SetDirectory(int16 pageIndex)) then
-            invalidOp $"Could not select TIFF page {pageIndex} in '{fileName}'."
+    let pageBytes = uint64 expectedWidth * uint64 expectedHeight * 2UL * uint64 bytesPerSample
 
-        let width = uint (tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
-        let height = uint (tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
-        if width <> expectedWidth || height <> expectedHeight then
-            invalidOp $"Input {typeLabel} slice '{fileName}' has shape {width}x{height}, expected {expectedWidth}x{expectedHeight}."
+    match strategy with
+    | RawFastPath ->
+        readNativeRawTiffPageIntoOffsetNoMetadata fileName pageIndex pageBytes sliceOffsetBytes chunk
+    | GeneralLibtiffPath ->
+        try
+            readNativeDecodedTiffPageIntoOffsetNoMetadata fileName pageIndex pageBytes sliceOffsetBytes chunk
+        with
+        | :? DllNotFoundException
+        | :? EntryPointNotFoundException
+        | :? BadImageFormatException ->
+            use tiff = Tiff.Open(fileName, "r")
+            if isNull tiff then
+                invalidOp $"Could not open '{fileName}' for {typeLabel} TIFF reading."
+            if not (tiff.SetDirectory(int16 pageIndex)) then
+                invalidOp $"Could not select TIFF page {pageIndex} in '{fileName}'."
 
-        let bitsPerSample = tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 1
-        let samplesPerPixel = tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 1
-        let sampleFormat =
-            tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
-            |> enum<SampleFormat>
-        let planarConfig =
-            tiffFieldIntDefaulted tiff TiffTag.PLANARCONFIG (int PlanarConfig.CONTIG)
-            |> enum<PlanarConfig>
+            let width = uint (tiffFieldInt tiff TiffTag.IMAGEWIDTH 0)
+            let height = uint (tiffFieldInt tiff TiffTag.IMAGELENGTH 0)
+            if width <> expectedWidth || height <> expectedHeight then
+                invalidOp $"Input {typeLabel} slice '{fileName}' has shape {width}x{height}, expected {expectedWidth}x{expectedHeight}."
 
-        if bitsPerSample <> bytesPerSample * 8 || sampleFormat <> SampleFormat.IEEEFP || samplesPerPixel <> 2 || planarConfig <> PlanarConfig.CONTIG then
-            invalidOp $"Input {typeLabel} slice '{fileName}' does not match contiguous two-sample Float{bytesPerSample * 8} pixels: bits={bitsPerSample}, format={sampleFormat}, samples={samplesPerPixel}, planar={planarConfig}."
+            let bitsPerSample = tiffFieldIntDefaulted tiff TiffTag.BITSPERSAMPLE 1
+            let samplesPerPixel = tiffFieldIntDefaulted tiff TiffTag.SAMPLESPERPIXEL 1
+            let sampleFormat =
+                tiffFieldIntDefaulted tiff TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
+                |> enum<SampleFormat>
+            let planarConfig =
+                tiffFieldIntDefaulted tiff TiffTag.PLANARCONFIG (int PlanarConfig.CONTIG)
+                |> enum<PlanarConfig>
 
-        let rowBytes = int width * 2 * bytesPerSample
-        let scanlineSize = max rowBytes (tiff.ScanlineSize())
-        let sliceBytes = rowBytes * int height
-        if sliceOffsetBytes < 0 || chunk.ByteLength < sliceOffsetBytes + sliceBytes then
-            invalidArg "chunk" $"Chunk byte length {chunk.ByteLength} is too small to read {typeLabel} slice '{fileName}' at offset {sliceOffsetBytes} with length {sliceBytes}."
+            if bitsPerSample <> bytesPerSample * 8 || sampleFormat <> SampleFormat.IEEEFP || samplesPerPixel <> 2 || planarConfig <> PlanarConfig.CONTIG then
+                invalidOp $"Input {typeLabel} slice '{fileName}' does not match contiguous two-sample Float{bytesPerSample * 8} pixels: bits={bitsPerSample}, format={sampleFormat}, samples={samplesPerPixel}, planar={planarConfig}."
 
-        if tryReadTiffRawStripsInto (2 * bytesPerSample) tiff chunk sliceOffsetBytes sliceBytes then
-            ()
-        elif tryReadTiffEncodedStripsInto tiff chunk sliceOffsetBytes sliceBytes then
-            ()
-        elif scanlineSize <= rowBytes then
-            for row in 0 .. int height - 1 do
-                if not (tiff.ReadScanline(chunk.Bytes, sliceOffsetBytes + row * rowBytes, row, int16 0)) then
-                    invalidOp $"Failed to read {typeLabel} TIFF scanline {row} from '{fileName}'."
-        else
-            let scratch = ArrayPool<byte>.Shared.Rent(scanlineSize)
-            try
+            let rowBytes = int width * 2 * bytesPerSample
+            let scanlineSize = max rowBytes (tiff.ScanlineSize())
+            let sliceBytes = rowBytes * int height
+            if sliceOffsetBytes < 0 || chunk.ByteLength < sliceOffsetBytes + sliceBytes then
+                invalidArg "chunk" $"Chunk byte length {chunk.ByteLength} is too small to read {typeLabel} slice '{fileName}' at offset {sliceOffsetBytes} with length {sliceBytes}."
+
+            if tryReadTiffRawStripsInto (2 * bytesPerSample) tiff chunk sliceOffsetBytes sliceBytes then
+                ()
+            elif tryReadTiffEncodedStripsInto tiff chunk sliceOffsetBytes sliceBytes then
+                ()
+            elif scanlineSize <= rowBytes then
                 for row in 0 .. int height - 1 do
-                    if not (tiff.ReadScanline(scratch, row, int16 0)) then
+                    if not (tiff.ReadScanline(chunk.Bytes, sliceOffsetBytes + row * rowBytes, row, int16 0)) then
                         invalidOp $"Failed to read {typeLabel} TIFF scanline {row} from '{fileName}'."
-                    Buffer.BlockCopy(scratch, 0, chunk.Bytes, sliceOffsetBytes + row * rowBytes, rowBytes)
-            finally
-                ArrayPool<byte>.Shared.Return(scratch)
+            else
+                let scratch = ArrayPool<byte>.Shared.Rent(scanlineSize)
+                try
+                    for row in 0 .. int height - 1 do
+                        if not (tiff.ReadScanline(scratch, row, int16 0)) then
+                            invalidOp $"Failed to read {typeLabel} TIFF scanline {row} from '{fileName}'."
+                        Buffer.BlockCopy(scratch, 0, chunk.Bytes, sliceOffsetBytes + row * rowBytes, rowBytes)
+                finally
+                    ArrayPool<byte>.Shared.Return(scratch)
 
-let private readComplex64TiffSliceIntoOffset fileName pageIndex (chunk: Chunk<float32>) expectedWidth expectedHeight sliceOffsetBytes =
-    readComplexTiffSliceIntoOffset fileName pageIndex chunk sizeof<float32> "Complex64" expectedWidth expectedHeight sliceOffsetBytes
+let private readComplex64TiffSliceIntoOffset strategy fileName pageIndex (chunk: Chunk<float32>) expectedWidth expectedHeight sliceOffsetBytes =
+    readComplexTiffSliceIntoOffset strategy fileName pageIndex chunk sizeof<float32> "Complex64" expectedWidth expectedHeight sliceOffsetBytes
 
-let private readComplex128TiffSliceIntoOffset fileName pageIndex (chunk: Chunk<float>) expectedWidth expectedHeight sliceOffsetBytes =
-    readComplexTiffSliceIntoOffset fileName pageIndex chunk sizeof<float> "Complex128" expectedWidth expectedHeight sliceOffsetBytes
+let private readComplex128TiffSliceIntoOffset strategy fileName pageIndex (chunk: Chunk<float>) expectedWidth expectedHeight sliceOffsetBytes =
+    readComplexTiffSliceIntoOffset strategy fileName pageIndex chunk sizeof<float> "Complex128" expectedWidth expectedHeight sliceOffsetBytes
 
 let private writeComplexTiffSliceToOpenTiff fileName (tiff: Tiff) (chunk: Chunk<'T>) bytesPerSample typeLabel logicalWidth height sliceOffsetBytes =
     let rowBytes = int logicalWidth * 2 * bytesPerSample
@@ -1175,6 +1362,12 @@ let private writeChunkTiffSliceFromOffset<'T when 'T: equality> fileName (chunk:
 
         writeChunkTiffSliceToOpenTiff<'T> fileName tiff chunk width height sliceOffsetBytes
 
+let private writeChunkTiffSliceFromOffsetWithOptions<'T when 'T: equality> options fileName (chunk: Chunk<'T>) width height sliceOffsetBytes =
+    if options = defaultTiffWriteOptions then
+        writeChunkTiffSliceFromOffset<'T> fileName chunk width height sliceOffsetBytes
+    elif not (tryWriteNativeEncodedTiffSliceFrom options fileName width height sliceOffsetBytes chunk) then
+        invalidOp $"Native libtiff could not write TIFF page '{fileName}' with compression {options.Compression} and byte order {options.ByteOrder}."
+
 let private writeChunkTiffSlice<'T when 'T: equality> fileName (chunk: Chunk<'T>) =
     let width, height, depth = chunk.Size
     if depth <> 1UL then
@@ -1199,6 +1392,13 @@ let private writeChunkTiffFile<'T when 'T: equality> fileName (chunk: Chunk<'T>)
     for localZ in 0 .. int depth - 1 do
         writeChunkTiffSliceToOpenTiff<'T> fileName tiff chunk width height (localZ * sliceBytes)
 
+type private ColorTiffReadPlan =
+    { Width: uint
+      Height: uint
+      RowBytes: int
+      ScanlineSize: int
+      Strategy: TiffReadStrategy }
+
 let private inspectColorChunkTiffSlice fileName =
     match tryNativeTiffInfoPage fileName 0 with
     | Some info ->
@@ -1206,11 +1406,27 @@ let private inspectColorChunkTiffSlice fileName =
         let height = uint info.Height
         if width = 0u || height = 0u then
             invalidOp $"RGB TIFF slice '{fileName}' has invalid page dimensions {width}x{height}."
-        if not (isNativeRgbTiffPage width height info) then
+        if info.BitsPerSample <> 8us ||
+           info.SampleFormat <> nativeTiffSampleFormat SampleFormat.UINT ||
+           info.SamplesPerPixel <> 3us ||
+           info.PlanarConfig <> NativeLibTiff.PlanarConfigContig ||
+           info.IsTiled <> 0 then
             invalidOp $"RGB TIFF slices must be contiguous 8-bit unsigned RGB, got bits={info.BitsPerSample}, format={enum<SampleFormat> (int info.SampleFormat)}, samples={info.SamplesPerPixel}, planar={info.PlanarConfig} in '{fileName}'."
 
         let rowBytes = int width * 3
-        width, height, rowBytes, rowBytes
+        let pageBytes = uint64 rowBytes * uint64 height
+        if info.PageBytes <> pageBytes then
+            invalidOp $"RGB TIFF slice '{fileName}' has page byte count {info.PageBytes}, expected {pageBytes}."
+        let strategy =
+            if info.Compression = NativeLibTiff.CompressionNone && info.RawPageBytes = pageBytes && info.IsByteSwapped = 0 then
+                RawFastPath
+            else
+                GeneralLibtiffPath
+        { Width = width
+          Height = height
+          RowBytes = rowBytes
+          ScanlineSize = rowBytes
+          Strategy = strategy }
     | None ->
         use tiff = Tiff.Open(fileName, "r")
         if isNull tiff then
@@ -1234,36 +1450,50 @@ let private inspectColorChunkTiffSlice fileName =
             invalidOp $"RGB TIFF slices must be contiguous 8-bit unsigned RGB, got bits={bitsPerSample}, format={sampleFormat}, samples={samplesPerPixel}, planar={planarConfig} in '{fileName}'."
 
         let rowBytes = int width * 3
-        width, height, rowBytes, max rowBytes (tiff.ScanlineSize())
+        { Width = width
+          Height = height
+          RowBytes = rowBytes
+          ScanlineSize = max rowBytes (tiff.ScanlineSize())
+          Strategy = GeneralLibtiffPath }
 
-let private readColorChunkTiffSlice fileName : VectorChunk<uint8> =
-    let width, height, rowBytes, scanlineSize = inspectColorChunkTiffSlice fileName
+let private readColorChunkTiffSliceByPlan (plan: ColorTiffReadPlan) fileName : VectorChunk<uint8> =
+    let width = plan.Width
+    let height = plan.Height
+    let rowBytes = plan.RowBytes
+    let scanlineSize = plan.ScanlineSize
     let chunk = Chunk.create<uint8> (uint64 width * 3UL, uint64 height, 1UL)
     let vector: VectorChunk<uint8> =
         { SpatialSize = (uint64 width, uint64 height, 1UL)
           Components = 3u
           Chunk = chunk }
     try
-        if tryReadNativeRgbTiffSliceInto fileName width height chunk then
-            ()
-        else
-            use tiff = Tiff.Open(fileName, "r")
-            if isNull tiff then
-                invalidOp $"Could not open '{fileName}' for RGB TIFF reading."
+        match plan.Strategy with
+        | RawFastPath ->
+            readNativeRawTiffPageIntoOffsetNoMetadata fileName 0 (uint64 rowBytes * uint64 height) 0 chunk
+        | GeneralLibtiffPath ->
+            try
+                readNativeDecodedTiffPageIntoOffsetNoMetadata fileName 0 (uint64 rowBytes * uint64 height) 0 chunk
+            with
+            | :? DllNotFoundException
+            | :? EntryPointNotFoundException
+            | :? BadImageFormatException ->
+                use tiff = Tiff.Open(fileName, "r")
+                if isNull tiff then
+                    invalidOp $"Could not open '{fileName}' for RGB TIFF reading."
 
-            if scanlineSize <= rowBytes then
-                for row in 0 .. int height - 1 do
-                    if not (tiff.ReadScanline(chunk.Bytes, row * rowBytes, row, int16 0)) then
-                        invalidOp $"Failed to read RGB TIFF scanline {row} from '{fileName}'."
-            else
-                let scratch = System.Buffers.ArrayPool<byte>.Shared.Rent(scanlineSize)
-                try
+                if scanlineSize <= rowBytes then
                     for row in 0 .. int height - 1 do
-                        if not (tiff.ReadScanline(scratch, row)) then
+                        if not (tiff.ReadScanline(chunk.Bytes, row * rowBytes, row, int16 0)) then
                             invalidOp $"Failed to read RGB TIFF scanline {row} from '{fileName}'."
-                        Buffer.BlockCopy(scratch, 0, chunk.Bytes, row * rowBytes, rowBytes)
-                finally
-                    System.Buffers.ArrayPool<byte>.Shared.Return(scratch)
+                else
+                    let scratch = System.Buffers.ArrayPool<byte>.Shared.Rent(scanlineSize)
+                    try
+                        for row in 0 .. int height - 1 do
+                            if not (tiff.ReadScanline(scratch, row)) then
+                                invalidOp $"Failed to read RGB TIFF scanline {row} from '{fileName}'."
+                            Buffer.BlockCopy(scratch, 0, chunk.Bytes, row * rowBytes, rowBytes)
+                    finally
+                        System.Buffers.ArrayPool<byte>.Shared.Return(scratch)
         vector
     with
     | _ ->
@@ -1804,6 +2034,7 @@ let private readChunkSlicesExact<'T when 'T: equality and 'T: (new: unit -> 'T) 
                   "height", string height
                   "depth", string files.Length
                   "pixelType", typeof<'T>.Name
+                  "tiffStrategy", tiffReadStrategyName readPlan.Strategy
                   "scanlineSize", string readPlan.ScanlineSize ])
 
     let mapper (i: int) =
@@ -1812,11 +2043,7 @@ let private readChunkSlicesExact<'T when 'T: equality and 'T: (new: unit -> 'T) 
             printfn $"[{name}] Reading chunk slice {i}: {fileName} as {typeof<'T>.Name}"
         let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
         try
-            let readNative =
-                tryReadNativeRawTiffSlice fileName width height chunk
-
-            if not readNative then
-                readChunkTiffSliceByPlanIntoOffset readPlan fileName 0 chunk 0
+            readChunkTiffSliceByPlanIntoOffset readPlan fileName 0 chunk 0
             chunk
         with
         | _ ->
@@ -1900,6 +2127,7 @@ let readComplex64ChunkSlices inputDir suffix (pl: Plan<unit, unit>) : Plan<unit,
                   "depth", string files.Length
                   "pixelType", "Complex64"
                   "samplesPerPixel", "2"
+                  "tiffStrategy", tiffReadStrategyName readPlan.Strategy
                   "scanlineSize", string readPlan.ScanlineSize ])
 
     let mapper (i: int) =
@@ -1908,7 +2136,7 @@ let readComplex64ChunkSlices inputDir suffix (pl: Plan<unit, unit>) : Plan<unit,
             printfn $"[{name}] Reading complex64 chunk slice {i}: {fileName}"
         let chunk = Chunk.create<float32> (uint64 storageWidth, uint64 height, 1UL)
         try
-            readComplex64TiffSliceIntoOffset fileName 0 chunk logicalWidth height 0
+            readComplex64TiffSliceIntoOffset readPlan.Strategy fileName 0 chunk logicalWidth height 0
             chunk
         with
         | _ ->
@@ -1959,6 +2187,7 @@ let readComplex128ChunkSlices inputDir suffix (pl: Plan<unit, unit>) : Plan<unit
                   "depth", string files.Length
                   "pixelType", "ComplexFloat64"
                   "samplesPerPixel", "2"
+                  "tiffStrategy", tiffReadStrategyName readPlan.Strategy
                   "scanlineSize", string readPlan.ScanlineSize ])
 
     let mapper (i: int) =
@@ -1967,7 +2196,7 @@ let readComplex128ChunkSlices inputDir suffix (pl: Plan<unit, unit>) : Plan<unit
             printfn $"[{name}] Reading complex128 chunk slice {i}: {fileName}"
         let chunk = Chunk.create<float> (uint64 storageWidth, uint64 height, 1UL)
         try
-            readComplex128TiffSliceIntoOffset fileName 0 chunk logicalWidth height 0
+            readComplex128TiffSliceIntoOffset readPlan.Strategy fileName 0 chunk logicalWidth height 0
             chunk
         with
         | _ ->
@@ -2004,8 +2233,10 @@ let readChunkThick<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct
         stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
 
     let pages = getStackPagesForFiles files
-    let width, height, rowBytes, scanlineSize = inspectChunkTiffSlice<'T> files[0]
-    let sliceBytes = rowBytes * int height
+    let readPlan = inspectChunkTiffSliceForRead<'T> files[0]
+    let width = readPlan.Width
+    let height = readPlan.Height
+    let sliceBytes = readPlan.RowBytes * int height
     let groupCount = (pages.Length + chunkDepth - 1) / chunkDepth
     let elementBytes = uint64 sliceBytes * uint64 chunkDepth
     let sourcePeek =
@@ -2024,7 +2255,8 @@ let readChunkThick<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct
                   "chunkDepth", string chunkDepth
                   "groups", string groupCount
                   "pixelType", typeof<'T>.Name
-                  "scanlineSize", string scanlineSize ])
+                  "tiffStrategy", tiffReadStrategyName readPlan.Strategy
+                  "scanlineSize", string readPlan.ScanlineSize ])
 
     let mapper (groupIndex: int) =
         let firstSlice = groupIndex * chunkDepth
@@ -2037,10 +2269,7 @@ let readChunkThick<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct
             for localZ in 0 .. zCount - 1 do
                 let fileName, pageIndex = pages[firstSlice + localZ]
                 let sliceOffset = localZ * sliceBytes
-                if tryReadNativeRawTiffSliceInto fileName pageIndex width height sliceOffset chunk then
-                    ()
-                else
-                    readChunkTiffSliceIntoOffset<'T> fileName pageIndex chunk width height sliceOffset
+                readChunkTiffSliceByPlanIntoOffset readPlan fileName pageIndex chunk sliceOffset
             chunk
         with
         | _ ->
@@ -2104,6 +2333,7 @@ let readComplex64ChunkThick
                   "groups", string groupCount
                   "pixelType", "Complex64"
                   "samplesPerPixel", "2"
+                  "tiffStrategy", tiffReadStrategyName readPlan.Strategy
                   "scanlineSize", string readPlan.ScanlineSize ])
 
     let mapper (groupIndex: int) =
@@ -2116,7 +2346,7 @@ let readComplex64ChunkThick
         try
             for localZ in 0 .. zCount - 1 do
                 let fileName, pageIndex = pages[firstSlice + localZ]
-                readComplex64TiffSliceIntoOffset fileName pageIndex chunk logicalWidth height (localZ * sliceBytes)
+                readComplex64TiffSliceIntoOffset readPlan.Strategy fileName pageIndex chunk logicalWidth height (localZ * sliceBytes)
             chunk
         with
         | _ ->
@@ -2180,6 +2410,7 @@ let readComplex128ChunkThick
                   "groups", string groupCount
                   "pixelType", "ComplexFloat64"
                   "samplesPerPixel", "2"
+                  "tiffStrategy", tiffReadStrategyName readPlan.Strategy
                   "scanlineSize", string readPlan.ScanlineSize ])
 
     let mapper (groupIndex: int) =
@@ -2192,7 +2423,7 @@ let readComplex128ChunkThick
         try
             for localZ in 0 .. zCount - 1 do
                 let fileName, pageIndex = pages[firstSlice + localZ]
-                readComplex128TiffSliceIntoOffset fileName pageIndex chunk logicalWidth height (localZ * sliceBytes)
+                readComplex128TiffSliceIntoOffset readPlan.Strategy fileName pageIndex chunk logicalWidth height (localZ * sliceBytes)
             chunk
         with
         | _ ->
@@ -2222,8 +2453,10 @@ let readChunkThickFiles<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: s
         stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
 
     let pageCounts = files |> Array.map (tiffDirectoryCount >> int)
-    let width, height, rowBytes, scanlineSize = inspectChunkTiffSlice<'T> files[0]
-    let sliceBytes = rowBytes * int height
+    let readPlan = inspectChunkTiffSliceForRead<'T> files[0]
+    let width = readPlan.Width
+    let height = readPlan.Height
+    let sliceBytes = readPlan.RowBytes * int height
     let maxPagesPerFile = pageCounts |> Array.max
     let elementBytes = uint64 sliceBytes * uint64 maxPagesPerFile
     let sourcePeek =
@@ -2241,7 +2474,8 @@ let readChunkThickFiles<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: s
                   "sourceDepth", string (pageCounts |> Array.sum)
                   "maxPagesPerFile", string maxPagesPerFile
                   "pixelType", typeof<'T>.Name
-                  "scanlineSize", string scanlineSize ])
+                  "tiffStrategy", tiffReadStrategyName readPlan.Strategy
+                  "scanlineSize", string readPlan.ScanlineSize ])
 
     let mapper (i: int) =
         let fileName = files[i]
@@ -2253,10 +2487,7 @@ let readChunkThickFiles<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: s
         try
             for localZ in 0 .. zCount - 1 do
                 let sliceOffset = localZ * sliceBytes
-                if tryReadNativeRawTiffSliceInto fileName localZ width height sliceOffset chunk then
-                    ()
-                else
-                    readChunkTiffSliceIntoOffset<'T> fileName localZ chunk width height sliceOffset
+                readChunkTiffSliceByPlanIntoOffset readPlan fileName localZ chunk sliceOffset
             chunk
         with
         | _ ->
@@ -2315,6 +2546,7 @@ let private readSelectedChunkSlices<'T when 'T: equality and 'T: (new: unit -> '
                    "sourceDepth", string sourcePages.Length
                    "sourceFiles", string sourceFiles.Length
                    "pixelType", typeof<'T>.Name
+                   "tiffStrategy", tiffReadStrategyName readPlan.Strategy
                    "scanlineSize", string readPlan.ScanlineSize ]
                  @ sourcePeekFields))
 
@@ -2423,7 +2655,10 @@ let private readSelectedColorChunkSlices
     if files.Length = 0 then
         stopWithInputError $"{name} selected no {suffixDescription suffix} files from RGB input stack directory: {inputDir}"
 
-    let width, height, rowBytes, scanlineSize = inspectColorChunkTiffSlice files[0]
+    let readPlan = inspectColorChunkTiffSlice files[0]
+    let width = readPlan.Width
+    let height = readPlan.Height
+    let rowBytes = readPlan.RowBytes
     let elementBytes = uint64 rowBytes * uint64 height
     let sourcePeek =
         SourcePeek.create
@@ -2440,14 +2675,15 @@ let private readSelectedColorChunkSlices
                    "sourceDepth", string sourceFiles.Length
                    "pixelType", "Color"
                    "components", "3"
-                   "scanlineSize", string scanlineSize ]
+                   "tiffStrategy", tiffReadStrategyName readPlan.Strategy
+                   "scanlineSize", string readPlan.ScanlineSize ]
                  @ sourcePeekFields))
 
     let mapper (i: int) =
         let fileName = files[i]
         if pl.debug then
             printfn $"[{name}] Reading RGB chunk slice {i}: {fileName}"
-        let vector = readColorChunkTiffSlice fileName
+        let vector = readColorChunkTiffSliceByPlan readPlan fileName
         let chunkWidth, chunkHeight, _ = vector.SpatialSize
         if chunkWidth <> uint64 width || chunkHeight <> uint64 height then
             Chunk.decRef vector.Chunk
@@ -2534,184 +2770,60 @@ let private readChunkVolumeExact<'T when 'T: equality and 'T: (new: unit -> 'T) 
     if not (isTiffVolumePath filename) then
         invalidArg "filename" "readChunkVolume currently supports TIFF/BigTIFF volumes only."
 
-    let expectedBits, expectedFormat, expectedBytesPerSample = tiffPixelLayout<'T> ()
+    let readPlan = inspectChunkTiffSliceForRead<'T> filename
+    let width = readPlan.Width
+    let height = readPlan.Height
+    let depth =
+        tryNativeTiffDirectoryCount filename
+        |> Option.defaultWith (fun () -> tiffDirectoryCount filename)
+    let elementBytes = uint64 readPlan.RowBytes * uint64 height
+    let sourcePeek =
+        SourcePeek.create
+            "readChunkVolume"
+            elementBytes
+            (Some (uint64 depth))
+            (Map.ofList
+                [ "kind", "chunk-tiff-volume"
+                  "filename", filename
+                  "width", string width
+                  "height", string height
+                  "depth", string depth
+                  "pixelType", typeof<'T>.Name
+                  "tiffStrategy", tiffReadStrategyName readPlan.Strategy ])
 
-    let nativePlan =
-        match nativeTiffFastPathLayout<'T> (), tryNativeTiffInfoPage filename 0, tryNativeTiffDirectoryCount filename with
-        | Some(expectedBitsNative, expectedSampleFormatNative, expectedBytesPerSampleNative), Some info, Some depth
-            when isNativeScalarTiffPage info.Width info.Height expectedBitsNative expectedSampleFormatNative expectedBytesPerSampleNative info ->
+    let mapper (index: int) =
+        if pl.debug then
+            printfn $"[readChunkVolume] Reading TIFF page {index} from {filename} as {typeof<'T>.Name}"
 
-            let width = uint info.Width
-            let height = uint info.Height
-            let rowBytes = int width * expectedBytesPerSample
-            let elementBytes = uint64 rowBytes * uint64 height
-            let sourcePeek =
-                SourcePeek.create
-                    "readChunkVolume"
-                    elementBytes
-                    (Some (uint64 depth))
-                    (Map.ofList
-                        [ "kind", "chunk-tiff-volume-native"
-                          "filename", filename
-                          "width", string width
-                          "height", string height
-                          "depth", string depth
-                          "pixelType", typeof<'T>.Name ])
-
-            let mapper (index: int) =
-                if pl.debug then
-                    printfn $"[readChunkVolume] Reading TIFF page {index} from {filename} as {typeof<'T>.Name} through native libtiff"
-
-                let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
-                try
-                    if tryReadNativeRawTiffSliceInto filename index width height 0 chunk then
-                        chunk
-                    else
-                        Chunk.decRef chunk
-                        invalidOp $"Native libtiff could not read fast-path TIFF page {index} from '{filename}'."
-                with
-                | _ ->
-                    if chunk.RefCount.Value > 0 then
-                        Chunk.decRef chunk
-                    reraise()
-
-            let transition = ProfileTransition.create Unit Streaming
-            let memoryNeed _ = elementBytes
-            let elementTransformation _ = uint64 width * uint64 height
-            let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
-            let timeCostModel =
-                imageIoCost<'T>
-                    "readVolume"
-                    Source
-                    $"readChunkVolume.tiff.native.{typeof<'T>.Name}"
-                    (fun _ -> elementBytes)
-                    (fun _ -> 1UL)
-
-            let stage =
-                Stage.init "readChunkVolume" depth mapper transition memoryNeed elementTransformation
-                |> withCostModel (StageCostModel.create memoryModel timeCostModel)
-                |> Some
-
-            Plan.createWithOptimizer stage pl.memAvail elementBytes elementBytes (uint64 depth) pl.debug pl.optimize
-            |> Plan.withRuntimeOptionsFrom pl
-            |> Plan.withSourcePeek sourcePeek
-            |> Some
+        let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+        try
+            readChunkTiffSliceByPlanIntoOffset readPlan filename index chunk 0
+            chunk
+        with
         | _ ->
-            None
+            Chunk.decRef chunk
+            reraise()
 
-    match nativePlan with
-    | Some plan -> plan
-    | None ->
-        use header = Tiff.Open(filename, "r")
-        if isNull header then
-            invalidOp $"Could not open '{filename}' for TIFF volume reading."
+    let transition = ProfileTransition.create Unit Streaming
+    let memoryNeed _ = elementBytes
+    let elementTransformation _ = uint64 width * uint64 height
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        imageIoCost<'T>
+            "readVolume"
+            Source
+            $"readChunkVolume.tiff.{tiffReadStrategyName readPlan.Strategy}.{typeof<'T>.Name}"
+            (fun _ -> elementBytes)
+            (fun _ -> 1UL)
 
-        let width = uint (tiffFieldInt header TiffTag.IMAGEWIDTH 0)
-        let height = uint (tiffFieldInt header TiffTag.IMAGELENGTH 0)
-        if width = 0u || height = 0u then
-            invalidOp $"TIFF volume '{filename}' has invalid page dimensions {width}x{height}."
+    let stage =
+        Stage.init "readChunkVolume" depth mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
 
-        let bitsPerSample = tiffFieldIntDefaulted header TiffTag.BITSPERSAMPLE 1
-        let samplesPerPixel = tiffFieldIntDefaulted header TiffTag.SAMPLESPERPIXEL 1
-        validateTiffSamples samplesPerPixel
-
-        let sampleFormat =
-            tiffFieldIntDefaulted header TiffTag.SAMPLEFORMAT (int SampleFormat.UINT)
-            |> enum<SampleFormat>
-
-        if bitsPerSample <> expectedBits || sampleFormat <> expectedFormat then
-            invalidOp $"TIFF volume '{filename}' does not match {typeof<'T>.Name}: got {bitsPerSample}-bit {sampleFormat}."
-
-        let bytesPerSample = tiffBytesPerSample bitsPerSample sampleFormat
-        if bytesPerSample <> expectedBytesPerSample then
-            invalidOp $"TIFF volume '{filename}' has unexpected sample width {bytesPerSample}; expected {expectedBytesPerSample}."
-
-        let depth = tiffDirectoryCount filename
-        let rowBytes = int width * expectedBytesPerSample
-        let elementBytes = uint64 rowBytes * uint64 height
-        let sourcePeek =
-            SourcePeek.create
-                "readChunkVolume"
-                elementBytes
-                (Some (uint64 depth))
-                (Map.ofList
-                    [ "kind", "chunk-tiff-volume"
-                      "filename", filename
-                      "width", string width
-                      "height", string height
-                      "depth", string depth
-                      "pixelType", typeof<'T>.Name ])
-
-        let readCurrentPage (reader: Tiff) (index: int) =
-            if pl.debug then
-                printfn $"[readChunkVolume] Reading TIFF page {index} from {filename} as {typeof<'T>.Name}"
-
-            let pageWidth = uint (tiffFieldInt reader TiffTag.IMAGEWIDTH 0)
-            let pageHeight = uint (tiffFieldInt reader TiffTag.IMAGELENGTH 0)
-            if pageWidth <> width || pageHeight <> height then
-                invalidOp $"readChunkVolume expected all TIFF pages to be {width}x{height}; page {index} is {pageWidth}x{pageHeight}."
-
-            let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
-            try
-                let scanlineSize = max rowBytes (reader.ScanlineSize())
-                if scanlineSize <= rowBytes then
-                    for row in 0 .. int height - 1 do
-                        if not (reader.ReadScanline(chunk.Bytes, row * rowBytes, row, int16 0)) then
-                            invalidOp $"Failed to read TIFF scanline {row} from page {index} in '{filename}'."
-                else
-                    let scratch = System.Buffers.ArrayPool<byte>.Shared.Rent(scanlineSize)
-                    try
-                        for row in 0 .. int height - 1 do
-                            if not (reader.ReadScanline(scratch, row, int16 0)) then
-                                invalidOp $"Failed to read TIFF scanline {row} from page {index} in '{filename}'."
-                            Buffer.BlockCopy(scratch, 0, chunk.Bytes, row * rowBytes, rowBytes)
-                    finally
-                        System.Buffers.ArrayPool<byte>.Shared.Return(scratch)
-                chunk
-            with
-            | _ ->
-                Chunk.decRef chunk
-                reraise()
-
-        let apply (_debug: bool) (_input: AsyncSeq<unit>) =
-            asyncSeq {
-                use reader = Tiff.Open(filename, "r")
-                if isNull reader then
-                    invalidOp $"Could not open '{filename}' for TIFF volume reading."
-
-                for index in 0 .. int depth - 1 do
-                    yield readCurrentPage reader index
-
-                    if index < int depth - 1 then
-                        if not (reader.ReadDirectory()) then
-                            invalidOp $"TIFF volume '{filename}' ended after page {index}, but expected {depth} pages."
-            }
-
-        let transition = ProfileTransition.create Unit Streaming
-        let memoryNeed _ = elementBytes
-        let elementTransformation _ = uint64 width * uint64 height
-        let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
-        let timeCostModel =
-            imageIoCost<'T>
-                "readVolume"
-                Source
-                $"readChunkVolume.tiff.{typeof<'T>.Name}"
-                (fun _ -> elementBytes)
-                (fun _ -> 1UL)
-
-        let stage =
-            let pipe =
-                { Name = "readChunkVolume.tiff"
-                  Apply = apply
-                  Profile = transition.From }
-
-            Stage.fromPipe "readChunkVolume" transition memoryNeed elementTransformation pipe
-            |> withCostModel (StageCostModel.create memoryModel timeCostModel)
-            |> Some
-
-        Plan.createWithOptimizer stage pl.memAvail elementBytes elementBytes (uint64 depth) pl.debug pl.optimize
-        |> Plan.withRuntimeOptionsFrom pl
-        |> Plan.withSourcePeek sourcePeek
+    Plan.createWithOptimizer stage pl.memAvail elementBytes elementBytes (uint64 depth) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
+    |> Plan.withSourcePeek sourcePeek
 
 let private readChunkVolumeAs<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct and 'S :> ValueType
                                       and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
@@ -3880,7 +3992,7 @@ let private cleanChunkFiles outputDir suffix =
         |> Array.iter File.Delete
 
 
-let private writeChunkThickCore<'T when 'T: equality> split3DChunks (outputDir: string) (suffix: string) : Stage<Chunk<'T>, unit> =
+let private writeChunkThickCoreWithOptions<'T when 'T: equality> options split3DChunks (outputDir: string) (suffix: string) : Stage<Chunk<'T>, unit> =
     ensureDirectTiffChunkWrite<'T> suffix
     Directory.CreateDirectory(outputDir) |> ignore
     let cleaned = lazy (cleanImageSeriesFiles outputDir suffix)
@@ -3915,8 +4027,11 @@ let private writeChunkThickCore<'T when 'T: equality> split3DChunks (outputDir: 
                             printfn $"[writeChunkThick] Saved chunk slice {sliceIndex} to {fileName} as {typeof<'T>.Name}"
                         else
                             printfn $"[writeChunkThick] Saved chunk {idx} local z {localZ} as slice {sliceIndex} to {fileName} as {typeof<'T>.Name}"
-                    writeChunkTiffSliceFromOffset<'T> fileName chunk width height sliceOffset
+                    writeChunkTiffSliceFromOffsetWithOptions<'T> options fileName chunk width height sliceOffset
             else
+                if options <> defaultTiffWriteOptions then
+                    invalidArg "options" "Compressed TIFF writeThickFiles output is not supported for multipage chunk files yet. Use split writeThick or default TIFF options."
+
                 let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
                 if debug then
                     printfn $"[writeChunkThick] Saved chunk {idx} with depth {depth} to {fileName} as {typeof<'T>.Name}"
@@ -3937,7 +4052,10 @@ let private writeChunkThickCore<'T when 'T: equality> split3DChunks (outputDir: 
     Stage.mapi $"writeChunkThick \"{outputDir}/*{suffix}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 
-let writeChunkSlices<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Chunk<'T>, unit> =
+let private writeChunkThickCore<'T when 'T: equality> split3DChunks (outputDir: string) (suffix: string) : Stage<Chunk<'T>, unit> =
+    writeChunkThickCoreWithOptions<'T> defaultTiffWriteOptions split3DChunks outputDir suffix
+
+let writeChunkSlicesWithOptions<'T when 'T: equality> options (outputDir: string) (suffix: string) : Stage<Chunk<'T>, unit> =
     ensureDirectTiffChunkWrite<'T> suffix
     Directory.CreateDirectory(outputDir) |> ignore
     let cleaned = lazy (cleanImageSeriesFiles outputDir suffix)
@@ -3952,7 +4070,7 @@ let writeChunkSlices<'T when 'T: equality> (outputDir: string) (suffix: string) 
             let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
             if debug then
                 printfn $"[writeChunkSlices] Saved chunk slice {idx} to {fileName} as {typeof<'T>.Name}"
-            writeChunkTiffSliceFromOffset<'T> fileName chunk width height 0
+            writeChunkTiffSliceFromOffsetWithOptions<'T> options fileName chunk width height 0
         finally
             Chunk.decRef chunk
 
@@ -3968,6 +4086,9 @@ let writeChunkSlices<'T when 'T: equality> (outputDir: string) (suffix: string) 
 
     Stage.mapi $"writeChunkSlices \"{outputDir}/*{suffix}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+
+let writeChunkSlices<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Chunk<'T>, unit> =
+    writeChunkSlicesWithOptions<'T> defaultTiffWriteOptions outputDir suffix
 
 let private complexLogicalShape stageName componentLabel (chunk: Chunk<'T>) =
     let storageWidth, height, depth = chunk.Size
@@ -4050,8 +4171,14 @@ let writeComplex128ChunkSlices (outputDir: string) (suffix: string) : Stage<Chun
 let writeChunkThick<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Chunk<'T>, unit> =
     writeChunkThickCore<'T> true outputDir suffix
 
+let writeChunkThickWithOptions<'T when 'T: equality> options (outputDir: string) (suffix: string) : Stage<Chunk<'T>, unit> =
+    writeChunkThickCoreWithOptions<'T> options true outputDir suffix
+
 let writeChunkThickFiles<'T when 'T: equality> (outputDir: string) (suffix: string) : Stage<Chunk<'T>, unit> =
     writeChunkThickCore<'T> false outputDir suffix
+
+let writeChunkThickFilesWithOptions<'T when 'T: equality> options (outputDir: string) (suffix: string) : Stage<Chunk<'T>, unit> =
+    writeChunkThickCoreWithOptions<'T> options false outputDir suffix
 
 let writeComplex64ChunkThick (outputDir: string) (suffix: string) : Stage<Chunk<float32>, unit> =
     if not (isTiffStackSuffix suffix) then

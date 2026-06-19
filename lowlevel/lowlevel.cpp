@@ -8,6 +8,9 @@
 #include <fftw3.h>
 #include <tiffio.h>
 #include <string.h>
+#if !defined(_WIN32)
+#include <strings.h>
+#endif
 
 #if defined(_WIN32)
 #define SP_LOWLEVEL_API __declspec(dllexport)
@@ -144,6 +147,91 @@ static int read_raw_page_from_open_tiff(
 
     *bytes_read = offset;
     return SP_TIFF_OK;
+}
+
+static int read_decoded_page_from_open_tiff(
+    TIFF *tif,
+    uint8_t *buffer,
+    size_t buffer_offset,
+    size_t capacity,
+    uint64_t *bytes_read) {
+
+    sp_tiff_info info;
+    uint64_t offset = 0;
+
+    int result = read_info_from_open_tiff(tif, &info);
+    if (result != SP_TIFF_OK) {
+        return result;
+    }
+    if (info.is_tiled || info.planar_config != PLANARCONFIG_CONTIG) {
+        return SP_TIFF_UNSUPPORTED_LAYOUT;
+    }
+    if ((uint64_t)buffer_offset > (uint64_t)capacity ||
+        (uint64_t)capacity - (uint64_t)buffer_offset < info.page_bytes) {
+        return SP_TIFF_BUFFER_TOO_SMALL;
+    }
+
+    tmsize_t strip_size = TIFFStripSize(tif);
+    if (strip_size <= 0) {
+        return SP_TIFF_IO_FAILED;
+    }
+
+    for (uint32_t strip = 0; strip < info.strips; strip++) {
+        uint64_t remaining = info.page_bytes - offset;
+        tmsize_t requested =
+            remaining > (uint64_t)strip_size
+                ? strip_size
+                : (tmsize_t)remaining;
+
+        if (requested <= 0) {
+            return SP_TIFF_IO_FAILED;
+        }
+
+        tmsize_t got = TIFFReadEncodedStrip(tif, strip, buffer + buffer_offset + offset, requested);
+        if (got < 0 || (uint64_t)got > remaining) {
+            return SP_TIFF_IO_FAILED;
+        }
+
+        offset += (uint64_t)got;
+    }
+
+    if (offset != info.page_bytes) {
+        return SP_TIFF_IO_FAILED;
+    }
+
+    *bytes_read = offset;
+    return SP_TIFF_OK;
+}
+
+static int path_uses_bigtiff_extension(const char *path) {
+    if (path == nullptr) {
+        return 0;
+    }
+    const char *dot = strrchr(path, '.');
+    if (dot == nullptr) {
+        return 0;
+    }
+
+#if defined(_WIN32)
+    return _stricmp(dot, ".btf") == 0 || _stricmp(dot, ".bigtiff") == 0;
+#else
+    return strcasecmp(dot, ".btf") == 0 || strcasecmp(dot, ".bigtiff") == 0;
+#endif
+}
+
+static TIFF *open_tiff_for_write(const char *path, int opposite_byte_order) {
+    const int bigtiff = path_uses_bigtiff_extension(path);
+    const char *mode = bigtiff ? "w8" : "w";
+
+    if (opposite_byte_order) {
+#if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        mode = bigtiff ? "w8l" : "wl";
+#else
+        mode = bigtiff ? "w8b" : "wb";
+#endif
+    }
+
+    return TIFFOpen(path, mode);
 }
 
 template <typename T>
@@ -1996,6 +2084,59 @@ SP_LOWLEVEL_API int sp_tiff_read_raw_page_into_page(
     return result;
 }
 
+SP_LOWLEVEL_API int sp_tiff_read_decoded_page_into(
+    const char *path,
+    uint8_t *buffer,
+    size_t buffer_offset,
+    size_t capacity,
+    uint64_t *bytes_read) {
+
+    if (bytes_read != nullptr) {
+        *bytes_read = 0;
+    }
+    if (path == nullptr || buffer == nullptr || bytes_read == nullptr) {
+        return SP_TIFF_MISSING_FIELD;
+    }
+
+    TIFF *tif = TIFFOpen(path, "r");
+    if (tif == nullptr) {
+        return SP_TIFF_OPEN_FAILED;
+    }
+
+    int result = read_decoded_page_from_open_tiff(tif, buffer, buffer_offset, capacity, bytes_read);
+    TIFFClose(tif);
+    return result;
+}
+
+SP_LOWLEVEL_API int sp_tiff_read_decoded_page_into_page(
+    const char *path,
+    uint32_t page_index,
+    uint8_t *buffer,
+    size_t buffer_offset,
+    size_t capacity,
+    uint64_t *bytes_read) {
+
+    if (bytes_read != nullptr) {
+        *bytes_read = 0;
+    }
+    if (path == nullptr || buffer == nullptr || bytes_read == nullptr) {
+        return SP_TIFF_MISSING_FIELD;
+    }
+
+    TIFF *tif = TIFFOpen(path, "r");
+    if (tif == nullptr) {
+        return SP_TIFF_OPEN_FAILED;
+    }
+
+    int result = select_tiff_directory(tif, page_index);
+    if (result == SP_TIFF_OK) {
+        result = read_decoded_page_from_open_tiff(tif, buffer, buffer_offset, capacity, bytes_read);
+    }
+
+    TIFFClose(tif);
+    return result;
+}
+
 static int write_raw_page_with_samples(
     const char *path,
     const uint8_t *buffer,
@@ -2014,7 +2155,7 @@ static int write_raw_page_with_samples(
         return SP_TIFF_SIZE_OVERFLOW;
     }
 
-    TIFF *tif = TIFFOpen(path, "w");
+    TIFF *tif = open_tiff_for_write(path, 0);
     if (tif == nullptr) {
         return SP_TIFF_OPEN_FAILED;
     }
@@ -2047,6 +2188,67 @@ static int write_raw_page_with_samples(
 
     tmsize_t written = TIFFWriteRawStrip(tif, 0, (void *)buffer, (tmsize_t)count);
     if (written != (tmsize_t)count) {
+        TIFFClose(tif);
+        return SP_TIFF_IO_FAILED;
+    }
+
+    TIFFClose(tif);
+    return SP_TIFF_OK;
+}
+
+static int write_encoded_page_with_samples(
+    const char *path,
+    const uint8_t *buffer,
+    size_t count,
+    uint32_t width,
+    uint32_t height,
+    uint16_t bits_per_sample,
+    uint16_t sample_format,
+    uint16_t samples_per_pixel,
+    uint16_t compression,
+    int opposite_byte_order) {
+
+    if (path == nullptr || buffer == nullptr || width == 0 || height == 0 ||
+        bits_per_sample == 0 || samples_per_pixel == 0) {
+        return SP_TIFF_MISSING_FIELD;
+    }
+    if ((uint64_t)count > (uint64_t)((tmsize_t)-1)) {
+        return SP_TIFF_SIZE_OVERFLOW;
+    }
+
+    TIFF *tif = open_tiff_for_write(path, opposite_byte_order);
+    if (tif == nullptr) {
+        return SP_TIFF_OPEN_FAILED;
+    }
+
+    uint16_t photometric =
+        (samples_per_pixel == 3 && bits_per_sample == 8 && sample_format == SAMPLEFORMAT_UINT)
+            ? PHOTOMETRIC_RGB
+            : PHOTOMETRIC_MINISBLACK;
+
+    int ok =
+        TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, width) &&
+        TIFFSetField(tif, TIFFTAG_IMAGELENGTH, height) &&
+        TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, samples_per_pixel) &&
+        TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, bits_per_sample) &&
+        TIFFSetField(tif, TIFFTAG_SAMPLEFORMAT, sample_format) &&
+        TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, photometric) &&
+        TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG) &&
+        TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, height) &&
+        TIFFSetField(tif, TIFFTAG_COMPRESSION, compression);
+
+    if (ok && samples_per_pixel > 1 && photometric != PHOTOMETRIC_RGB) {
+        uint16_t extra_sample = EXTRASAMPLE_UNSPECIFIED;
+        ok = TIFFSetField(tif, TIFFTAG_EXTRASAMPLES, samples_per_pixel - 1, &extra_sample);
+    }
+
+    if (!ok) {
+        TIFFClose(tif);
+        return SP_TIFF_MISSING_FIELD;
+    }
+
+    tmsize_t written = TIFFWriteEncodedStrip(tif, 0, (void *)buffer, (tmsize_t)count);
+    if (written < 0) {
         TIFFClose(tif);
         return SP_TIFF_IO_FAILED;
     }
@@ -2117,6 +2319,66 @@ SP_LOWLEVEL_API int sp_tiff_write_raw_page_from_samples(
         bits_per_sample,
         sample_format,
         samples_per_pixel);
+}
+
+SP_LOWLEVEL_API int sp_tiff_write_encoded_page_from_samples(
+    const char *path,
+    const uint8_t *buffer,
+    size_t buffer_offset,
+    size_t count,
+    size_t capacity,
+    uint32_t width,
+    uint32_t height,
+    uint16_t bits_per_sample,
+    uint16_t sample_format,
+    uint16_t samples_per_pixel,
+    uint16_t compression) {
+
+    if (buffer_offset > capacity || capacity - buffer_offset < count) {
+        return SP_TIFF_BUFFER_TOO_SMALL;
+    }
+
+    return write_encoded_page_with_samples(
+        path,
+        buffer + buffer_offset,
+        count,
+        width,
+        height,
+        bits_per_sample,
+        sample_format,
+        samples_per_pixel,
+        compression,
+        0);
+}
+
+SP_LOWLEVEL_API int sp_tiff_write_encoded_page_from_samples_opposite_endian(
+    const char *path,
+    const uint8_t *buffer,
+    size_t buffer_offset,
+    size_t count,
+    size_t capacity,
+    uint32_t width,
+    uint32_t height,
+    uint16_t bits_per_sample,
+    uint16_t sample_format,
+    uint16_t samples_per_pixel,
+    uint16_t compression) {
+
+    if (buffer_offset > capacity || capacity - buffer_offset < count) {
+        return SP_TIFF_BUFFER_TOO_SMALL;
+    }
+
+    return write_encoded_page_with_samples(
+        path,
+        buffer + buffer_offset,
+        count,
+        width,
+        height,
+        bits_per_sample,
+        sample_format,
+        samples_per_pixel,
+        compression,
+        1);
 }
 
 SP_LOWLEVEL_API void sp_median_uint8_nth_slab(

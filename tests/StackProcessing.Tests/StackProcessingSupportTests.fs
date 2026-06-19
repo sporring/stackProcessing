@@ -2551,6 +2551,43 @@ let stackProcessingSupportSuite =
                 deleteDirectory inputDir
                 deleteDirectory outputDir
 
+        testCase "Chunk TIFF write options can emit compressed slices read by native decoded path" <| fun _ ->
+            let inputDir = tempDirectory "chunk-tiff-compressed-input"
+            let outputDir = tempDirectory "chunk-tiff-compressed-output"
+            let suffix = ".tiff"
+            let options =
+                { Compression = StackIO.TiffCompression.Lzw
+                  ByteOrder = StackIO.TiffByteOrder.Native }
+            let slices =
+                [ array2D [ [ 4uy; 5uy; 6uy ]; [ 7uy; 8uy; 9uy ] ] |> Image<uint8>.ofArray2D
+                  array2D [ [ 10uy; 11uy; 12uy ]; [ 13uy; 14uy; 15uy ] ] |> Image<uint8>.ofArray2D ]
+            let mutable reread: Image<uint8> list = []
+
+            try
+                writeSlices inputDir suffix slices
+
+                source (2UL * 1024UL * 1024UL * 1024UL)
+                |> read<uint8> inputDir suffix
+                >=> writeTiffWithOptions<uint8> options outputDir suffix
+                |> drain
+
+                let info = getFileInfo (Path.Combine(outputDir, "image_000.tiff"))
+                Expect.equal info.componentType "UInt8" "Compressed TIFF output should preserve the scalar component type."
+
+                reread <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> read<uint8> outputDir suffix
+                    |> drainList
+
+                Expect.hasLength reread 2 "Compressed TIFF stack should be readable through the native decoded path."
+                Expect.equal (reread[0].toArray2D()) (slices[0].toArray2D()) "First compressed slice should match the source pixels."
+                Expect.equal (reread[1].toArray2D()) (slices[1].toArray2D()) "Second compressed slice should match the source pixels."
+            finally
+                disposeImages reread
+                disposeImages slices
+                deleteDirectory inputDir
+                deleteDirectory outputDir
+
         testCase "Chunk read casts TIFF slices to the requested output type" <| fun _ ->
             let inputDir = tempDirectory "chunk-tiff-cast-input"
             let suffix = ".tiff"
