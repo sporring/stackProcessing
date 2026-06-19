@@ -23,7 +23,6 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="BitMiracle.LibTiff.NET" Version="2.4.660" />
         <PackageReference Include="DIKU.Graph" Version="1.0.0" />
         <PackageReference Include="Plotly.NET" Version="5.1.0" />
         <PackageReference Include="PureHDF" Version="2.1.1" />

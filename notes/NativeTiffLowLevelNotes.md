@@ -55,6 +55,10 @@ sub-byte samples, non-RGB photometrics, and other broad TIFF normalisation
 choices are deliberately postponed. They belong in `GeneralLibtiffPath`, but
 the exact accepted output layouts still need explicit design.
 
+BitMiracle/LibTiff.NET has been retired from production TIFF IO. If native
+metadata inspection or native page IO cannot handle a TIFF case, StackIO now
+reports it as unsupported instead of using a managed fallback.
+
 ## Writer Strategy
 
 The default writer remains the raw native uncompressed path so existing graphs
@@ -105,38 +109,28 @@ stay close to the low-level raw page benchmark for `uint8`, `uint16`, and
 
 ## Remaining Work
 
-1. Finish moving accepted TIFF IO away from the managed TIFF package.
-
-   Raw native and decoded/encoded native libtiff paths are now present, but
-   `StackIO.fs` still contains managed TIFF fallback code and metadata helpers.
-   Remove those production references once native coverage is complete enough
-   for the accepted TIFF surface. This should include project references,
-   generated graph project references, and `StackIO.fs` opens/usages.
-   Benchmark-only experiments can keep their own dependencies if they are
-   explicitly labelled as external comparison code.
-
-2. Decide and implement tile assembly.
+1. Decide and implement tile assembly.
 
    `GeneralLibtiffPath` is the right place for tiled TIFFs, including
    compressed tiled TIFFs. The open design question is how tile assembly should
    map into StackProcessing's contiguous `Chunk.Bytes` layout without adding
    unnecessary copies or hot-loop branching.
 
-3. Decide colour and unusual layout normalisation.
+2. Decide colour and unusual layout normalisation.
 
    RGB interleaved uint8 is accepted. Planar-separated RGB, palette/indexed
    images, sub-byte samples, alpha conventions, CMYK/YCbCr, and other TIFF
    photometrics should remain explicit unsupported cases until StackProcessing
    defines the output representation for each.
 
-4. Expand write options deliberately.
+3. Expand write options deliberately.
 
    Compression and byte-order control exist for scalar TIFF output. Predictor,
    row-per-strip, tiled output, colour/complex option writers, and multipage
    chunk-file compression should be added only when their user-facing contract
    is clear.
 
-5. Verify with smoke tests and benchmarks.
+4. Verify with smoke tests and benchmarks.
 
    Required checks:
 
