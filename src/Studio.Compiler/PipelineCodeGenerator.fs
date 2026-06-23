@@ -637,7 +637,10 @@ module PipelineCodeGenerator =
 
                 let typedParameter key =
                     let expression = parameterExpression key
-                    if expression.IsLinked then expression.Value else literalValue scalarType expression.Value
+                    match scalarType, expression.IsLinked with
+                    | BasicType.Numeric Float32, true -> $"float32 ({expression.Value})"
+                    | _, true -> expression.Value
+                    | _ -> literalValue scalarType expression.Value
 
                 let left = typedParameter "a"
                 let right = typedParameter "b"

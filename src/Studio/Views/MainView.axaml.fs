@@ -37,6 +37,10 @@ type MainView() as this =
     let mutable draggingPin: IPin option = None
     let mutable highlightedConnectionTarget: IPin option = None
     let mutable groupDragLastPoint: Point option = None
+    let mutable miniMapDragStartPoint: Point option = None
+    let mutable miniMapDragStartVisible: Rect option = None
+    let mutable graphPrimaryPressTime = DateTime.MinValue
+    let mutable graphPrimaryPressPoint: Point option = None
     let mutable suppressNativeSelectionSyncOnce = false
     let mutable suppressGraphWheelUntil = DateTime.MinValue
     let mutable blankGraphPressInProgress = false
@@ -1577,6 +1581,25 @@ type MainView() as this =
         | _ ->
             ()
 
+    let miniMapViewportRect (miniMap: Canvas) (drawing: DrawingNodeViewModel) (zoomBorder: ZoomBorder) =
+        if isNull miniMap || isNull zoomBorder || drawing.Width <= 0. || drawing.Height <= 0. then
+            None
+        else
+            let mapWidth = miniMap.Bounds.Width
+            let mapHeight = miniMap.Bounds.Height
+
+            if mapWidth <= 0. || mapHeight <= 0. then
+                None
+            else
+                let visible = zoomBorder.GetVisibleContentBounds()
+
+                if visible.Width <= 0. || visible.Height <= 0. then
+                    None
+                else
+                    let scaleX = mapWidth / drawing.Width
+                    let scaleY = mapHeight / drawing.Height
+                    Some(Rect(visible.Left * scaleX, visible.Top * scaleY, max 4. (visible.Width * scaleX), max 4. (visible.Height * scaleY)), visible)
+
     let updateMiniMap () =
         let miniMap = this.FindControl<Canvas>("MiniMapCanvas")
         let zoomBorder = graphZoomBorder ()
@@ -1634,7 +1657,8 @@ type MainView() as this =
                                 Height = max 4. (visible.Height * scaleY),
                                 Fill = SolidColorBrush.Parse("#1A111111"),
                                 Stroke = SolidColorBrush.Parse("#111111"),
-                                StrokeThickness = 1.5)
+                                StrokeThickness = 1.5,
+                                Cursor = new Cursor(StandardCursorType.SizeAll))
 
                         Canvas.SetLeft(viewport, topLeft.X)
                         Canvas.SetTop(viewport, topLeft.Y)
@@ -1642,6 +1666,84 @@ type MainView() as this =
         | _ ->
             if not (isNull miniMap) then
                 miniMap.Children.Clear()
+
+    let tryStartMiniMapDrag (args: PointerPressedEventArgs) =
+        let miniMap = this.FindControl<Canvas>("MiniMapCanvas")
+        let zoomBorder = graphZoomBorder ()
+
+        match currentDrawing () with
+        | Some drawing when not (isNull miniMap) && not (isNull zoomBorder) ->
+            let position = args.GetPosition(miniMap)
+
+            match miniMapViewportRect miniMap drawing zoomBorder with
+            | Some(viewportRect, visible) when viewportRect.Contains(position) ->
+                miniMapDragStartPoint <- Some position
+                miniMapDragStartVisible <- Some visible
+                args.Pointer.Capture(miniMap) |> ignore
+                args.Handled <- true
+                true
+            | _ ->
+                false
+        | _ ->
+            false
+
+    let moveMiniMapDrag (args: PointerEventArgs) =
+        match miniMapDragStartPoint, miniMapDragStartVisible with
+        | Some startPoint, Some startVisible ->
+            let miniMap = this.FindControl<Canvas>("MiniMapCanvas")
+            let zoomBorder = graphZoomBorder ()
+
+            match currentDrawing () with
+            | Some drawing when not (isNull miniMap) && not (isNull zoomBorder) && drawing.Width > 0. && drawing.Height > 0. ->
+                let mapWidth = miniMap.Bounds.Width
+                let mapHeight = miniMap.Bounds.Height
+
+                if mapWidth > 0. && mapHeight > 0. then
+                    let current = args.GetPosition(miniMap)
+                    let deltaX = (current.X - startPoint.X) * drawing.Width / mapWidth
+                    let deltaY = (current.Y - startPoint.Y) * drawing.Height / mapHeight
+                    let targetWidth = min drawing.Width startVisible.Width
+                    let targetHeight = min drawing.Height startVisible.Height
+                    let maxLeft = max 0. (drawing.Width - targetWidth)
+                    let maxTop = max 0. (drawing.Height - targetHeight)
+                    let left = min maxLeft (max 0. (startVisible.Left + deltaX))
+                    let top = min maxTop (max 0. (startVisible.Top + deltaY))
+                    let target = Rect(left, top, targetWidth, targetHeight)
+
+                    zoomBorder.ZoomToRectangle(target, Nullable(Thickness(0.)), false)
+                    zoomBorder.Focus() |> ignore
+                    updateMiniMap()
+
+                args.Handled <- true
+                true
+            | _ ->
+                false
+        | _ ->
+            false
+
+    let finishMiniMapDrag (args: PointerReleasedEventArgs) =
+        match miniMapDragStartPoint, miniMapDragStartVisible with
+        | Some _, Some _ ->
+            miniMapDragStartPoint <- None
+            miniMapDragStartVisible <- None
+            args.Pointer.Capture(null) |> ignore
+            args.Handled <- true
+            true
+        | _ ->
+            false
+
+    let scheduleFitGraphToViewport () =
+        Dispatcher.UIThread.Post(
+            (fun () ->
+                fitGraphToViewport()
+                updateMiniMap()
+
+                Dispatcher.UIThread.Post(
+                    (fun () ->
+                        fitGraphToViewport()
+                        updateMiniMap()),
+                    DispatcherPriority.Render)),
+            DispatcherPriority.Render)
 
     let handleGraphKeyboardCommand (args: KeyEventArgs) =
         let isPrimaryModifier =
@@ -1808,6 +1910,41 @@ type MainView() as this =
         | _ ->
             ()
 
+    let suppressGraphDoubleClickZoom (args: PointerPressedEventArgs) =
+        let graphHost = this.FindControl<Grid>("GraphHost")
+        let zoomBorder = graphZoomBorder ()
+
+        if isNull graphHost || isNull zoomBorder || not (eventSourceIsInside zoomBorder args.Source) then
+            false
+        else
+            let point = args.GetCurrentPoint(graphHost)
+
+            if not point.Properties.IsLeftButtonPressed then
+                false
+            else
+                let now = DateTime.UtcNow
+                let position = point.Position
+                let isDoublePress =
+                    match graphPrimaryPressPoint with
+                    | Some previousPosition ->
+                        let elapsed = now - graphPrimaryPressTime
+                        let dx = position.X - previousPosition.X
+                        let dy = position.Y - previousPosition.Y
+                        elapsed.TotalMilliseconds <= 500. && (dx * dx + dy * dy) <= 36.
+                    | None ->
+                        false
+
+                if isDoublePress then
+                    graphPrimaryPressTime <- DateTime.MinValue
+                    graphPrimaryPressPoint <- None
+                    args.PreventGestureRecognition()
+                    args.Handled <- true
+                    true
+                else
+                    graphPrimaryPressTime <- now
+                    graphPrimaryPressPoint <- Some position
+                    false
+
     do
         this.InitializeComponent()
         this.AddHandler(
@@ -1827,22 +1964,23 @@ type MainView() as this =
         this.AddHandler(
             InputElement.PointerMovedEvent,
             EventHandler<PointerEventArgs>(fun _ args ->
-                moveGroupDrag args
+                if not (moveMiniMapDrag args) then
+                    moveGroupDrag args
 
-                if not args.Handled then
-                    updateConnectionDrag args
+                    if not args.Handled then
+                        updateConnectionDrag args
 
-                if not args.Handled then
-                    movePaletteDragNode args
+                    if not args.Handled then
+                        movePaletteDragNode args
 
-                updateMiniMap()),
+                    updateMiniMap()),
             RoutingStrategies.Tunnel,
             true)
 
         this.AddHandler(
             InputElement.PointerReleasedEvent,
             EventHandler<PointerReleasedEventArgs>(fun _ args ->
-                if not (finishGroupDrag args) && not (finishConnectionDrag args) then
+                if not (finishMiniMapDrag args) && not (finishGroupDrag args) && not (finishConnectionDrag args) then
                     finishPaletteDrag args),
             RoutingStrategies.Tunnel,
             true)
@@ -1850,8 +1988,13 @@ type MainView() as this =
         this.Loaded.Add(fun _ ->
             Dispatcher.UIThread.Post(fun () ->
                 let graphHost = this.FindControl<Grid>("GraphHost")
+                let miniMap = this.FindControl<Canvas>("MiniMapCanvas")
                 let editor = this.FindControl<Editor>("PipelineEditor")
                 let zoomBorder = graphZoomBorder ()
+
+                if not (isNull zoomBorder) then
+                    zoomBorder.EnableDoubleClickZoom <- false
+                    zoomBorder.DoubleClickZoomMode <- DoubleClickZoomMode.None
 
                 if not (isNull graphHost) then
                     graphHost.SizeChanged.Add(fun _ ->
@@ -1874,17 +2017,40 @@ type MainView() as this =
 
                     graphHost.AddHandler(
                         InputElement.PointerPressedEvent,
-                        EventHandler<PointerPressedEventArgs>(fun _ _ ->
-                            if not (isNull zoomBorder) then
-                                zoomBorder.Focus() |> ignore
+                        EventHandler<PointerPressedEventArgs>(fun _ args ->
+                            if not (suppressGraphDoubleClickZoom args) then
+                                if not (isNull zoomBorder) then
+                                    zoomBorder.Focus() |> ignore
 
-                            updateMiniMap()),
+                                updateMiniMap()),
+                        RoutingStrategies.Tunnel,
+                        true)
+
+                    graphHost.AddHandler(
+                        InputElement.DoubleTappedEvent,
+                        EventHandler<TappedEventArgs>(fun _ args ->
+                            args.Handled <- true),
                         RoutingStrategies.Tunnel,
                         true)
 
                     graphHost.AddHandler(
                         InputElement.PointerWheelChangedEvent,
                         EventHandler<PointerWheelEventArgs>(fun _ args -> zoomGraphWithWheel args),
+                        RoutingStrategies.Tunnel,
+                        true)
+
+                if not (isNull zoomBorder) then
+                    zoomBorder.AddHandler(
+                        InputElement.DoubleTappedEvent,
+                        EventHandler<TappedEventArgs>(fun _ args ->
+                            args.Handled <- true),
+                        RoutingStrategies.Tunnel,
+                        true)
+
+                if not (isNull miniMap) then
+                    miniMap.AddHandler(
+                        InputElement.PointerPressedEvent,
+                        EventHandler<PointerPressedEventArgs>(fun _ args -> tryStartMiniMapDrag args |> ignore),
                         RoutingStrategies.Tunnel,
                         true)
 
@@ -2175,9 +2341,7 @@ type MainView() as this =
                             let! graph = PipelineGraphStorage.readJsonAsync stream
                             viewModel.ImportGraph(graph)
                             file |> localPath |> Option.iter viewModel.SetCurrentGraphPath
-                            Dispatcher.UIThread.Post((fun () ->
-                                fitGraphToViewport()
-                                updateMiniMap()), DispatcherPriority.Background)
+                            scheduleFitGraphToViewport()
                         with ex ->
                             do! showLoadErrorAsync (graphLoadErrorMessage file ex)
                     | None -> ()
@@ -2323,9 +2487,7 @@ type MainView() as this =
         match this.DataContext with
         | :? MainWindowViewModel as viewModel ->
             viewModel.ArrangeGraph()
-            Dispatcher.UIThread.Post((fun () ->
-                fitGraphToViewport()
-                updateMiniMap()), DispatcherPriority.Background)
+            scheduleFitGraphToViewport()
         | _ -> ()
 
     member _.PaletteElementPointerPressed(sender: obj, args: PointerPressedEventArgs) =

@@ -1214,6 +1214,31 @@ let generatorSuite =
             Expect.isLessThan (code.IndexOf("let Float640")) (code.IndexOf("let Float641")) "Dependency binding should come first."
             Expect.stringContains code "printfn $\"{Float641}\"" "Print should emit interpolated printfn."
 
+        testCase "float32 scalar operation casts linked stats fields" <| fun _ ->
+            let stats =
+                node "stats" "ComputeStats" []
+
+            let expand =
+                node "expand" "Expand" []
+
+            let range =
+                node "range" "ScalarOp"
+                    [ p "operation" "-" false
+                      p "type" "Float32" false
+                      p "a" "" true
+                      p "b" "" true ]
+
+            let code =
+                graph
+                    [ stats; expand; range ]
+                    [ edge "stats" "reducerOutput" 0 "expand" "dataInput" 0
+                      edge "expand" "reducerOutput" 4 "range" "parameterInput" 2
+                      edge "expand" "reducerOutput" 3 "range" "parameterInput" 3 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains code "let Expand0 = ImageStats0" "Expand should alias the ImageStats record."
+            Expect.stringContains code "let Float320 = (float32 (Expand0.Max) - float32 (Expand0.Min))" "Float32 ScalarOp should cast linked double stats fields."
+
         testCase "print format rejects code injection placeholders and quotes" <| fun _ ->
             let scalar =
                 node "scalar" "Scalar"

@@ -3690,6 +3690,33 @@ type MainWindowViewModel() as this =
                     refreshExpandNodeRecordTypes()),
                 DispatcherPriority.Background)
 
+    let mutable connectorDependentRefreshScheduled = false
+
+    let refreshConnectorDependentState () =
+        refreshScalarTypeOptions()
+        refreshScalarOpTypeOptions()
+        refreshConnectedImageInputPins()
+        refreshImageFormatOptions()
+        refreshSourceImageTypeOptions()
+        refreshCastTypeOptions()
+        refreshPairOperationTypeOptions()
+        refreshScalarImageOperationTypeOptions()
+        refreshThresholdTypeOptions()
+        refreshSerialTransformTypeOptions()
+        this.RaiseGraphStateChanged()
+        this.MarkGraphDirty()
+
+    let scheduleConnectorDependentRefresh () =
+        if not connectorDependentRefreshScheduled then
+            connectorDependentRefreshScheduled <- true
+            Dispatcher.UIThread.Post(
+                (fun () ->
+                    connectorDependentRefreshScheduled <- false
+
+                    if not suppressConnectorCollectionRefresh then
+                        refreshConnectorDependentState()),
+                DispatcherPriority.Background)
+
     do
         updatePaletteGroups()
 
@@ -3705,18 +3732,7 @@ type MainWindowViewModel() as this =
             connectors.CollectionChanged.Add(fun _ ->
                 if not suppressConnectorCollectionRefresh then
                     scheduleExpandNodeRecordTypeRefresh()
-                    refreshScalarTypeOptions()
-                    refreshScalarOpTypeOptions()
-                    refreshConnectedImageInputPins()
-                    refreshImageFormatOptions()
-                    refreshSourceImageTypeOptions()
-                    refreshCastTypeOptions()
-                    refreshPairOperationTypeOptions()
-                    refreshScalarImageOperationTypeOptions()
-                    refreshThresholdTypeOptions()
-                    refreshSerialTransformTypeOptions()
-                    this.RaiseGraphStateChanged()
-                    this.MarkGraphDirty())
+                    scheduleConnectorDependentRefresh())
         | _ -> ()
 
         //addSeedNodes()
@@ -4627,80 +4643,88 @@ type MainWindowViewModel() as this =
         this.RaiseGraphStateChanged()
 
     member this.ImportGraph(savedGraph: SavedGraph) =
-        drawing.Connectors.Clear()
-        drawing.Nodes.Clear()
-        this.SelectedNode <- null
+        let previousSuppressConnectorCollectionRefresh = suppressConnectorCollectionRefresh
+        suppressConnectorCollectionRefresh <- true
 
-        let loadedNodes =
-            savedGraph.Nodes
-            |> Array.map (fun savedNode ->
-                let functionId = savedNode.FunctionId
+        try
+            drawing.Connectors.Clear()
+            drawing.Nodes.Clear()
+            this.SelectedNode <- null
 
-                match BuiltInCatalog.tryFind functionId with
-                | None -> invalidOp $"Unknown function id in saved graph: {savedNode.FunctionId}"
-                | Some _ ->
-                    let node =
-                        PipelineNodeViewModel(
-                            createState functionId,
-                            (fun node -> this.SelectNodeFromEditor node),
-                            moveSelectedNodesBy,
-                            (fun () -> drawing.Width, drawing.Height),
-                            (fun () -> this.MarkGraphDirty()),
-                            removePinConnections,
-                            refreshNodePins,
-                            handleTypeChange)
+            let loadedNodes =
+                savedGraph.Nodes
+                |> Array.map (fun savedNode ->
+                    let functionId = savedNode.FunctionId
 
-                    watchState node.State
-                    node.X <- savedNode.X
-                    node.Y <- savedNode.Y
-                    node.ClampToDrawing()
-                    node.SyncMoveOrigin()
-                    setParameterValues node.State savedNode.Parameters
-                    SerialTransformNode.updateMethodParameterStates node.State
-                    SourceImageNode.updateParameterVisibility node.State
-                    node.RebuildPins()
-                    drawing.Nodes.Add(node :> INode)
-                    savedNode.Id, node)
-            |> Map.ofArray
+                    match BuiltInCatalog.tryFind functionId with
+                    | None -> invalidOp $"Unknown function id in saved graph: {savedNode.FunctionId}"
+                    | Some _ ->
+                        let node =
+                            PipelineNodeViewModel(
+                                createState functionId,
+                                (fun node -> this.SelectNodeFromEditor node),
+                                moveSelectedNodesBy,
+                                (fun () -> drawing.Width, drawing.Height),
+                                (fun () -> this.MarkGraphDirty()),
+                                removePinConnections,
+                                refreshNodePins,
+                                handleTypeChange)
 
-        for edge in savedGraph.Edges do
-            match loadedNodes |> Map.tryFind edge.FromNode, loadedNodes |> Map.tryFind edge.ToNode with
-            | Some fromNode, Some toNode
-                when toNode.State.Definition.Id = "Expand"
-                     && edge.ToKind <> "parameterInput"
-                     && edge.ToPort = 0 ->
-                let fromKind = PipelinePinKind.ofString edge.FromKind
+                        watchState node.State
+                        node.X <- savedNode.X
+                        node.Y <- savedNode.Y
+                        node.ClampToDrawing()
+                        node.SyncMoveOrigin()
+                        setParameterValues node.State savedNode.Parameters
+                        SerialTransformNode.updateMethodParameterStates node.State
+                        SourceImageNode.updateParameterVisibility node.State
+                        node.RebuildPins()
+                        drawing.Nodes.Add(node :> INode)
+                        savedNode.Id, node)
+                |> Map.ofArray
 
-                pinByKindIndex fromKind edge.FromPort fromNode
-                |> Option.iter (fun outputPin ->
-                    toNode.State.RecordType <- Some outputPin.Port.Type
-                    toNode.RebuildPins())
-            | _ -> ()
+            for edge in savedGraph.Edges do
+                match loadedNodes |> Map.tryFind edge.FromNode, loadedNodes |> Map.tryFind edge.ToNode with
+                | Some fromNode, Some toNode
+                    when toNode.State.Definition.Id = "Expand"
+                         && edge.ToKind <> "parameterInput"
+                         && edge.ToPort = 0 ->
+                    let fromKind = PipelinePinKind.ofString edge.FromKind
 
-        for edge in savedGraph.Edges do
-            match loadedNodes |> Map.tryFind edge.FromNode, loadedNodes |> Map.tryFind edge.ToNode with
-            | Some fromNode, Some toNode ->
-                let fromKind = PipelinePinKind.ofString edge.FromKind
-                let toKind = PipelinePinKind.ofString edge.ToKind
+                    pinByKindIndex fromKind edge.FromPort fromNode
+                    |> Option.iter (fun outputPin ->
+                        toNode.State.RecordType <- Some outputPin.Port.Type
+                        toNode.RebuildPins())
+                | _ -> ()
 
-                match pinByKindIndex fromKind edge.FromPort fromNode, pinByKindIndex toKind edge.ToPort toNode with
-                | Some startPin, Some endPin when canConnectPins startPin endPin ->
-                    addConnector startPin endPin
-                    if toNode.State.Definition.Id = "Expand" && edge.ToKind <> "parameterInput" && edge.ToPort = 0 then
-                        toNode.State.RecordType <- Some startPin.Port.Type
-                        toNode.RebuildPins()
-                        refreshNodePins toNode
-                | Some _, Some _ ->
-                    invalidOp $"Saved edge has incompatible port types: {edge.FromNode}[{edge.FromPort}] -> {edge.ToNode}[{edge.ToPort}]"
+            for edge in savedGraph.Edges do
+                match loadedNodes |> Map.tryFind edge.FromNode, loadedNodes |> Map.tryFind edge.ToNode with
+                | Some fromNode, Some toNode ->
+                    let fromKind = PipelinePinKind.ofString edge.FromKind
+                    let toKind = PipelinePinKind.ofString edge.ToKind
+
+                    match pinByKindIndex fromKind edge.FromPort fromNode, pinByKindIndex toKind edge.ToPort toNode with
+                    | Some startPin, Some endPin when canConnectPins startPin endPin ->
+                        addConnector startPin endPin
+                        if toNode.State.Definition.Id = "Expand" && edge.ToKind <> "parameterInput" && edge.ToPort = 0 then
+                            toNode.State.RecordType <- Some startPin.Port.Type
+                            toNode.RebuildPins()
+                            refreshNodePins toNode
+                    | Some _, Some _ ->
+                        invalidOp $"Saved edge has incompatible port types: {edge.FromNode}[{edge.FromPort}] -> {edge.ToNode}[{edge.ToPort}]"
+                    | _ ->
+                        invalidOp $"Saved edge refers to a missing port: {edge.FromNode}[{edge.FromPort}] -> {edge.ToNode}[{edge.ToPort}]"
                 | _ ->
-                    invalidOp $"Saved edge refers to a missing port: {edge.FromNode}[{edge.FromPort}] -> {edge.ToNode}[{edge.ToPort}]"
-            | _ ->
-                invalidOp $"Saved edge refers to a missing node: {edge.FromNode} -> {edge.ToNode}"
+                    invalidOp $"Saved edge refers to a missing node: {edge.FromNode} -> {edge.ToNode}"
 
-        loadedNodes
-        |> Map.iter (fun _ node ->
-            if SourceImageNode.isReadSource node.State.Definition.Id then
-                updateReadSourceInfo node)
+            loadedNodes
+            |> Map.iter (fun _ node ->
+                if SourceImageNode.isReadSource node.State.Definition.Id then
+                    updateReadSourceInfo node)
+        finally
+            suppressConnectorCollectionRefresh <- previousSuppressConnectorCollectionRefresh
+
+        refreshConnectorDependentState()
 
         this.MarkGraphSaved()
         this.RaiseGraphStateChanged()

@@ -227,6 +227,8 @@
                              Background="#FFFFFF"
                              EnablePan="True"
                              EnableZoom="False"
+                             EnableDoubleClickZoom="False"
+                             DoubleClickZoomMode="None"
                              PanButton="Middle"
                              Stretch="None"
                              HorizontalAlignment="Stretch"
