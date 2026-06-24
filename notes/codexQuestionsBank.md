@@ -1,7 +1,5 @@
 Questions to consider:
 
-- Does there exist a terminal JSON→DSL version of the compiler?
-
 - thresholdZarrChunksUInt8 should be regular threshold. Perhaps Chunks and LocatedChunks should be merged, but we should be careful not to slow everything down, so for now, specialised threshold is ok for the principle.
 
 - I've been thinking about the offset-into thick slice as a representation, where we still let inc/decRef handle memory release of the thick slices, in such a way that the thick slice is inc'ed according to how many thin slices it contains, and whenever a process is done with a thin slice, then the thick slice's counter is dec'ed.
@@ -14,13 +12,7 @@ Questions to consider:
 
 - ChunkSimdOptimizationIdeas.md
 
-- Update DeveloperReleaseProcess.md for libtiff, and zarr.net.
-
-- Cleanup Image/TinyLinalg
-
 - Should ChunkFunctions/computeStats be SIMD'ed or Vector<>'ized, e.g., sum v = dot v ones
-
-- native libtiff in benchmarks but not in SP, which uses bitMiracle. That's probably a loss wrt. speed.
 
 ---
 

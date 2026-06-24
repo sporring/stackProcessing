@@ -149,6 +149,16 @@ source availableMemory
 
 The important user-level idea is that the workflow is built first and executed only at `sink`. StackProcessing can then check memory estimates and stream the data through the workflow.
 
+### Compile Studio Graphs From The Terminal
+
+Studio JSON graphs can also be compiled to F# DSL files without opening the GUI:
+
+```bash
+dotnet run --project src/Studio.Compile -- samples/normalize/normalize.json /tmp/normalize.fs
+```
+
+This uses the same graph-to-code compiler as Studio's `Run` button and writes the generated StackProcessing program to the requested `.fs` file.
+
 ## Samples
 
 The `samples/` folder contains example workflows. Most sample folders include:
