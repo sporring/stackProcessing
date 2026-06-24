@@ -3735,7 +3735,7 @@ let writeZarrChunkThickWithCompression<'T when 'T: equality and 'T: (new: unit -
             maxConcurrentWrites
         else
             max 1 (min Environment.ProcessorCount 16)
-    let pendingEncoded = ResizeArray<ZarrEncodedChunk>()
+    let pendingDecoded = ResizeArray<ZarrDecodedChunkWrite>()
     let pendingBuffers = ResizeArray<byte[]>()
 
     let createWriter chunkWidth chunkHeight =
@@ -3784,20 +3784,20 @@ let writeZarrChunkThickWithCompression<'T when 'T: equality and 'T: (new: unit -
         created, array
 
     let flushPending (array: ZarrArray) =
-        if pendingEncoded.Count > 0 then
+        if pendingDecoded.Count > 0 then
             try
-                array.WriteChunksEncodedAsync(pendingEncoded.ToArray(), writeParallelism, false, CancellationToken.None)
+                array.WriteChunksDecodedAsync(pendingDecoded.ToArray(), writeParallelism, true, CancellationToken.None)
                 |> runUnitTask
             finally
                 for buffer in pendingBuffers do
                     ArrayPool<byte>.Shared.Return(buffer)
-                pendingEncoded.Clear()
+                pendingDecoded.Clear()
                 pendingBuffers.Clear()
 
     let clearPending () =
         for buffer in pendingBuffers do
             ArrayPool<byte>.Shared.Return(buffer)
-        pendingEncoded.Clear()
+        pendingDecoded.Clear()
         pendingBuffers.Clear()
 
     let finishWriter () =
@@ -3908,9 +3908,9 @@ let writeZarrChunkThickWithCompression<'T when 'T: equality and 'T: (new: unit -
                     match outputChunkLookup.TryFind key with
                     | Some chunk -> chunk
                     | None -> failwith $"writeZarrChunkThick could not find output chunk for coordinate {key}."
-                pendingEncoded.Add(ZarrEncodedChunk.Present(outputChunk, ReadOnlyMemory<byte>(buffer, 0, bufferBytes)))
+                pendingDecoded.Add(ZarrDecodedChunkWrite(outputChunk, ReadOnlyMemory<byte>(buffer, 0, bufferBytes)))
                 pendingBuffers.Add buffer
-                if pendingEncoded.Count >= writeParallelism then
+                if pendingDecoded.Count >= writeParallelism then
                     flushPending array
             with
             | ex ->
@@ -3951,6 +3951,81 @@ let writeZarrChunkThickWithCompression<'T when 'T: equality and 'T: (new: unit -
             finally
                 ArrayPool<byte>.Shared.Return(buffer)
 
+    let writeFullChunkRegionsParallel
+        (array: ZarrArray)
+        (source: Chunk<'T>)
+        sourceWidth
+        sourceHeight
+        localZStart
+        globalZStart
+        =
+
+        let regions =
+            [| for yStart in 0 .. chunkY .. sourceHeight - 1 do
+                   let yCount = min chunkY (sourceHeight - yStart)
+                   for xStart in 0 .. chunkX .. sourceWidth - 1 do
+                       let xCount = min chunkX (sourceWidth - xStart)
+                       if yCount = chunkY && xCount = chunkX then
+                           yStart, xStart |]
+
+        let bufferBytes = chunkZ * chunkY * chunkX * elementBytes
+        let options = ParallelOptions(MaxDegreeOfParallelism = writeParallelism)
+        let mutable batchStart = 0
+
+        let batchSize = min regions.Length (writeParallelism * 16)
+
+        while batchStart < regions.Length do
+            let batchCount = min batchSize (regions.Length - batchStart)
+            let buffers = Array.zeroCreate<byte[]> batchCount
+            let chunks = Array.zeroCreate<ZarrDecodedChunkWrite> batchCount
+            try
+                Parallel.For(
+                    0,
+                    batchCount,
+                    options,
+                    fun i ->
+                        let yStart, xStart = regions[batchStart + i]
+                        let buffer = ArrayPool<byte>.Shared.Rent(bufferBytes)
+                        buffers[i] <- buffer
+                        copyChunkRegionToBuffer
+                            source
+                            sourceWidth
+                            sourceHeight
+                            localZStart
+                            yStart
+                            xStart
+                            chunkZ
+                            chunkY
+                            chunkX
+                            chunkZ
+                            chunkY
+                            chunkX
+                            buffer
+
+                        let coord =
+                            [| 0L
+                               0L
+                               int64 (globalZStart / chunkZ)
+                               int64 (yStart / chunkY)
+                               int64 (xStart / chunkX) |]
+                        let key = String.Join("/", coord)
+                        let outputChunk =
+                            match outputChunkLookup.TryFind key with
+                            | Some chunk -> chunk
+                            | None -> failwith $"writeZarrChunkThick could not find output chunk for coordinate {key}."
+                        chunks[i] <- ZarrDecodedChunkWrite(outputChunk, ReadOnlyMemory<byte>(buffer, 0, bufferBytes))
+                    )
+                |> ignore
+
+                array.WriteChunksDecodedAsync(chunks, writeParallelism, true, CancellationToken.None)
+                |> runUnitTask
+            finally
+                for buffer in buffers do
+                    if not (isNull buffer) then
+                        ArrayPool<byte>.Shared.Return(buffer)
+
+            batchStart <- batchStart + batchCount
+
     let mapper (debug: bool) (_idx: int64) (chunk: Chunk<'T>) =
         try
             try
@@ -3988,26 +4063,43 @@ let writeZarrChunkThickWithCompression<'T when 'T: equality and 'T: (new: unit -
                     let zOffset = globalZ % chunkZ
                     let zCount = min (chunkDepth - localZ) (chunkZ - zOffset)
 
-                    for yStart in 0 .. chunkY .. chunkHeight - 1 do
-                        let yCount = min chunkY (chunkHeight - yStart)
-                        for xStart in 0 .. chunkX .. chunkWidth - 1 do
-                            let xCount = min chunkX (chunkWidth - xStart)
+                    if
+                        not debug
+                        && compression = ZarrCompression.None
+                        && zCount = chunkZ
+                        && zOffset = 0
+                        && chunkWidth % chunkX = 0
+                        && chunkHeight % chunkY = 0
+                    then
+                        flushPending array
+                        writeFullChunkRegionsParallel
+                            array
+                            chunk
+                            chunkWidth
+                            chunkHeight
+                            localZ
+                            globalZ
+                    else
+                        for yStart in 0 .. chunkY .. chunkHeight - 1 do
+                            let yCount = min chunkY (chunkHeight - yStart)
+                            for xStart in 0 .. chunkX .. chunkWidth - 1 do
+                                let xCount = min chunkX (chunkWidth - xStart)
 
-                            if debug then
-                                printfn $"[writeZarrChunkThick] Saved region z {globalZ}..{globalZ + zCount - 1}, y {yStart}..{yStart + yCount - 1}, x {xStart}..{xStart + xCount - 1} to {outputPath} as {dataType}"
+                                if debug then
+                                    printfn $"[writeZarrChunkThick] Saved region z {globalZ}..{globalZ + zCount - 1}, y {yStart}..{yStart + yCount - 1}, x {xStart}..{xStart + xCount - 1} to {outputPath} as {dataType}"
 
-                            writeChunkRegion
-                                array
-                                chunk
-                                chunkWidth
-                                chunkHeight
-                                localZ
-                                globalZ
-                                yStart
-                                xStart
-                                zCount
-                                yCount
-                                xCount
+                                writeChunkRegion
+                                    array
+                                    chunk
+                                    chunkWidth
+                                    chunkHeight
+                                    localZ
+                                    globalZ
+                                    yStart
+                                    xStart
+                                    zCount
+                                    yCount
+                                    xCount
 
                     localZ <- localZ + zCount
 

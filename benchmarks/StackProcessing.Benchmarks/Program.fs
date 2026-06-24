@@ -75,6 +75,11 @@ Run:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-chunk-copy --pixel-type UInt8|UInt16|Float32 --shape WxHxD --input ZARR --output ZARR [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-readonly --pixel-type UInt8|UInt16|Float32 --input ZARR [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-writeonly --pixel-type UInt8|UInt16|Float32 --shape WxHxD --output ZARR [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-tiff-thick-readonly --pixel-type UInt8|UInt16|Float32 --input DIR [--chunk-size N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-tiff-thick-split-drain --pixel-type UInt8|UInt16|Float32 --input DIR [--chunk-size N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-thick-writeonly --pixel-type UInt8|UInt16|Float32 --shape WxHxD --output ZARR [--chunk-size N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-thick-writeonly-pattern --pixel-type UInt8 --shape WxHxD --output ZARR [--chunk-size N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-zarr-thick-writeonly-directlocal --pixel-type UInt8|UInt16|Float32 --shape WxHxD --output ZARR [--chunk-size N] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-float32-zarr --shape WxHxD --input DIR --output ZARR [--chunk-size N] [--compression none|blosc] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-xy-float32-zarr --shape WxHxD --input DIR --output ZARR [--chunk-size N] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-fft-z-complex64-zarr --shape WxHxD --input ZARR --output ZARR [--chunk-size N]
@@ -2108,7 +2113,8 @@ let private createOmeZarrWriterWithChunks output dataType (shape: Shape) chunkX 
             ChunkT = 1,
             PhysicalSizeX = 1.0,
             PhysicalSizeY = 1.0,
-            PhysicalSizeZ = 1.0)
+            PhysicalSizeZ = 1.0,
+            Compression = ZarrCompression.None)
 
     OmeZarrWriter.CreateAsync(output, descriptor, Threading.CancellationToken.None)
     |> runTask
@@ -2877,6 +2883,315 @@ let private runZarrWriteOnly opts =
         | Int32 -> runZarrWriteOnlyTyped<int32> shape output chunkSize availableMemory
         | Float32 -> runZarrWriteOnlyTyped<float32> shape output chunkSize availableMemory
         | _ -> unsupportedPixelType "Zarr write-only benchmark" "UInt8, UInt16, Int32, and Float32" pixelType
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    exitCode
+
+let private runTiffThickReadOnlyTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> input chunkSize availableMemory =
+    let src = benchmarkSource availableMemory
+    let chunkDepth = max 1u chunkSize
+    src
+    |> readThick<'T> chunkDepth input ".tiff"
+    |> sink
+    0
+
+let private runTiffThickReadOnly opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let chunkSize = optional "chunk-size" "128" opts |> UInt32.Parse
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+    let stopwatch = Stopwatch.StartNew()
+    let exitCode =
+        match pixelType with
+        | UInt8 -> runTiffThickReadOnlyTyped<uint8> input chunkSize availableMemory
+        | UInt16 -> runTiffThickReadOnlyTyped<uint16> input chunkSize availableMemory
+        | Float32 -> runTiffThickReadOnlyTyped<float32> input chunkSize availableMemory
+        | _ -> unsupportedPixelType "TIFF thick read-only benchmark" "UInt8, UInt16, and Float32" pixelType
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    exitCode
+
+let private zarrChunkBufferDrain<'T when 'T: equality> chunkSize : Stage<Chunk<'T>, unit> =
+    let name = $"zarrChunkBufferDrain.{typeof<'T>.Name}"
+    let chunkSize = max 1u chunkSize |> int
+    let elementBytes = int (chunkElementBytes<'T>())
+    let bufferBytes = chunkSize * chunkSize * chunkSize * elementBytes
+    let mutable checksum = 0
+
+    let consume (debug: bool) (_index: int) (chunk: Chunk<'T>) =
+        try
+            let width64, height64, depth64 = chunk.Size
+            let width = int width64
+            let height = int height64
+            let depth = int depth64
+
+            if width % chunkSize <> 0 || height % chunkSize <> 0 || depth % chunkSize <> 0 then
+                invalidArg "chunk" $"{name} expects aligned thick chunks; got {chunk.Size} for chunk size {chunkSize}."
+
+            let zChunkCount = depth / chunkSize
+            let yChunkCount = height / chunkSize
+            let xChunkCount = width / chunkSize
+            let rowBytes = chunkSize * elementBytes
+
+            for localZChunk in 0 .. zChunkCount - 1 do
+                let localZStart = localZChunk * chunkSize
+                for yChunk in 0 .. yChunkCount - 1 do
+                    let yStart = yChunk * chunkSize
+                    for xChunk in 0 .. xChunkCount - 1 do
+                        let xStart = xChunk * chunkSize
+                        let buffer = ArrayPool<byte>.Shared.Rent(bufferBytes)
+                        try
+                            for z in 0 .. chunkSize - 1 do
+                                let sourceZ = localZStart + z
+                                for y in 0 .. chunkSize - 1 do
+                                    let sourceOffset =
+                                        ((sourceZ * height + (yStart + y)) * width + xStart) * elementBytes
+                                    let destinationOffset =
+                                        ((z * chunkSize + y) * chunkSize) * elementBytes
+                                    Buffer.BlockCopy(chunk.Bytes, sourceOffset, buffer, destinationOffset, rowBytes)
+                            checksum <- checksum ^^^ int buffer[0]
+                        finally
+                            ArrayPool<byte>.Shared.Return(buffer)
+
+            if debug then
+                printfn $"[{name}] Split and drained {zChunkCount * yChunkCount * xChunkCount} Zarr chunk buffers; checksum {checksum}."
+        finally
+            Chunk.decRef chunk
+
+    SlimPipeline.Stage.consumeWith name consume (fun _ -> uint64 bufferBytes)
+
+let private runTiffThickSplitDrainTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> input chunkSize availableMemory =
+    let src = benchmarkSource availableMemory
+    let chunkDepth = max 1u chunkSize
+    src
+    |> readThick<'T> chunkDepth input ".tiff"
+    >=> zarrChunkBufferDrain<'T> chunkSize
+    |> sink
+    0
+
+let private runTiffThickSplitDrain opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let input = require "input" opts
+    let chunkSize = optional "chunk-size" "128" opts |> UInt32.Parse
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+    let stopwatch = Stopwatch.StartNew()
+    let exitCode =
+        match pixelType with
+        | UInt8 -> runTiffThickSplitDrainTyped<uint8> input chunkSize availableMemory
+        | UInt16 -> runTiffThickSplitDrainTyped<uint16> input chunkSize availableMemory
+        | Float32 -> runTiffThickSplitDrainTyped<float32> input chunkSize availableMemory
+        | _ -> unsupportedPixelType "TIFF thick split-drain benchmark" "UInt8, UInt16, and Float32" pixelType
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    exitCode
+
+let private runZarrThickWriteOnlyTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (shape: Shape) output chunkSize availableMemory =
+    precleanDirectoryForTimedRun output
+    let src = benchmarkSource availableMemory
+    let chunkSize = max 1u chunkSize
+    src
+    |> zero<'T> shape.Width shape.Height shape.Depth
+    >=> collectChunkSlicesThick<'T> chunkSize
+    >=> writeZarrThickWithCompression<'T> ZarrCompression.None output "benchmark" shape.Depth chunkSize chunkSize chunkSize 1.0 1.0 1.0 0
+    |> sink
+    0
+
+let private runZarrThickWriteOnly opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let shape = require "shape" opts |> parseShape
+    let output = require "output" opts
+    let chunkSize = optional "chunk-size" "128" opts |> UInt32.Parse
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+    let stopwatch = Stopwatch.StartNew()
+    let exitCode =
+        match pixelType with
+        | UInt8 -> runZarrThickWriteOnlyTyped<uint8> shape output chunkSize availableMemory
+        | UInt16 -> runZarrThickWriteOnlyTyped<uint16> shape output chunkSize availableMemory
+        | Float32 -> runZarrThickWriteOnlyTyped<float32> shape output chunkSize availableMemory
+        | _ -> unsupportedPixelType "Zarr thick write-only benchmark" "UInt8, UInt16, and Float32" pixelType
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    exitCode
+
+let private fillUInt8PatternSlices : Stage<Chunk<uint8>, Chunk<uint8>> =
+    SlimPipeline.Stage.mapi
+        "fillUInt8PatternSlices"
+        (fun _debug z (chunk: Chunk<uint8>) ->
+            let width64, height64, depth64 = chunk.Size
+            if depth64 <> 1UL then
+                invalidArg "chunk" $"fillUInt8PatternSlices expects 2D slices, got {chunk.Size}."
+            let width = int width64
+            let height = int height64
+            let z = int z
+            let bytes = chunk.Bytes
+            for y in 0 .. height - 1 do
+                let rowOffset = y * width
+                for x in 0 .. width - 1 do
+                    bytes[rowOffset + x] <- byte ((x * 3 + y * 5 + z * 11) &&& 0xFF)
+            chunk)
+        id
+        id
+
+let private runZarrThickWriteOnlyPatternUInt8 (shape: Shape) output chunkSize availableMemory =
+    precleanDirectoryForTimedRun output
+    let src = benchmarkSource availableMemory
+    let chunkSize = max 1u chunkSize
+    src
+    |> zero<uint8> shape.Width shape.Height shape.Depth
+    >=> fillUInt8PatternSlices
+    >=> collectChunkSlicesThick<uint8> chunkSize
+    >=> writeZarrThickWithCompression<uint8> ZarrCompression.None output "benchmark" shape.Depth chunkSize chunkSize chunkSize 1.0 1.0 1.0 0
+    |> sink
+    0
+
+let private runZarrThickWriteOnlyPattern opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let shape = require "shape" opts |> parseShape
+    let output = require "output" opts
+    let chunkSize = optional "chunk-size" "128" opts |> UInt32.Parse
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+    let stopwatch = Stopwatch.StartNew()
+    let exitCode =
+        match pixelType with
+        | UInt8 -> runZarrThickWriteOnlyPatternUInt8 shape output chunkSize availableMemory
+        | _ -> unsupportedPixelType "Zarr thick pattern write-only benchmark" "UInt8" pixelType
+    stopwatch.Stop()
+    writeInternalSeconds stopwatch.Elapsed
+    exitCode
+
+let private directLocalZarrThickWriter<'T when 'T: equality>
+    (shape: Shape)
+    output
+    chunkSize
+    workers
+    : Stage<Chunk<'T>, unit> =
+
+    let name = $"directLocalZarrThickWriter.{typeof<'T>.Name}"
+    let elementBytes = int (chunkElementBytes<'T>())
+    let chunkSize = max 1u chunkSize |> int
+    let workers = max 1 workers
+    let root = Path.GetFullPath output
+    let chunkRoot = Path.Combine(root, "0", "c", "0", "0")
+    let mutable nextZ = 0
+
+    let copyChunkRegionToBuffer (source: Chunk<'T>) sourceWidth sourceHeight localZStart yStart xStart (buffer: byte[]) =
+        let rowBytes = chunkSize * elementBytes
+        for z in 0 .. chunkSize - 1 do
+            let sourceZ = localZStart + z
+            for y in 0 .. chunkSize - 1 do
+                let sourceOffset =
+                    ((sourceZ * sourceHeight + (yStart + y)) * sourceWidth + xStart) * elementBytes
+                let destinationOffset =
+                    ((z * chunkSize + y) * chunkSize) * elementBytes
+                Buffer.BlockCopy(source.Bytes, sourceOffset, buffer, destinationOffset, rowBytes)
+
+    let writeOneChunk (source: Chunk<'T>) sourceWidth sourceHeight localZStart zChunk yChunk xChunk =
+        let yStart = yChunk * chunkSize
+        let xStart = xChunk * chunkSize
+        let bufferBytes = chunkSize * chunkSize * chunkSize * elementBytes
+        let buffer = ArrayPool<byte>.Shared.Rent(bufferBytes)
+        try
+            copyChunkRegionToBuffer source sourceWidth sourceHeight localZStart yStart xStart buffer
+            let directory = Path.Combine(chunkRoot, string zChunk, string yChunk)
+            Directory.CreateDirectory(directory) |> ignore
+            let path = Path.Combine(directory, string xChunk)
+            use stream =
+                new FileStream(
+                    path,
+                    FileMode.Create,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize = 1024 * 1024,
+                    options = FileOptions.SequentialScan)
+            stream.Write(buffer, 0, bufferBytes)
+        finally
+            ArrayPool<byte>.Shared.Return(buffer)
+
+    let apply (debug: bool) (input: AsyncSeq<Chunk<'T>>) =
+        asyncSeq {
+            try
+                for chunk in input do
+                    try
+                        let width64, height64, depth64 = chunk.Size
+                        let width = int width64
+                        let height = int height64
+                        let depth = int depth64
+                        if width % chunkSize <> 0 || height % chunkSize <> 0 || depth % chunkSize <> 0 then
+                            invalidArg "chunk" $"{name} expects full aligned thick chunks; got {chunk.Size} for chunk size {chunkSize}."
+                        if nextZ % chunkSize <> 0 then
+                            invalidOp $"{name} expected z cursor {nextZ} to be aligned to chunk size {chunkSize}."
+                        if nextZ + depth > int shape.Depth then
+                            invalidOp $"{name} received chunk ending at z={nextZ + depth}, beyond declared depth {shape.Depth}."
+
+                        let zChunkBase = nextZ / chunkSize
+                        let zChunkCount = depth / chunkSize
+                        let yChunkCount = height / chunkSize
+                        let xChunkCount = width / chunkSize
+                        let options = ParallelOptions(MaxDegreeOfParallelism = workers)
+
+                        for localZChunk in 0 .. zChunkCount - 1 do
+                            let zChunk = zChunkBase + localZChunk
+                            for yChunk in 0 .. yChunkCount - 1 do
+                                Directory.CreateDirectory(Path.Combine(chunkRoot, string zChunk, string yChunk)) |> ignore
+
+                            let totalXY = yChunkCount * xChunkCount
+                            Parallel.For(
+                                0,
+                                totalXY,
+                                options,
+                                fun index ->
+                                    let yChunk = index / xChunkCount
+                                    let xChunk = index % xChunkCount
+                                    writeOneChunk chunk width height (localZChunk * chunkSize) zChunk yChunk xChunk)
+                            |> ignore
+
+                        if debug then
+                            printfn $"[{name}] Wrote z {nextZ}..{nextZ + depth - 1} to {output}."
+                        nextZ <- nextZ + depth
+                        yield ()
+                    finally
+                        Chunk.decRef chunk
+            finally
+                if nextZ <> int shape.Depth then
+                    invalidOp $"{name} wrote {nextZ} slices, expected {shape.Depth}."
+        }
+
+    let memoryNeed nPixels =
+        nPixels * uint64 (elementBytes * 2)
+
+    let transition = SlimPipeline.ProfileTransition.create SlimPipeline.Streaming SlimPipeline.Streaming
+    let memoryModel = SlimPipeline.StageMemoryModel.fromSinglePeak SlimPipeline.Map memoryNeed
+    SlimPipeline.Stage.fromAsyncSeq name apply transition memoryModel id
+
+let private runZarrThickWriteOnlyDirectLocalTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (shape: Shape) output chunkSize workers availableMemory pixelType =
+    precleanDirectoryForTimedRun output
+    let dataType = zarrDataType pixelType
+    let chunkSizeInt = max 1u chunkSize |> int
+    let writer = createOmeZarrWriterWithChunks output dataType shape chunkSizeInt chunkSizeInt chunkSizeInt
+    writer.DisposeAsync().AsTask() |> runUnitTask
+
+    let src = benchmarkSource availableMemory
+    src
+    |> zero<'T> shape.Width shape.Height shape.Depth
+    >=> collectChunkSlicesThick<'T> chunkSize
+    >=> directLocalZarrThickWriter<'T> shape output chunkSize workers
+    |> sink
+    0
+
+let private runZarrThickWriteOnlyDirectLocal opts =
+    let pixelType = require "pixel-type" opts |> parsePixelType
+    let shape = require "shape" opts |> parseShape
+    let output = require "output" opts
+    let chunkSize = optional "chunk-size" "128" opts |> UInt32.Parse
+    let workers = optional "workers" "16" opts |> Int32.Parse
+    let availableMemory = optional "available-memory" (string (1024UL * 1024UL * 1024UL * 1024UL)) opts |> UInt64.Parse
+    let stopwatch = Stopwatch.StartNew()
+    let exitCode =
+        match pixelType with
+        | UInt8 -> runZarrThickWriteOnlyDirectLocalTyped<uint8> shape output chunkSize workers availableMemory pixelType
+        | UInt16 -> runZarrThickWriteOnlyDirectLocalTyped<uint16> shape output chunkSize workers availableMemory pixelType
+        | Float32 -> runZarrThickWriteOnlyDirectLocalTyped<float32> shape output chunkSize workers availableMemory pixelType
+        | _ -> unsupportedPixelType "Direct local Zarr thick write-only benchmark" "UInt8, UInt16, and Float32" pixelType
     stopwatch.Stop()
     writeInternalSeconds stopwatch.Elapsed
     exitCode
@@ -5677,6 +5992,11 @@ let main args =
         | _ when args[0] = "run-zarr-chunk-copy" -> args[1..] |> parseArgs |> runZarrChunkCopy
         | _ when args[0] = "run-zarr-readonly" -> args[1..] |> parseArgs |> runZarrReadOnly
         | _ when args[0] = "run-zarr-writeonly" -> args[1..] |> parseArgs |> runZarrWriteOnly
+        | _ when args[0] = "run-tiff-thick-readonly" -> args[1..] |> parseArgs |> runTiffThickReadOnly
+        | _ when args[0] = "run-tiff-thick-split-drain" -> args[1..] |> parseArgs |> runTiffThickSplitDrain
+        | _ when args[0] = "run-zarr-thick-writeonly" -> args[1..] |> parseArgs |> runZarrThickWriteOnly
+        | _ when args[0] = "run-zarr-thick-writeonly-pattern" -> args[1..] |> parseArgs |> runZarrThickWriteOnlyPattern
+        | _ when args[0] = "run-zarr-thick-writeonly-directlocal" -> args[1..] |> parseArgs |> runZarrThickWriteOnlyDirectLocal
         | _ when args[0] = "run-chunk-fft-float32-zarr" -> args[1..] |> parseArgs |> runChunkFftFloat32Zarr
         | _ when args[0] = "run-chunk-fft-xy-float32-zarr" -> args[1..] |> parseArgs |> runChunkFftXYFloat32Zarr
         | _ when args[0] = "run-chunk-fft-z-complex64-zarr" -> args[1..] |> parseArgs |> runChunkFftZComplex64Zarr

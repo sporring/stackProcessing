@@ -14,7 +14,7 @@ import tifffile
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Dask/OME-Zarr chunk-native benchmark backend.")
-    parser.add_argument("--operation", required=True, choices=["copy", "zarrToTiff", "tiffToZarr", "threshold", "convolve", "median", "dilate"])
+    parser.add_argument("--operation", required=True, choices=["copy", "zarrToTiff", "tiffToZarr", "tiffRechunkDrain", "threshold", "convolve", "median", "dilate"])
     parser.add_argument("--pixel-type", required=True, choices=["UInt8", "UInt16", "Float32"])
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
@@ -170,6 +170,12 @@ def read_tiff_slices_as_dask(input_root, pixel_type, thick_depth):
     return da.concatenate(thick_chunks, axis=0)
 
 
+@dask.delayed
+def consume_rechunked_block(block):
+    arr = np.asarray(block)
+    return int(arr.size)
+
+
 def main():
     args = parse_args()
     output_root = Path(args.output)
@@ -184,7 +190,7 @@ def main():
     output_root.mkdir(parents=True, exist_ok=True)
 
     start = time.perf_counter()
-    if args.operation == "tiffToZarr":
+    if args.operation in {"tiffToZarr", "tiffRechunkDrain"}:
         out = read_tiff_slices_as_dask(args.input, args.pixel_type, args.chunk_size)
     else:
         arr = da.from_zarr(str(array_path(args.input)))
@@ -199,6 +205,11 @@ def main():
     out5 = out[None, None, :, :, :]
     chunk_size = max(1, args.chunk_size)
     out5 = out5.rechunk((1, 1, chunk_size, chunk_size, chunk_size))
+    if args.operation == "tiffRechunkDrain":
+        dask.compute(*[consume_rechunked_block(block) for block in out5.to_delayed().ravel()])
+        write_internal_seconds(time.perf_counter() - start)
+        return
+
     zarr_kwargs = {"compressors": []} if args.operation == "tiffToZarr" or input_is_uncompressed(args.input) else {}
     out5.to_zarr(str(output_array), overwrite=True, **zarr_kwargs)
     write_ome_metadata(output_root)
