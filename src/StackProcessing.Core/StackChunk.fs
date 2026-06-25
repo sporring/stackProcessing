@@ -1272,47 +1272,125 @@ let inline minMax<'T when 'T: equality and 'T: comparison
 
 let inline getMinMax chunk = minMax chunk
 
+let mapFloat32Vector name (scalarOp: float32 -> float32) (vectorOp: Vector<float32> -> Vector<float32>) (chunk: Chunk<float32>) =
+    ChunkKernel.mapFloat32Vector name scalarOp vectorOp chunk
+
+let map2Float32Vector name (scalarOp: float32 -> float32 -> float32) (vectorOp: Vector<float32> -> Vector<float32> -> Vector<float32>) (a: Chunk<float32>) (b: Chunk<float32>) =
+    ChunkKernel.map2Float32Vector name scalarOp vectorOp a b
+
+let float32UnaryStage name (scalarOp: float32 -> float32) (vectorOp: Vector<float32> -> Vector<float32>) =
+    releaseUnaryChunk name (mapFloat32Vector name scalarOp vectorOp) (fun n -> 2UL * chunkMemoryNeed<float32> n)
+
+let float32BinaryStage name (scalarOp: float32 -> float32 -> float32) (vectorOp: Vector<float32> -> Vector<float32> -> Vector<float32>) =
+    releaseBinaryChunk name (map2Float32Vector name scalarOp vectorOp) (fun n -> 3UL * chunkMemoryNeed<float32> n)
+
+let addScalarFloat32 (value: float32) =
+    let valueV = Vector<float32>(value)
+    float32UnaryStage $"chunkAddScalar.Float32.{value}" (fun x -> x + value) (fun v -> v + valueV)
+
+let subScalarFloat32 (value: float32) =
+    let valueV = Vector<float32>(value)
+    float32UnaryStage $"chunkSubScalar.Float32.{value}" (fun x -> x - value) (fun v -> v - valueV)
+
+let scalarSubFloat32 (value: float32) =
+    let valueV = Vector<float32>(value)
+    float32UnaryStage $"chunkScalarSub.Float32.{value}" (fun x -> value - x) (fun v -> valueV - v)
+
+let mulScalarFloat32 (value: float32) =
+    let valueV = Vector<float32>(value)
+    float32UnaryStage $"chunkMulScalar.Float32.{value}" (fun x -> x * value) (fun v -> v * valueV)
+
+let divScalarFloat32 (value: float32) =
+    let valueV = Vector<float32>(value)
+    float32UnaryStage $"chunkDivScalar.Float32.{value}" (fun x -> x / value) (fun v -> v / valueV)
+
+let scalarDivFloat32 (value: float32) =
+    let valueV = Vector<float32>(value)
+    float32UnaryStage $"chunkScalarDiv.Float32.{value}" (fun x -> value / x) (fun v -> valueV / v)
+
+let addFloat32 =
+    float32BinaryStage "chunkAdd.Float32" (fun a b -> a + b) (fun a b -> a + b)
+
+let subtractFloat32 =
+    float32BinaryStage "chunkSubtract.Float32" (fun a b -> a - b) (fun a b -> a - b)
+
+let multiplyFloat32 =
+    float32BinaryStage "chunkMultiply.Float32" (fun a b -> a * b) (fun a b -> a * b)
+
+let divideFloat32 =
+    float32BinaryStage "chunkDivide.Float32" (fun a b -> a / b) (fun a b -> a / b)
+
 let inline addScalar value =
-    map $"chunkAddScalar.{typeof<'T>.Name}" (fun (x: 'T) -> x + value)
+    if typeof<'T> = typeof<float32> then
+        unbox (box (addScalarFloat32 (unbox<float32> (box value))))
+    else
+        map $"chunkAddScalar.{typeof<'T>.Name}" (fun (x: 'T) -> x + value)
 
 let inline scalarAdd value = addScalar value
 
 let inline subScalar value =
-    map $"chunkSubScalar.{typeof<'T>.Name}" (fun (x: 'T) -> x - value)
+    if typeof<'T> = typeof<float32> then
+        unbox (box (subScalarFloat32 (unbox<float32> (box value))))
+    else
+        map $"chunkSubScalar.{typeof<'T>.Name}" (fun (x: 'T) -> x - value)
 
 let inline scalarSub value =
-    map $"chunkScalarSub.{typeof<'T>.Name}" (fun (x: 'T) -> value - x)
+    if typeof<'T> = typeof<float32> then
+        unbox (box (scalarSubFloat32 (unbox<float32> (box value))))
+    else
+        map $"chunkScalarSub.{typeof<'T>.Name}" (fun (x: 'T) -> value - x)
 
 let inline mulScalar value =
-    map $"chunkMulScalar.{typeof<'T>.Name}" (fun (x: 'T) -> x * value)
+    if typeof<'T> = typeof<float32> then
+        unbox (box (mulScalarFloat32 (unbox<float32> (box value))))
+    else
+        map $"chunkMulScalar.{typeof<'T>.Name}" (fun (x: 'T) -> x * value)
 
 let inline scalarMul value = mulScalar value
 
 let inline divScalar value =
-    map $"chunkDivScalar.{typeof<'T>.Name}" (fun (x: 'T) -> x / value)
+    if typeof<'T> = typeof<float32> then
+        unbox (box (divScalarFloat32 (unbox<float32> (box value))))
+    else
+        map $"chunkDivScalar.{typeof<'T>.Name}" (fun (x: 'T) -> x / value)
 
 let inline scalarDiv value =
-    map $"chunkScalarDiv.{typeof<'T>.Name}" (fun (x: 'T) -> value / x)
+    if typeof<'T> = typeof<float32> then
+        unbox (box (scalarDivFloat32 (unbox<float32> (box value))))
+    else
+        map $"chunkScalarDiv.{typeof<'T>.Name}" (fun (x: 'T) -> value / x)
 
 let inline add<'T when 'T: equality
                     and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType
                     and 'T: (static member ( + ) : 'T * 'T -> 'T)> =
-    map2< 'T, 'T, 'T> $"chunkAdd.{typeof<'T>.Name}" (fun a b -> a + b)
+    if typeof<'T> = typeof<float32> then
+        unbox (box addFloat32)
+    else
+        map2< 'T, 'T, 'T> $"chunkAdd.{typeof<'T>.Name}" (fun a b -> a + b)
 
 let inline subtract<'T when 'T: equality
                          and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType
                          and 'T: (static member ( - ) : 'T * 'T -> 'T)> =
-    map2< 'T, 'T, 'T> $"chunkSubtract.{typeof<'T>.Name}" (fun a b -> a - b)
+    if typeof<'T> = typeof<float32> then
+        unbox (box subtractFloat32)
+    else
+        map2< 'T, 'T, 'T> $"chunkSubtract.{typeof<'T>.Name}" (fun a b -> a - b)
 
 let inline multiply<'T when 'T: equality
                          and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType
                          and 'T: (static member ( * ) : 'T * 'T -> 'T)> =
-    map2< 'T, 'T, 'T> $"chunkMultiply.{typeof<'T>.Name}" (fun a b -> a * b)
+    if typeof<'T> = typeof<float32> then
+        unbox (box multiplyFloat32)
+    else
+        map2< 'T, 'T, 'T> $"chunkMultiply.{typeof<'T>.Name}" (fun a b -> a * b)
 
 let inline divide<'T when 'T: equality
                        and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType
                        and 'T: (static member ( / ) : 'T * 'T -> 'T)> =
-    map2< 'T, 'T, 'T> $"chunkDivide.{typeof<'T>.Name}" (fun a b -> a / b)
+    if typeof<'T> = typeof<float32> then
+        unbox (box divideFloat32)
+    else
+        map2< 'T, 'T, 'T> $"chunkDivide.{typeof<'T>.Name}" (fun a b -> a / b)
 
 let inline maximum<'T when 'T: equality and 'T: comparison
                         and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
@@ -1459,12 +1537,6 @@ let chunkSumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: st
         }
 
     Stage.reduce $"chunkSumProjection {transformName}" reducer Streaming (fun n -> n * uint64 (chunkElementBytes<'T> + chunkElementBytes<float32>)) id
-
-let private mapFloat32Vector name (scalarOp: float32 -> float32) (vectorOp: Vector<float32> -> Vector<float32>) (chunk: Chunk<float32>) =
-    ChunkKernel.mapFloat32Vector name scalarOp vectorOp chunk
-
-let private float32UnaryStage name (scalarOp: float32 -> float32) (vectorOp: Vector<float32> -> Vector<float32>) =
-    releaseUnaryChunk name (mapFloat32Vector name scalarOp vectorOp) (fun n -> 2UL * chunkMemoryNeed<float32> n)
 
 let absFloat32 : Stage<Chunk<float32>, Chunk<float32>> =
     float32UnaryStage "chunkAbsFloat32" abs (fun v -> Vector.Abs(v))

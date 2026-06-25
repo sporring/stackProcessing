@@ -40,6 +40,27 @@ Rule of thumb:
 3. verify semantics with focused tests,
 4. only then compare scalar typed loops against SIMD loops.
 
+The second `computeStats` cleanup was even more important. The typed loop still
+used Welford's online variance update, which is numerically stable but serial:
+each pixel paid for a floating division and a mean update. For chunk-local
+statistics, a one-pass `sum`/`sumSq`/`min`/`max` loop followed by a final sample
+variance calculation is much cheaper and has the same algebraic output contract
+for ordinary image data. The existing `addStats` merge still preserves the
+streaming reducer shape across chunks.
+
+Focused benchmark, `1024x1024x64`, 67,108,864 values, 7 iterations:
+
+| Type | old `computeStats` | new `computeStats` |
+|---|---:|---:|
+| `uint8` | ~0.345 s/iter | ~0.069 s/iter |
+| `uint16` | ~0.345 s/iter | ~0.069 s/iter |
+| `float32` | ~0.353 s/iter | ~0.069 s/iter |
+| `float64` | ~0.350 s/iter | ~0.064 s/iter |
+
+This is roughly a 5x production improvement without SIMD. The lesson is useful:
+the first optimization question for reductions is not "can this be vectorized?"
+but "is the scalar recurrence actually necessary?"
+
 ### Keep The Byte-Buffer Contract Sacred
 
 The TIFF work showed that raw IO should read and write directly into
@@ -176,17 +197,80 @@ Good first targets because they are linear and contiguous:
 - `mean` and variance accumulation
 - dense histogram preprocessing where the operation is linear before binning
 
-Current status: `computeStats` now has typed scalar paths for common numeric
-pixel types to avoid per-pixel boxing. The next experiment should compare those
-typed loops against SIMD implementations for `uint8`, `uint16`, `float32`, and
-`float64`.
+Current status:
 
-Expected benefit: modest to good for `float32`, `float64`, `int32`, and
-possibly `uint16`. For `uint8`, widening costs may eat some of the gain unless
-the implementation accumulates partial sums efficiently. Welford variance is
-serially dependent, so a SIMD version will probably use vectorized `sum`,
-`sumSq`, `min`, and `max` per chunk, then combine chunk-level statistics with
-the existing stable merge formula.
+- `computeStats` has typed scalar paths for common numeric pixel types to avoid
+  per-pixel boxing.
+- The production paths for `uint8`, `uint16`, and `float64` now use concrete
+  `Vector<'T>` implementations behind type dispatch.
+- The production `float32` path uses a two-pass vector implementation: first
+  vector sum/min/max to compute the mean, then vector sum of squared deviations.
+  This is slower than the fastest `sumSq - sum*sum/n` variant, but it avoids the
+  large-offset/small-variance cancellation exposed by the adversarial tests.
+- A focused benchmark command exists:
+  `run-chunk-simd-reductions --pixel-type UInt8|UInt16|Float32|Float64 --shape WxHxD --variant computeStats-current|sum-scalar|moments-scalar|sum-vector|moments-vector|sum-vector-accurate|moments-vector-accurate`.
+
+Focused SIMD benchmark, same `1024x1024x64` shape:
+
+| Variant | `float32` | `float64` |
+|---|---:|---:|
+| `sum-scalar` | ~0.066 s/iter | ~0.072 s/iter |
+| `moments-scalar` | ~0.066 s/iter | ~0.071 s/iter |
+| `sum-vector` | ~0.018 s/iter | ~0.037 s/iter |
+| `moments-vector` | ~0.018 s/iter | ~0.037 s/iter |
+| `sum-vector-accurate` | ~0.017 s/iter | n/a |
+| `moments-vector-accurate` | ~0.020 s/iter | n/a |
+
+The `float32` "accurate" variants widen the `float32` lanes to `float` lanes
+before accumulating `sum` and `sumSq`. In the focused benchmark, the accurate
+moments variant was only modestly slower than the fast float-lane variant and
+matched the scalar moments checksum, while the fast float-lane moments checksum
+differed slightly. This makes the widened `float32 -> float` variant the more
+credible production candidate.
+
+Widened integer SIMD results, same shape:
+
+| Variant | `uint8` | `uint16` |
+|---|---:|---:|
+| `sum-vector` | ~0.016 s/iter | ~0.030 s/iter |
+| `moments-vector` | ~0.020 s/iter | ~0.031 s/iter |
+
+The integer variants widen before accumulation and periodically flush partial
+lane sums so the vector accumulators cannot overflow on larger chunks. `uint8`
+is a very strong candidate. `uint16` still improves meaningfully, but its
+`sumSq` path is heavier because squared `uint16` values need `uint64`
+accumulators.
+
+Compared with the old Welford-based `computeStats`, scalar moments are about 5x
+faster, `float32` vector moments are about 20x faster, and `float64` vector
+moments are about 9.5x faster. Compared with the new production scalar path,
+SIMD still offers about 3.8x for `float32` and about 1.9x for `float64`.
+
+The production SIMD decision needs care:
+
+- SIMD changes accumulation order, so exact low-bit agreement is not expected.
+- The fastest `float32` vector experiment accumulates in `float32` lanes before
+  converting to `float`, which is fast but less accurate than the scalar
+  `float` accumulator.
+- The widened `float32 -> float` vector variant is a better production
+  candidate because it preserves the scalar accumulator type for `sum` and
+  `sumSq`.
+- Integer SIMD reductions need widening (`uint8`/`uint16` -> larger lanes) to
+  avoid overflow. The benchmark now does this, including periodic flushes of
+  partial accumulators.
+
+Good next reduction experiments:
+
+1. Decide and document NaN/Inf policy. Finite adversarial cases are now tested,
+   but non-finite values should not be silently locked in until the desired
+   behavior is explicit.
+2. Track effective GB/s and allocated bytes for article-facing reduction runs;
+   the focused benchmark now reports both.
+3. Consider whether `float64` should stay vectorized in production or keep the
+   scalar path for maximum reproducibility. The speedup is smaller, but real.
+4. Consider a pairwise/block compensated variant if future data shows
+   `float64` or `float32` statistics are still too sensitive to accumulation
+   order.
 
 ### Pixelwise Math
 
@@ -201,6 +285,43 @@ Likely good SIMD candidates:
 
 These are often memory-bandwidth-bound, so the benchmark should report both
 runtime and bandwidth-equivalent GB/s.
+
+Current status:
+
+- `float32` scalar arithmetic stages now dispatch to SIMD-backed stages:
+  `addScalar`, `subScalar`, `scalarSub`, `mulScalar`, `divScalar`, and
+  `scalarDiv`.
+- `float32` pairwise arithmetic stages now dispatch to SIMD-backed stages:
+  `add`, `subtract`, `multiply`, and `divide`.
+- Existing `float32` unary stages such as `abs`, `sqrt`, `square`,
+  `shiftScale`, `clamp`, intensity window, and invert already use
+  `Vector<float32>`.
+- A focused benchmark command exists:
+  `run-chunk-pixelwise-float32 --shape WxHxD --variant scalar-add|vector-add|scalar-mul|vector-mul|scalar-pair-add|vector-pair-add|scalar-pair-mul|vector-pair-mul`.
+
+Focused benchmark, `1024x1024x64`, 67,108,864 values:
+
+| Variant | Scalar | Vector |
+|---|---:|---:|
+| unary add | ~0.164 s/iter | ~0.149 s/iter |
+| unary multiply | ~0.042 s/iter | ~0.022 s/iter |
+| pairwise add | ~0.258 s/iter | ~0.131 s/iter |
+| pairwise multiply | ~0.229 s/iter | ~0.066 s/iter |
+
+The exact numbers vary with ArrayPool state and memory pressure because these
+kernels allocate a new output chunk each iteration. The robust conclusion is
+that pairwise float32 arithmetic and multiply-like unary kernels benefit
+substantially; simple unary add is mostly memory-bandwidth-bound but not worse.
+
+Good next pixelwise experiments:
+
+1. Add SIMD threshold/comparison to binary mask for `uint8`, `uint16`, and
+   `float32`, with output type policy made explicit.
+2. Add `absdiff`, `blend/select`, and min/max benchmarks.
+3. For integer arithmetic, benchmark before promoting: overflow/clamp semantics
+   matter and SIMD may need widening or saturating logic.
+4. Separate kernel-only benchmarks from production allocation benchmarks, so we
+   can distinguish arithmetic throughput from output-buffer pressure.
 
 ### Vector Chunks
 
@@ -220,6 +341,33 @@ Two layouts should be compared:
 
 Interleaved layout is convenient for pixelwise operations. Component-plane
 layout is often better for long linear scans of one component at a time.
+
+Current status and caveat:
+
+- The current vector storage is interleaved component-fastest:
+  `x0,y0,z0,x1,y1,z1,...`.
+- This is good for per-pixel scalar code and compact IO, but awkward for
+  `Vector<float32>` reductions such as dot and magnitude because SIMD lanes
+  naturally want many `x` values, then many `y` values, then many `z` values.
+- Component-plane layout would make dot/magnitude/angle and structure tensor
+  outer products easier to vectorize, but it would be a larger representation
+  decision.
+
+Recommended next benchmark:
+
+```text
+run-chunk-vector-float32
+  --shape WxHxD
+  --components 3|6
+  --layout interleaved|component-plane
+  --variant dot|magnitude|angle|component-add|component-mul|structure-tensor
+  --iterations N
+```
+
+The benchmark should include both a production-shaped interleaved path and a
+component-plane ceiling. Only introduce a production component-plane
+representation if the ceiling is large enough to justify the extra layout
+complexity.
 
 ### Complex64 Interleaved Helpers
 
@@ -315,18 +463,24 @@ of partial chunks, SIMD is looking in the wrong layer.
 Add small focused benchmarks before changing user-facing stages:
 
 1. `chunk-simd-reductions`
-   - scalar vs `Vector<'T>` vs optional `Vector256<'T>`
-   - `sum`, `minMax`, `meanVariance`
-   - `uint8`, `uint16`, `float32`
-   - include the current typed `computeStats` loop as the scalar baseline
+   - current status: implemented for current `computeStats`, scalar/vector
+     reductions, production typed dispatch for `uint8`, `uint16`, stable
+     two-pass `float32`, and `float64`
+   - current status: finite adversarial tests cover constants, ramps, random
+     tails, and large-offset/small-variance `float32`
+   - later: compare portable `Vector<'T>` with `Vector256<'T>` or intrinsics
+     only if the portable version remains important and stable
 
 2. `chunk-simd-pixelwise`
-   - scalar multiply, add, threshold, clamp
-   - measure 256^3, 512^3, and 1024^3 if memory permits
+   - current status: focused `float32` benchmark covers scalar/vector unary and
+     pairwise add/multiply
+   - current status: production float32 arithmetic stages dispatch to
+     SIMD-backed kernels
+   - next: threshold/comparison, absdiff, blend/select, and integer semantics
 
 3. `chunk-simd-vector`
-   - vector dot/magnitude/angle for 3-component float32 vector chunks
-   - compare interleaved and component-plane test layouts
+   - next: vector dot/magnitude/angle for 3-component float32 vector chunks
+   - next: compare current interleaved layout against component-plane ceiling
 
 4. `chunk-simd-cast`
    - `uint8 <-> float32`

@@ -104,6 +104,8 @@ ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-libtiff-direct-threshold-hotloop --pixel-type UInt8|UInt16|Float32 --input DIR --variant byte-mask-one|byte-intype-max|byte-intype-one|typed-intype-max|typed-intype-one|typed-copy-intype-max|typed-copy-intype-one [--iterations N] [--threshold X]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-threshold-parallel --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-histogram --pixel-type UInt8|UInt16|Float32 --input DIR --variant dense|sparse|leftedges [--window-size N] [--bins N] [--available-memory BYTES]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-simd-reductions --pixel-type UInt8|UInt16|Float32|Float64 --shape WxHxD [--variant computeStats-current|sum-scalar|moments-scalar|sum-vector|moments-vector|sum-vector-accurate|moments-vector-accurate] [--iterations N]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-pixelwise-float32 --shape WxHxD [--variant scalar-add|vector-add|scalar-mul|vector-mul|scalar-pair-add|vector-pair-add|scalar-pair-mul|vector-pair-mul] [--iterations N]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-connected-components --input DIR [--output DIR] [--threshold X] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-dilate --input DIR --output DIR [--radius N] [--threshold X] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-convolve --pixel-type UInt8|Int8|UInt16|Int16|Float32 --input DIR --output DIR [--kernel-size N] [--workers N] [--available-memory BYTES]
@@ -4844,6 +4846,918 @@ let private runTimedHotLoop iterations (action: unit -> unit) (checksum: unit ->
     printfn "totalSeconds=%s perIterationSeconds=%s checksum=%d" (stopwatch.Elapsed.TotalSeconds.ToString("F9", invariant)) ((stopwatch.Elapsed.TotalSeconds / float iterations).ToString("F9", invariant)) checksumValue
     0
 
+let private runTimedHotLoopMeasured bytesPerIteration iterations (action: unit -> unit) (checksum: unit -> int) =
+    action()
+    GC.Collect()
+    GC.WaitForPendingFinalizers()
+    GC.Collect()
+    let allocatedBefore = GC.GetAllocatedBytesForCurrentThread()
+    let stopwatch = Stopwatch.StartNew()
+    for _ in 1 .. iterations do
+        action()
+    stopwatch.Stop()
+    let allocatedAfter = GC.GetAllocatedBytesForCurrentThread()
+    let checksumValue = checksum()
+    if checksumValue = Int32.MinValue then
+        printfn "%d" checksumValue
+    writeInternalSeconds stopwatch.Elapsed
+    let perIteration = stopwatch.Elapsed.TotalSeconds / float iterations
+    let gbps =
+        if perIteration <= 0.0 then
+            Double.PositiveInfinity
+        else
+            (float bytesPerIteration / perIteration) / 1.0e9
+    let allocatedPerIteration = float (allocatedAfter - allocatedBefore) / float iterations
+    printfn
+        "totalSeconds=%s perIterationSeconds=%s effectiveGBps=%s allocatedBytesPerIteration=%s checksum=%d"
+        (stopwatch.Elapsed.TotalSeconds.ToString("F9", invariant))
+        (perIteration.ToString("F9", invariant))
+        (gbps.ToString("F3", invariant))
+        (allocatedPerIteration.ToString("F1", invariant))
+        checksumValue
+    0
+
+type ReductionPixelType =
+    | ReductionUInt8
+    | ReductionUInt16
+    | ReductionFloat32
+    | ReductionFloat64
+
+let private parseReductionPixelType value =
+    match value with
+    | "UInt8" | "uint8" -> ReductionUInt8
+    | "UInt16" | "uint16" -> ReductionUInt16
+    | "Float32" | "float32" -> ReductionFloat32
+    | "Float64" | "float64" | "Double" | "double" -> ReductionFloat64
+    | _ -> invalidArg "pixel-type" $"Unsupported reduction pixel type '{value}'. Use UInt8, UInt16, Float32, or Float64."
+
+let private reductionPixelName = function
+    | ReductionUInt8 -> "UInt8"
+    | ReductionUInt16 -> "UInt16"
+    | ReductionFloat32 -> "Float32"
+    | ReductionFloat64 -> "Float64"
+
+let private fillReductionChunkUInt8 (chunk: StackCore.Chunk<uint8>) =
+    let values = StackCore.Chunk.span<uint8> chunk
+    let mutable i = 0
+    while i < values.Length do
+        values[i] <- uint8 ((i * 37 + i / 17) &&& 0xFF)
+        i <- i + 1
+
+let private fillReductionChunkUInt16 (chunk: StackCore.Chunk<uint16>) =
+    let values = StackCore.Chunk.span<uint16> chunk
+    let mutable i = 0
+    while i < values.Length do
+        values[i] <- uint16 ((i * 257 + i / 13) &&& 0xFFFF)
+        i <- i + 1
+
+let private fillReductionChunkFloat32 (chunk: StackCore.Chunk<float32>) =
+    let values = StackCore.Chunk.span<float32> chunk
+    let mutable i = 0
+    while i < values.Length do
+        values[i] <- float32 ((i * 37 + i / 17) &&& 0xFFFF) / 257.0f
+        i <- i + 1
+
+let private fillReductionChunkFloat64 (chunk: StackCore.Chunk<float>) =
+    let values = StackCore.Chunk.span<float> chunk
+    let mutable i = 0
+    while i < values.Length do
+        values[i] <- float ((i * 37 + i / 17) &&& 0xFFFF) / 257.0
+        i <- i + 1
+
+let private sumScalarUInt8 (values: Span<uint8>) =
+    let mutable sum = 0.0
+    let mutable i = 0
+    while i < values.Length do
+        sum <- sum + float values[i]
+        i <- i + 1
+    sum
+
+let private sumScalarUInt16 (values: Span<uint16>) =
+    let mutable sum = 0.0
+    let mutable i = 0
+    while i < values.Length do
+        sum <- sum + float values[i]
+        i <- i + 1
+    sum
+
+let private sumScalarFloat32 (values: Span<float32>) =
+    let mutable sum = 0.0
+    let mutable i = 0
+    while i < values.Length do
+        sum <- sum + float values[i]
+        i <- i + 1
+    sum
+
+let private sumScalarFloat64 (values: Span<float>) =
+    let mutable sum = 0.0
+    let mutable i = 0
+    while i < values.Length do
+        sum <- sum + values[i]
+        i <- i + 1
+    sum
+
+let private momentsScalarUInt8 (values: Span<uint8>) =
+    let mutable sum = 0.0
+    let mutable sumSq = 0.0
+    let mutable minimum = Double.PositiveInfinity
+    let mutable maximum = Double.NegativeInfinity
+    let mutable i = 0
+    while i < values.Length do
+        let value = float values[i]
+        sum <- sum + value
+        sumSq <- sumSq + value * value
+        if value < minimum then minimum <- value
+        if value > maximum then maximum <- value
+        i <- i + 1
+    let count = float values.Length
+    let var =
+        if values.Length > 1 then
+            max 0.0 ((sumSq - sum * sum / count) / (count - 1.0))
+        else
+            0.0
+    struct (sum, sqrt var, minimum, maximum)
+
+let private momentsScalarUInt16 (values: Span<uint16>) =
+    let mutable sum = 0.0
+    let mutable sumSq = 0.0
+    let mutable minimum = Double.PositiveInfinity
+    let mutable maximum = Double.NegativeInfinity
+    let mutable i = 0
+    while i < values.Length do
+        let value = float values[i]
+        sum <- sum + value
+        sumSq <- sumSq + value * value
+        if value < minimum then minimum <- value
+        if value > maximum then maximum <- value
+        i <- i + 1
+    let count = float values.Length
+    let var =
+        if values.Length > 1 then
+            max 0.0 ((sumSq - sum * sum / count) / (count - 1.0))
+        else
+            0.0
+    struct (sum, sqrt var, minimum, maximum)
+
+let private momentsScalarFloat32 (values: Span<float32>) =
+    let mutable sum = 0.0
+    let mutable sumSq = 0.0
+    let mutable minimum = Double.PositiveInfinity
+    let mutable maximum = Double.NegativeInfinity
+    let mutable i = 0
+    while i < values.Length do
+        let value = float values[i]
+        sum <- sum + value
+        sumSq <- sumSq + value * value
+        if value < minimum then minimum <- value
+        if value > maximum then maximum <- value
+        i <- i + 1
+    let count = float values.Length
+    let var =
+        if values.Length > 1 then
+            max 0.0 ((sumSq - sum * sum / count) / (count - 1.0))
+        else
+            0.0
+    struct (sum, sqrt var, minimum, maximum)
+
+let private momentsScalarFloat64 (values: Span<float>) =
+    let mutable sum = 0.0
+    let mutable sumSq = 0.0
+    let mutable minimum = Double.PositiveInfinity
+    let mutable maximum = Double.NegativeInfinity
+    let mutable i = 0
+    while i < values.Length do
+        let value = values[i]
+        sum <- sum + value
+        sumSq <- sumSq + value * value
+        if value < minimum then minimum <- value
+        if value > maximum then maximum <- value
+        i <- i + 1
+    let count = float values.Length
+    let var =
+        if values.Length > 1 then
+            max 0.0 ((sumSq - sum * sum / count) / (count - 1.0))
+        else
+            0.0
+    struct (sum, sqrt var, minimum, maximum)
+
+let private sumLanesUInt32 (v: Vector<uint32>) =
+    let mutable sum = 0.0
+    let mutable lane = 0
+    while lane < Vector<uint32>.Count do
+        sum <- sum + float v[lane]
+        lane <- lane + 1
+    sum
+
+let private sumLanesUInt64 (v: Vector<uint64>) =
+    let mutable sum = 0.0
+    let mutable lane = 0
+    while lane < Vector<uint64>.Count do
+        sum <- sum + float v[lane]
+        lane <- lane + 1
+    sum
+
+let private reduceMinByte (v: Vector<byte>) =
+    let mutable minimum = Byte.MaxValue
+    let mutable lane = 0
+    while lane < Vector<byte>.Count do
+        if v[lane] < minimum then minimum <- v[lane]
+        lane <- lane + 1
+    float minimum
+
+let private reduceMaxByte (v: Vector<byte>) =
+    let mutable maximum = Byte.MinValue
+    let mutable lane = 0
+    while lane < Vector<byte>.Count do
+        if v[lane] > maximum then maximum <- v[lane]
+        lane <- lane + 1
+    float maximum
+
+let private reduceMinUInt16 (v: Vector<uint16>) =
+    let mutable minimum = UInt16.MaxValue
+    let mutable lane = 0
+    while lane < Vector<uint16>.Count do
+        if v[lane] < minimum then minimum <- v[lane]
+        lane <- lane + 1
+    float minimum
+
+let private reduceMaxUInt16 (v: Vector<uint16>) =
+    let mutable maximum = UInt16.MinValue
+    let mutable lane = 0
+    while lane < Vector<uint16>.Count do
+        if v[lane] > maximum then maximum <- v[lane]
+        lane <- lane + 1
+    float maximum
+
+let private sumVectorWidenedUInt8 (values: Span<uint8>) =
+    let width = Vector<byte>.Count
+    let vectorEnd = values.Length - (values.Length % width)
+    let flushEvery = 4096
+    let mutable sum0 = Vector<uint32>.Zero
+    let mutable sum1 = Vector<uint32>.Zero
+    let mutable sum2 = Vector<uint32>.Zero
+    let mutable sum3 = Vector<uint32>.Zero
+    let mutable sum = 0.0
+    let mutable vectorsSinceFlush = 0
+    let flush () =
+        sum <- sum + sumLanesUInt32 sum0 + sumLanesUInt32 sum1 + sumLanesUInt32 sum2 + sumLanesUInt32 sum3
+        sum0 <- Vector<uint32>.Zero
+        sum1 <- Vector<uint32>.Zero
+        sum2 <- Vector<uint32>.Zero
+        sum3 <- Vector<uint32>.Zero
+        vectorsSinceFlush <- 0
+    let mutable i = 0
+    while i < vectorEnd do
+        let v = Vector<byte>(values.Slice(i, width))
+        let mutable lo16 = Vector<uint16>.Zero
+        let mutable hi16 = Vector<uint16>.Zero
+        Vector.Widen(v, &lo16, &hi16)
+        let mutable lo0 = Vector<uint32>.Zero
+        let mutable lo1 = Vector<uint32>.Zero
+        let mutable hi0 = Vector<uint32>.Zero
+        let mutable hi1 = Vector<uint32>.Zero
+        Vector.Widen(lo16, &lo0, &lo1)
+        Vector.Widen(hi16, &hi0, &hi1)
+        sum0 <- sum0 + lo0
+        sum1 <- sum1 + lo1
+        sum2 <- sum2 + hi0
+        sum3 <- sum3 + hi1
+        vectorsSinceFlush <- vectorsSinceFlush + 1
+        if vectorsSinceFlush = flushEvery then flush()
+        i <- i + width
+    flush()
+    while i < values.Length do
+        sum <- sum + float values[i]
+        i <- i + 1
+    sum
+
+let private momentsVectorWidenedUInt8 (values: Span<uint8>) =
+    if values.Length = 0 then
+        struct (0.0, 0.0, Double.PositiveInfinity, Double.NegativeInfinity)
+    else
+        let width = Vector<byte>.Count
+        let vectorEnd = values.Length - (values.Length % width)
+        let flushEvery = 4096
+        let mutable sum0 = Vector<uint32>.Zero
+        let mutable sum1 = Vector<uint32>.Zero
+        let mutable sum2 = Vector<uint32>.Zero
+        let mutable sum3 = Vector<uint32>.Zero
+        let mutable sq0 = Vector<uint32>.Zero
+        let mutable sq1 = Vector<uint32>.Zero
+        let mutable sq2 = Vector<uint32>.Zero
+        let mutable sq3 = Vector<uint32>.Zero
+        let mutable minAcc = Vector<byte>(Byte.MaxValue)
+        let mutable maxAcc = Vector<byte>(Byte.MinValue)
+        let mutable sum = 0.0
+        let mutable sumSq = 0.0
+        let mutable vectorsSinceFlush = 0
+        let flush () =
+            sum <- sum + sumLanesUInt32 sum0 + sumLanesUInt32 sum1 + sumLanesUInt32 sum2 + sumLanesUInt32 sum3
+            sumSq <- sumSq + sumLanesUInt32 sq0 + sumLanesUInt32 sq1 + sumLanesUInt32 sq2 + sumLanesUInt32 sq3
+            sum0 <- Vector<uint32>.Zero
+            sum1 <- Vector<uint32>.Zero
+            sum2 <- Vector<uint32>.Zero
+            sum3 <- Vector<uint32>.Zero
+            sq0 <- Vector<uint32>.Zero
+            sq1 <- Vector<uint32>.Zero
+            sq2 <- Vector<uint32>.Zero
+            sq3 <- Vector<uint32>.Zero
+            vectorsSinceFlush <- 0
+        let mutable i = 0
+        while i < vectorEnd do
+            let v = Vector<byte>(values.Slice(i, width))
+            minAcc <- Vector.Min(minAcc, v)
+            maxAcc <- Vector.Max(maxAcc, v)
+            let mutable lo16 = Vector<uint16>.Zero
+            let mutable hi16 = Vector<uint16>.Zero
+            Vector.Widen(v, &lo16, &hi16)
+            let mutable lo0 = Vector<uint32>.Zero
+            let mutable lo1 = Vector<uint32>.Zero
+            let mutable hi0 = Vector<uint32>.Zero
+            let mutable hi1 = Vector<uint32>.Zero
+            Vector.Widen(lo16, &lo0, &lo1)
+            Vector.Widen(hi16, &hi0, &hi1)
+            sum0 <- sum0 + lo0
+            sum1 <- sum1 + lo1
+            sum2 <- sum2 + hi0
+            sum3 <- sum3 + hi1
+            sq0 <- sq0 + lo0 * lo0
+            sq1 <- sq1 + lo1 * lo1
+            sq2 <- sq2 + hi0 * hi0
+            sq3 <- sq3 + hi1 * hi1
+            vectorsSinceFlush <- vectorsSinceFlush + 1
+            if vectorsSinceFlush = flushEvery then flush()
+            i <- i + width
+        flush()
+        let mutable minimum = reduceMinByte minAcc
+        let mutable maximum = reduceMaxByte maxAcc
+        while i < values.Length do
+            let value = float values[i]
+            sum <- sum + value
+            sumSq <- sumSq + value * value
+            if value < minimum then minimum <- value
+            if value > maximum then maximum <- value
+            i <- i + 1
+        let count = float values.Length
+        let var = if values.Length > 1 then max 0.0 ((sumSq - sum * sum / count) / (count - 1.0)) else 0.0
+        struct (sum, sqrt var, minimum, maximum)
+
+let private sumVectorWidenedUInt16 (values: Span<uint16>) =
+    let width = Vector<uint16>.Count
+    let vectorEnd = values.Length - (values.Length % width)
+    let flushEvery = 4096
+    let mutable sum0 = Vector<uint32>.Zero
+    let mutable sum1 = Vector<uint32>.Zero
+    let mutable sum = 0.0
+    let mutable vectorsSinceFlush = 0
+    let flush () =
+        sum <- sum + sumLanesUInt32 sum0 + sumLanesUInt32 sum1
+        sum0 <- Vector<uint32>.Zero
+        sum1 <- Vector<uint32>.Zero
+        vectorsSinceFlush <- 0
+    let mutable i = 0
+    while i < vectorEnd do
+        let v = Vector<uint16>(values.Slice(i, width))
+        let mutable lo = Vector<uint32>.Zero
+        let mutable hi = Vector<uint32>.Zero
+        Vector.Widen(v, &lo, &hi)
+        sum0 <- sum0 + lo
+        sum1 <- sum1 + hi
+        vectorsSinceFlush <- vectorsSinceFlush + 1
+        if vectorsSinceFlush = flushEvery then flush()
+        i <- i + width
+    flush()
+    while i < values.Length do
+        sum <- sum + float values[i]
+        i <- i + 1
+    sum
+
+let private momentsVectorWidenedUInt16 (values: Span<uint16>) =
+    if values.Length = 0 then
+        struct (0.0, 0.0, Double.PositiveInfinity, Double.NegativeInfinity)
+    else
+        let width = Vector<uint16>.Count
+        let vectorEnd = values.Length - (values.Length % width)
+        let flushEvery = 4096
+        let mutable sum0 = Vector<uint32>.Zero
+        let mutable sum1 = Vector<uint32>.Zero
+        let mutable sq0 = Vector<uint64>.Zero
+        let mutable sq1 = Vector<uint64>.Zero
+        let mutable sq2 = Vector<uint64>.Zero
+        let mutable sq3 = Vector<uint64>.Zero
+        let mutable minAcc = Vector<uint16>(UInt16.MaxValue)
+        let mutable maxAcc = Vector<uint16>(UInt16.MinValue)
+        let mutable sum = 0.0
+        let mutable sumSq = 0.0
+        let mutable vectorsSinceFlush = 0
+        let flush () =
+            sum <- sum + sumLanesUInt32 sum0 + sumLanesUInt32 sum1
+            sumSq <- sumSq + sumLanesUInt64 sq0 + sumLanesUInt64 sq1 + sumLanesUInt64 sq2 + sumLanesUInt64 sq3
+            sum0 <- Vector<uint32>.Zero
+            sum1 <- Vector<uint32>.Zero
+            sq0 <- Vector<uint64>.Zero
+            sq1 <- Vector<uint64>.Zero
+            sq2 <- Vector<uint64>.Zero
+            sq3 <- Vector<uint64>.Zero
+            vectorsSinceFlush <- 0
+        let mutable i = 0
+        while i < vectorEnd do
+            let v = Vector<uint16>(values.Slice(i, width))
+            minAcc <- Vector.Min(minAcc, v)
+            maxAcc <- Vector.Max(maxAcc, v)
+            let mutable lo = Vector<uint32>.Zero
+            let mutable hi = Vector<uint32>.Zero
+            Vector.Widen(v, &lo, &hi)
+            sum0 <- sum0 + lo
+            sum1 <- sum1 + hi
+            let loSq = lo * lo
+            let hiSq = hi * hi
+            let mutable loSq0 = Vector<uint64>.Zero
+            let mutable loSq1 = Vector<uint64>.Zero
+            let mutable hiSq0 = Vector<uint64>.Zero
+            let mutable hiSq1 = Vector<uint64>.Zero
+            Vector.Widen(loSq, &loSq0, &loSq1)
+            Vector.Widen(hiSq, &hiSq0, &hiSq1)
+            sq0 <- sq0 + loSq0
+            sq1 <- sq1 + loSq1
+            sq2 <- sq2 + hiSq0
+            sq3 <- sq3 + hiSq1
+            vectorsSinceFlush <- vectorsSinceFlush + 1
+            if vectorsSinceFlush = flushEvery then flush()
+            i <- i + width
+        flush()
+        let mutable minimum = reduceMinUInt16 minAcc
+        let mutable maximum = reduceMaxUInt16 maxAcc
+        while i < values.Length do
+            let value = float values[i]
+            sum <- sum + value
+            sumSq <- sumSq + value * value
+            if value < minimum then minimum <- value
+            if value > maximum then maximum <- value
+            i <- i + 1
+        let count = float values.Length
+        let var = if values.Length > 1 then max 0.0 ((sumSq - sum * sum / count) / (count - 1.0)) else 0.0
+        struct (sum, sqrt var, minimum, maximum)
+
+let private sumVectorFloat32 (values: Span<float32>) =
+    let width = Vector<float32>.Count
+    let vectorEnd = values.Length - (values.Length % width)
+    let mutable acc = Vector<float32>.Zero
+    let mutable i = 0
+    while i < vectorEnd do
+        acc <- acc + Vector<float32>(values.Slice(i, width))
+        i <- i + width
+    let mutable sum = 0.0
+    let mutable lane = 0
+    while lane < width do
+        sum <- sum + float acc[lane]
+        lane <- lane + 1
+    while i < values.Length do
+        sum <- sum + float values[i]
+        i <- i + 1
+    sum
+
+let private sumVectorFloat64 (values: Span<float>) =
+    let width = Vector<float>.Count
+    let vectorEnd = values.Length - (values.Length % width)
+    let mutable acc = Vector<float>.Zero
+    let mutable i = 0
+    while i < vectorEnd do
+        acc <- acc + Vector<float>(values.Slice(i, width))
+        i <- i + width
+    let mutable sum = 0.0
+    let mutable lane = 0
+    while lane < width do
+        sum <- sum + acc[lane]
+        lane <- lane + 1
+    while i < values.Length do
+        sum <- sum + values[i]
+        i <- i + 1
+    sum
+
+let private sumVectorAccurateFloat32 (values: Span<float32>) =
+    let width = Vector<float32>.Count
+    let vectorEnd = values.Length - (values.Length % width)
+    let mutable acc0 = Vector<float>.Zero
+    let mutable acc1 = Vector<float>.Zero
+    let mutable i = 0
+    while i < vectorEnd do
+        let v = Vector<float32>(values.Slice(i, width))
+        let mutable lo = Vector<float>.Zero
+        let mutable hi = Vector<float>.Zero
+        Vector.Widen(v, &lo, &hi)
+        acc0 <- acc0 + lo
+        acc1 <- acc1 + hi
+        i <- i + width
+    let mutable sum = 0.0
+    let mutable lane = 0
+    while lane < Vector<float>.Count do
+        sum <- sum + acc0[lane] + acc1[lane]
+        lane <- lane + 1
+    while i < values.Length do
+        sum <- sum + float values[i]
+        i <- i + 1
+    sum
+
+let private momentsVectorFloat32 (values: Span<float32>) =
+    if values.Length = 0 then
+        struct (0.0, 0.0, Double.PositiveInfinity, Double.NegativeInfinity)
+    else
+        let width = Vector<float32>.Count
+        let vectorEnd = values.Length - (values.Length % width)
+        let mutable sumAcc = Vector<float32>.Zero
+        let mutable sumSqAcc = Vector<float32>.Zero
+        let mutable minAcc = Vector<float32>(Single.PositiveInfinity)
+        let mutable maxAcc = Vector<float32>(Single.NegativeInfinity)
+        let mutable i = 0
+        while i < vectorEnd do
+            let v = Vector<float32>(values.Slice(i, width))
+            sumAcc <- sumAcc + v
+            sumSqAcc <- sumSqAcc + v * v
+            minAcc <- Vector.Min(minAcc, v)
+            maxAcc <- Vector.Max(maxAcc, v)
+            i <- i + width
+        let mutable sum = 0.0
+        let mutable sumSq = 0.0
+        let mutable minimum = Double.PositiveInfinity
+        let mutable maximum = Double.NegativeInfinity
+        let mutable lane = 0
+        while lane < width do
+            let sumValue = float sumAcc[lane]
+            let sumSqValue = float sumSqAcc[lane]
+            let minValue = float minAcc[lane]
+            let maxValue = float maxAcc[lane]
+            sum <- sum + sumValue
+            sumSq <- sumSq + sumSqValue
+            if minValue < minimum then minimum <- minValue
+            if maxValue > maximum then maximum <- maxValue
+            lane <- lane + 1
+        while i < values.Length do
+            let value = float values[i]
+            sum <- sum + value
+            sumSq <- sumSq + value * value
+            if value < minimum then minimum <- value
+            if value > maximum then maximum <- value
+            i <- i + 1
+        let count = float values.Length
+        let var = if values.Length > 1 then max 0.0 ((sumSq - sum * sum / count) / (count - 1.0)) else 0.0
+        struct (sum, sqrt var, minimum, maximum)
+
+let private momentsVectorAccurateFloat32 (values: Span<float32>) =
+    if values.Length = 0 then
+        struct (0.0, 0.0, Double.PositiveInfinity, Double.NegativeInfinity)
+    else
+        let width = Vector<float32>.Count
+        let vectorEnd = values.Length - (values.Length % width)
+        let mutable sum0 = Vector<float>.Zero
+        let mutable sum1 = Vector<float>.Zero
+        let mutable sumSq0 = Vector<float>.Zero
+        let mutable sumSq1 = Vector<float>.Zero
+        let mutable minAcc = Vector<float32>(Single.PositiveInfinity)
+        let mutable maxAcc = Vector<float32>(Single.NegativeInfinity)
+        let mutable i = 0
+        while i < vectorEnd do
+            let v = Vector<float32>(values.Slice(i, width))
+            minAcc <- Vector.Min(minAcc, v)
+            maxAcc <- Vector.Max(maxAcc, v)
+            let mutable lo = Vector<float>.Zero
+            let mutable hi = Vector<float>.Zero
+            Vector.Widen(v, &lo, &hi)
+            sum0 <- sum0 + lo
+            sum1 <- sum1 + hi
+            sumSq0 <- sumSq0 + lo * lo
+            sumSq1 <- sumSq1 + hi * hi
+            i <- i + width
+        let mutable sum = 0.0
+        let mutable sumSq = 0.0
+        let mutable minimum = Double.PositiveInfinity
+        let mutable maximum = Double.NegativeInfinity
+        let mutable lane = 0
+        while lane < Vector<float>.Count do
+            sum <- sum + sum0[lane] + sum1[lane]
+            sumSq <- sumSq + sumSq0[lane] + sumSq1[lane]
+            lane <- lane + 1
+        lane <- 0
+        while lane < Vector<float32>.Count do
+            let minValue = float minAcc[lane]
+            let maxValue = float maxAcc[lane]
+            if minValue < minimum then minimum <- minValue
+            if maxValue > maximum then maximum <- maxValue
+            lane <- lane + 1
+        while i < values.Length do
+            let value = float values[i]
+            sum <- sum + value
+            sumSq <- sumSq + value * value
+            if value < minimum then minimum <- value
+            if value > maximum then maximum <- value
+            i <- i + 1
+        let count = float values.Length
+        let var = if values.Length > 1 then max 0.0 ((sumSq - sum * sum / count) / (count - 1.0)) else 0.0
+        struct (sum, sqrt var, minimum, maximum)
+
+let private momentsVectorFloat64 (values: Span<float>) =
+    if values.Length = 0 then
+        struct (0.0, 0.0, Double.PositiveInfinity, Double.NegativeInfinity)
+    else
+        let width = Vector<float>.Count
+        let vectorEnd = values.Length - (values.Length % width)
+        let mutable sumAcc = Vector<float>.Zero
+        let mutable sumSqAcc = Vector<float>.Zero
+        let mutable minAcc = Vector<float>(Double.PositiveInfinity)
+        let mutable maxAcc = Vector<float>(Double.NegativeInfinity)
+        let mutable i = 0
+        while i < vectorEnd do
+            let v = Vector<float>(values.Slice(i, width))
+            sumAcc <- sumAcc + v
+            sumSqAcc <- sumSqAcc + v * v
+            minAcc <- Vector.Min(minAcc, v)
+            maxAcc <- Vector.Max(maxAcc, v)
+            i <- i + width
+        let mutable sum = 0.0
+        let mutable sumSq = 0.0
+        let mutable minimum = Double.PositiveInfinity
+        let mutable maximum = Double.NegativeInfinity
+        let mutable lane = 0
+        while lane < width do
+            let sumValue = sumAcc[lane]
+            let sumSqValue = sumSqAcc[lane]
+            let minValue = minAcc[lane]
+            let maxValue = maxAcc[lane]
+            sum <- sum + sumValue
+            sumSq <- sumSq + sumSqValue
+            if minValue < minimum then minimum <- minValue
+            if maxValue > maximum then maximum <- maxValue
+            lane <- lane + 1
+        while i < values.Length do
+            let value = values[i]
+            sum <- sum + value
+            sumSq <- sumSq + value * value
+            if value < minimum then minimum <- value
+            if value > maximum then maximum <- value
+            i <- i + 1
+        let count = float values.Length
+        let var = if values.Length > 1 then max 0.0 ((sumSq - sum * sum / count) / (count - 1.0)) else 0.0
+        struct (sum, sqrt var, minimum, maximum)
+
+let private sumScalarChunkUInt8 (chunk: StackCore.Chunk<uint8>) =
+    sumScalarUInt8 (StackCore.Chunk.span<uint8> chunk)
+
+let private sumScalarChunkUInt16 (chunk: StackCore.Chunk<uint16>) =
+    sumScalarUInt16 (StackCore.Chunk.span<uint16> chunk)
+
+let private sumScalarChunkFloat32 (chunk: StackCore.Chunk<float32>) =
+    sumScalarFloat32 (StackCore.Chunk.span<float32> chunk)
+
+let private sumScalarChunkFloat64 (chunk: StackCore.Chunk<float>) =
+    sumScalarFloat64 (StackCore.Chunk.span<float> chunk)
+
+let private sumVectorChunkUInt8 (chunk: StackCore.Chunk<uint8>) =
+    sumVectorWidenedUInt8 (StackCore.Chunk.span<uint8> chunk)
+
+let private sumVectorChunkUInt16 (chunk: StackCore.Chunk<uint16>) =
+    sumVectorWidenedUInt16 (StackCore.Chunk.span<uint16> chunk)
+
+let private momentsScalarChunkUInt8 (chunk: StackCore.Chunk<uint8>) =
+    momentsScalarUInt8 (StackCore.Chunk.span<uint8> chunk)
+
+let private momentsScalarChunkUInt16 (chunk: StackCore.Chunk<uint16>) =
+    momentsScalarUInt16 (StackCore.Chunk.span<uint16> chunk)
+
+let private momentsScalarChunkFloat32 (chunk: StackCore.Chunk<float32>) =
+    momentsScalarFloat32 (StackCore.Chunk.span<float32> chunk)
+
+let private momentsScalarChunkFloat64 (chunk: StackCore.Chunk<float>) =
+    momentsScalarFloat64 (StackCore.Chunk.span<float> chunk)
+
+let private momentsVectorChunkUInt8 (chunk: StackCore.Chunk<uint8>) =
+    momentsVectorWidenedUInt8 (StackCore.Chunk.span<uint8> chunk)
+
+let private momentsVectorChunkUInt16 (chunk: StackCore.Chunk<uint16>) =
+    momentsVectorWidenedUInt16 (StackCore.Chunk.span<uint16> chunk)
+
+let private sumVectorChunkFloat32 (chunk: StackCore.Chunk<float32>) =
+    sumVectorFloat32 (StackCore.Chunk.span<float32> chunk)
+
+let private sumVectorChunkFloat64 (chunk: StackCore.Chunk<float>) =
+    sumVectorFloat64 (StackCore.Chunk.span<float> chunk)
+
+let private sumVectorAccurateChunkFloat32 (chunk: StackCore.Chunk<float32>) =
+    sumVectorAccurateFloat32 (StackCore.Chunk.span<float32> chunk)
+
+let private momentsVectorChunkFloat32 (chunk: StackCore.Chunk<float32>) =
+    momentsVectorFloat32 (StackCore.Chunk.span<float32> chunk)
+
+let private momentsVectorChunkFloat64 (chunk: StackCore.Chunk<float>) =
+    momentsVectorFloat64 (StackCore.Chunk.span<float> chunk)
+
+let private momentsVectorAccurateChunkFloat32 (chunk: StackCore.Chunk<float32>) =
+    momentsVectorAccurateFloat32 (StackCore.Chunk.span<float32> chunk)
+
+let private runReductionHotLoop name iterations action checksum =
+    printfn "variant=%s" name
+    runTimedHotLoop iterations action checksum
+
+let private runReductionHotLoopMeasured name bytesPerIteration iterations action checksum =
+    printfn "variant=%s" name
+    runTimedHotLoopMeasured bytesPerIteration iterations action checksum
+
+let private runChunkSimdReductionsTyped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    pixelName
+    shape
+    variant
+    iterations
+    fill
+    sumScalarImpl
+    momentsScalarImpl
+    sumVectorImpl
+    momentsVectorImpl
+    sumVectorAccurateImpl
+    momentsVectorAccurateImpl
+    =
+    let chunk = StackCore.Chunk.create<'T> (uint64 shape.Width, uint64 shape.Height, uint64 shape.Depth)
+    try
+        fill chunk
+        let valueCount = int shape.Width * int shape.Height * int shape.Depth
+        printfn "pixelType=%s shape=%ux%ux%u values=%d bytes=%d iterations=%d" pixelName shape.Width shape.Height shape.Depth valueCount chunk.ByteLength iterations
+        let mutable statsResult = ChunkCore.ChunkFunctions.zeroStats
+        let mutable sumResult = 0.0
+        let mutable stdResult = 0.0
+        let mutable minResult = 0.0
+        let mutable maxResult = 0.0
+        let measuredBytes = int64 chunk.ByteLength
+        match variant with
+        | "computeStats-current" ->
+            runReductionHotLoopMeasured variant measuredBytes iterations
+                (fun () -> statsResult <- ChunkCore.ChunkFunctions.computeStats chunk)
+                (fun () -> int statsResult.NumPixels ^^^ int statsResult.Sum ^^^ int statsResult.Min ^^^ int statsResult.Max)
+        | "sum-scalar" ->
+            runReductionHotLoopMeasured variant measuredBytes iterations
+                (fun () ->
+                    sumResult <- sumScalarImpl chunk)
+                (fun () -> int sumResult)
+        | "moments-scalar" ->
+            runReductionHotLoopMeasured variant measuredBytes iterations
+                (fun () ->
+                    let struct (sum, std, minimum, maximum) = momentsScalarImpl chunk
+                    sumResult <- sum
+                    stdResult <- std
+                    minResult <- minimum
+                    maxResult <- maximum)
+                (fun () -> int sumResult ^^^ int stdResult ^^^ int minResult ^^^ int maxResult)
+        | "sum-vector" ->
+            match sumVectorImpl with
+            | Some sumVector ->
+                runReductionHotLoopMeasured variant measuredBytes iterations
+                    (fun () -> sumResult <- sumVector chunk)
+                    (fun () -> int sumResult)
+            | None ->
+                invalidArg "variant" $"Variant '{variant}' is not implemented for {pixelName} reductions."
+        | "moments-vector" ->
+            match momentsVectorImpl with
+            | Some momentsVector ->
+                runReductionHotLoopMeasured variant measuredBytes iterations
+                    (fun () ->
+                        let struct (sum, std, minimum, maximum) = momentsVector chunk
+                        sumResult <- sum
+                        stdResult <- std
+                        minResult <- minimum
+                        maxResult <- maximum)
+                    (fun () -> int sumResult ^^^ int stdResult ^^^ int minResult ^^^ int maxResult)
+            | None ->
+                invalidArg "variant" $"Variant '{variant}' is not implemented for {pixelName} reductions."
+        | "sum-vector-accurate" ->
+            match sumVectorAccurateImpl with
+            | Some sumVector ->
+                runReductionHotLoopMeasured variant measuredBytes iterations
+                    (fun () -> sumResult <- sumVector chunk)
+                    (fun () -> int sumResult)
+            | None ->
+                invalidArg "variant" $"Variant '{variant}' is not implemented for {pixelName} reductions."
+        | "moments-vector-accurate" ->
+            match momentsVectorAccurateImpl with
+            | Some momentsVector ->
+                runReductionHotLoopMeasured variant measuredBytes iterations
+                    (fun () ->
+                        let struct (sum, std, minimum, maximum) = momentsVector chunk
+                        sumResult <- sum
+                        stdResult <- std
+                        minResult <- minimum
+                        maxResult <- maximum)
+                    (fun () -> int sumResult ^^^ int stdResult ^^^ int minResult ^^^ int maxResult)
+            | None ->
+                invalidArg "variant" $"Variant '{variant}' is not implemented for {pixelName} reductions."
+        | other ->
+            invalidArg "variant" $"Unknown chunk SIMD reductions variant '{other}'."
+    finally
+        StackCore.Chunk.decRef chunk
+
+let private runChunkSimdReductions opts =
+    let pixelType = require "pixel-type" opts |> parseReductionPixelType
+    let shape = require "shape" opts |> parseShape
+    let variant = optional "variant" "computeStats-current" opts
+    let iterations = optional "iterations" "10" opts |> int
+    if iterations < 1 then invalidArg "iterations" "Expected at least one iteration."
+
+    match pixelType with
+    | ReductionUInt8 ->
+        runChunkSimdReductionsTyped<uint8> (reductionPixelName pixelType) shape variant iterations fillReductionChunkUInt8 sumScalarChunkUInt8 momentsScalarChunkUInt8 (Some sumVectorChunkUInt8) (Some momentsVectorChunkUInt8) None None
+    | ReductionUInt16 ->
+        runChunkSimdReductionsTyped<uint16> (reductionPixelName pixelType) shape variant iterations fillReductionChunkUInt16 sumScalarChunkUInt16 momentsScalarChunkUInt16 (Some sumVectorChunkUInt16) (Some momentsVectorChunkUInt16) None None
+    | ReductionFloat32 ->
+        runChunkSimdReductionsTyped<float32> (reductionPixelName pixelType) shape variant iterations fillReductionChunkFloat32 sumScalarChunkFloat32 momentsScalarChunkFloat32 (Some sumVectorChunkFloat32) (Some momentsVectorChunkFloat32) (Some sumVectorAccurateChunkFloat32) (Some momentsVectorAccurateChunkFloat32)
+    | ReductionFloat64 ->
+        runChunkSimdReductionsTyped<float> (reductionPixelName pixelType) shape variant iterations fillReductionChunkFloat64 sumScalarChunkFloat64 momentsScalarChunkFloat64 (Some sumVectorChunkFloat64) (Some momentsVectorChunkFloat64) None None
+
+let private fillPixelwiseFloat32Chunk seed (chunk: StackCore.Chunk<float32>) =
+    let values = StackCore.Chunk.span<float32> chunk
+    let mutable i = 0
+    while i < values.Length do
+        values[i] <- float32 (((i + seed) * 37 + i / 11) &&& 0xFFFF) / 257.0f + 1.0f
+        i <- i + 1
+
+let private scalarMapFloat32 name scalarOp (chunk: StackCore.Chunk<float32>) =
+    let output = StackCore.Chunk.create<float32> chunk.Size
+    try
+        let input = StackCore.Chunk.span<float32> chunk
+        let outputSpan = StackCore.Chunk.span<float32> output
+        let mutable i = 0
+        while i < input.Length do
+            outputSpan[i] <- scalarOp input[i]
+            i <- i + 1
+        output
+    with
+    | _ ->
+        StackCore.Chunk.decRef output
+        reraise()
+
+let private scalarMap2Float32 name scalarOp (a: StackCore.Chunk<float32>) (b: StackCore.Chunk<float32>) =
+    let output = StackCore.Chunk.create<float32> a.Size
+    try
+        let aSpan = StackCore.Chunk.span<float32> a
+        let bSpan = StackCore.Chunk.span<float32> b
+        let outputSpan = StackCore.Chunk.span<float32> output
+        let mutable i = 0
+        while i < aSpan.Length do
+            outputSpan[i] <- scalarOp aSpan[i] bSpan[i]
+            i <- i + 1
+        output
+    with
+    | _ ->
+        StackCore.Chunk.decRef output
+        reraise()
+
+let private checksumFloat32Chunk (chunk: StackCore.Chunk<float32>) =
+    let values = StackCore.Chunk.span<float32> chunk
+    let stride = max 1 (values.Length / 4096)
+    let mutable checksum = 2166136261u
+    let mutable i = 0
+    while i < values.Length do
+        checksum <- (checksum * 16777619u) ^^^ uint32 (int values[i])
+        i <- i + stride
+    int checksum
+
+let private runChunkPixelwiseFloat32 opts =
+    let shape = require "shape" opts |> parseShape
+    let variant = optional "variant" "vector-add" opts
+    let iterations = optional "iterations" "10" opts |> int
+    if iterations < 1 then invalidArg "iterations" "Expected at least one iteration."
+
+    let a = StackCore.Chunk.create<float32> (uint64 shape.Width, uint64 shape.Height, uint64 shape.Depth)
+    let b = StackCore.Chunk.create<float32> (uint64 shape.Width, uint64 shape.Height, uint64 shape.Depth)
+    let mutable lastOutput : StackCore.Chunk<float32> option = None
+    let replaceOutput output =
+        match lastOutput with
+        | Some previous -> StackCore.Chunk.decRef previous
+        | None -> ()
+        lastOutput <- Some output
+
+    try
+        fillPixelwiseFloat32Chunk 0 a
+        fillPixelwiseFloat32Chunk 17 b
+        printfn "shape=%ux%ux%u values=%d inputBytes=%d iterations=%d" shape.Width shape.Height shape.Depth (StackCore.Chunk.span<float32> a).Length a.ByteLength iterations
+        let bytesPerIteration =
+            match variant with
+            | "scalar-pair-add" | "vector-pair-add" | "scalar-pair-mul" | "vector-pair-mul" -> int64 a.ByteLength * 3L
+            | _ -> int64 a.ByteLength * 2L
+        let action =
+            match variant with
+            | "scalar-add" -> fun () -> scalarMapFloat32 "scalarAddFloat32" (fun x -> x + 3.25f) a |> replaceOutput
+            | "vector-add" -> fun () -> ChunkCore.ChunkFunctions.mapFloat32Vector "vectorAddFloat32" (fun x -> x + 3.25f) (fun v -> v + Vector<float32>(3.25f)) a |> replaceOutput
+            | "scalar-mul" -> fun () -> scalarMapFloat32 "scalarMulFloat32" (fun x -> x * 1.25f) a |> replaceOutput
+            | "vector-mul" -> fun () -> ChunkCore.ChunkFunctions.mapFloat32Vector "vectorMulFloat32" (fun x -> x * 1.25f) (fun v -> v * Vector<float32>(1.25f)) a |> replaceOutput
+            | "scalar-pair-add" -> fun () -> scalarMap2Float32 "scalarPairAddFloat32" (fun x y -> x + y) a b |> replaceOutput
+            | "vector-pair-add" -> fun () -> ChunkCore.ChunkFunctions.map2Float32Vector "vectorPairAddFloat32" (fun x y -> x + y) (fun x y -> x + y) a b |> replaceOutput
+            | "scalar-pair-mul" -> fun () -> scalarMap2Float32 "scalarPairMulFloat32" (fun x y -> x * y) a b |> replaceOutput
+            | "vector-pair-mul" -> fun () -> ChunkCore.ChunkFunctions.map2Float32Vector "vectorPairMulFloat32" (fun x y -> x * y) (fun x y -> x * y) a b |> replaceOutput
+            | other -> invalidArg "variant" $"Unsupported pixelwise float32 variant '{other}'."
+        runTimedHotLoopMeasured bytesPerIteration iterations action (fun () -> lastOutput |> Option.map checksumFloat32Chunk |> Option.defaultValue 0)
+    finally
+        match lastOutput with
+        | Some output -> StackCore.Chunk.decRef output
+        | None -> ()
+        StackCore.Chunk.decRef b
+        StackCore.Chunk.decRef a
+
 let private fillAxisConvolveChunk z width height =
     let chunk = StackCore.Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
     let values = StackCore.Chunk.span<uint8> chunk
@@ -6020,6 +6934,8 @@ let main args =
         | _ when args[0] = "run-libtiff-direct-threshold-hotloop" -> args[1..] |> parseArgs |> runLibTiffDirectThresholdHotLoop
         | _ when args[0] = "run-chunk-threshold-parallel" -> args[1..] |> parseArgs |> runChunkThresholdParallelCollect
         | _ when args[0] = "run-chunk-histogram" -> args[1..] |> parseArgs |> runChunkHistogram
+        | _ when args[0] = "run-chunk-simd-reductions" -> args[1..] |> parseArgs |> runChunkSimdReductions
+        | _ when args[0] = "run-chunk-pixelwise-float32" -> args[1..] |> parseArgs |> runChunkPixelwiseFloat32
         | _ when args[0] = "run-chunk-connected-components" -> args[1..] |> parseArgs |> runChunkConnectedComponentsCommand
         | _ when args[0] = "run-chunk-dilate" -> args[1..] |> parseArgs |> runChunkDilate
         | _ when args[0] = "run-chunk-convolve" -> args[1..] |> parseArgs |> runChunkConvolve

@@ -1280,6 +1280,30 @@ module ChunkFunctions =
             decRef output
             reraise()
 
+    let map2Float32Vector name (scalarOp: float32 -> float32 -> float32) (vectorOp: Vector<float32> -> Vector<float32> -> Vector<float32>) (a: Chunk<float32>) (b: Chunk<float32>) =
+        if a.Size <> b.Size then
+            invalidArg "b" $"ChunkFunctions.{name} expects chunks with identical sizes, got {a.Size} and {b.Size}."
+        let output = create<float32> a.Size
+        try
+            let aSpan = span<float32> a
+            let bSpan = span<float32> b
+            let outputSpan = span<float32> output
+            let width = Vector<float32>.Count
+            let vectorEnd = aSpan.Length - (aSpan.Length % width)
+            let mutable i = 0
+            while i < vectorEnd do
+                let result = vectorOp (Vector<float32>(aSpan.Slice(i, width))) (Vector<float32>(bSpan.Slice(i, width)))
+                result.CopyTo(outputSpan.Slice(i, width))
+                i <- i + width
+            while i < aSpan.Length do
+                outputSpan[i] <- scalarOp aSpan[i] bSpan[i]
+                i <- i + 1
+            output
+        with
+        | _ ->
+            decRef output
+            reraise()
+
     let validateSameSize name (a: Chunk<'T>) (b: Chunk<'U>) =
         if a.Size <> b.Size then
             invalidArg "b" $"ChunkFunctions.{name} expects chunks with identical sizes, got {a.Size} and {b.Size}."
@@ -1389,29 +1413,380 @@ module ChunkFunctions =
           Sum = sum
           Var = var }
 
+    let private statsFromSumSq count minimum maximum sum sumSq =
+        let n = float count
+        let mean = sum / n
+        let var = if count > 1UL then max 0.0 ((sumSq - sum * sum / n) / (n - 1.0)) else 0.0
+        { NumPixels = count
+          Mean = mean
+          Std = sqrt var
+          Min = minimum
+          Max = maximum
+          Sum = sum
+          Var = var }
+
+    let private sumVectorUInt32 (v: Vector<uint32>) =
+        let mutable sum = 0.0
+        let mutable lane = 0
+        while lane < Vector<uint32>.Count do
+            sum <- sum + float v[lane]
+            lane <- lane + 1
+        sum
+
+    let private sumVectorUInt64 (v: Vector<uint64>) =
+        let mutable sum = 0.0
+        let mutable lane = 0
+        while lane < Vector<uint64>.Count do
+            sum <- sum + float v[lane]
+            lane <- lane + 1
+        sum
+
+    let private computeStatsUInt8Vector (values: Span<uint8>) =
+        let width = Vector<byte>.Count
+        let vectorEnd = values.Length - values.Length % width
+        let flushEvery = 4096
+        let mutable sum0 = Vector<uint32>.Zero
+        let mutable sum1 = Vector<uint32>.Zero
+        let mutable sum2 = Vector<uint32>.Zero
+        let mutable sum3 = Vector<uint32>.Zero
+        let mutable sq0 = Vector<uint32>.Zero
+        let mutable sq1 = Vector<uint32>.Zero
+        let mutable sq2 = Vector<uint32>.Zero
+        let mutable sq3 = Vector<uint32>.Zero
+        let mutable minAcc = Vector<byte>(Byte.MaxValue)
+        let mutable maxAcc = Vector<byte>(Byte.MinValue)
+        let mutable sum = 0.0
+        let mutable sumSq = 0.0
+        let mutable vectorsSinceFlush = 0
+
+        let flush () =
+            sum <- sum + sumVectorUInt32 sum0 + sumVectorUInt32 sum1 + sumVectorUInt32 sum2 + sumVectorUInt32 sum3
+            sumSq <- sumSq + sumVectorUInt32 sq0 + sumVectorUInt32 sq1 + sumVectorUInt32 sq2 + sumVectorUInt32 sq3
+            sum0 <- Vector<uint32>.Zero
+            sum1 <- Vector<uint32>.Zero
+            sum2 <- Vector<uint32>.Zero
+            sum3 <- Vector<uint32>.Zero
+            sq0 <- Vector<uint32>.Zero
+            sq1 <- Vector<uint32>.Zero
+            sq2 <- Vector<uint32>.Zero
+            sq3 <- Vector<uint32>.Zero
+            vectorsSinceFlush <- 0
+
+        let mutable i = 0
+        while i < vectorEnd do
+            let v = Vector<byte>(values.Slice(i, width))
+            minAcc <- Vector.Min(minAcc, v)
+            maxAcc <- Vector.Max(maxAcc, v)
+            let mutable lo16 = Vector<uint16>.Zero
+            let mutable hi16 = Vector<uint16>.Zero
+            Vector.Widen(v, &lo16, &hi16)
+            let mutable lo0 = Vector<uint32>.Zero
+            let mutable lo1 = Vector<uint32>.Zero
+            let mutable hi0 = Vector<uint32>.Zero
+            let mutable hi1 = Vector<uint32>.Zero
+            Vector.Widen(lo16, &lo0, &lo1)
+            Vector.Widen(hi16, &hi0, &hi1)
+            sum0 <- sum0 + lo0
+            sum1 <- sum1 + lo1
+            sum2 <- sum2 + hi0
+            sum3 <- sum3 + hi1
+            sq0 <- sq0 + lo0 * lo0
+            sq1 <- sq1 + lo1 * lo1
+            sq2 <- sq2 + hi0 * hi0
+            sq3 <- sq3 + hi1 * hi1
+            vectorsSinceFlush <- vectorsSinceFlush + 1
+            if vectorsSinceFlush = flushEvery then flush()
+            i <- i + width
+
+        flush()
+
+        let mutable minimum = float Byte.MaxValue
+        let mutable maximum = float Byte.MinValue
+        let mutable lane = 0
+        while lane < Vector<byte>.Count do
+            let minValue = float minAcc[lane]
+            let maxValue = float maxAcc[lane]
+            if minValue < minimum then minimum <- minValue
+            if maxValue > maximum then maximum <- maxValue
+            lane <- lane + 1
+
+        while i < values.Length do
+            let value = float values[i]
+            sum <- sum + value
+            sumSq <- sumSq + value * value
+            if value < minimum then minimum <- value
+            if value > maximum then maximum <- value
+            i <- i + 1
+
+        statsFromSumSq (uint64 values.Length) minimum maximum sum sumSq
+
+    let private computeStatsUInt16Vector (values: Span<uint16>) =
+        let width = Vector<uint16>.Count
+        let vectorEnd = values.Length - values.Length % width
+        let flushEvery = 4096
+        let mutable sum0 = Vector<uint32>.Zero
+        let mutable sum1 = Vector<uint32>.Zero
+        let mutable sq0 = Vector<uint64>.Zero
+        let mutable sq1 = Vector<uint64>.Zero
+        let mutable sq2 = Vector<uint64>.Zero
+        let mutable sq3 = Vector<uint64>.Zero
+        let mutable minAcc = Vector<uint16>(UInt16.MaxValue)
+        let mutable maxAcc = Vector<uint16>(UInt16.MinValue)
+        let mutable sum = 0.0
+        let mutable sumSq = 0.0
+        let mutable vectorsSinceFlush = 0
+
+        let flush () =
+            sum <- sum + sumVectorUInt32 sum0 + sumVectorUInt32 sum1
+            sumSq <- sumSq + sumVectorUInt64 sq0 + sumVectorUInt64 sq1 + sumVectorUInt64 sq2 + sumVectorUInt64 sq3
+            sum0 <- Vector<uint32>.Zero
+            sum1 <- Vector<uint32>.Zero
+            sq0 <- Vector<uint64>.Zero
+            sq1 <- Vector<uint64>.Zero
+            sq2 <- Vector<uint64>.Zero
+            sq3 <- Vector<uint64>.Zero
+            vectorsSinceFlush <- 0
+
+        let mutable i = 0
+        while i < vectorEnd do
+            let v = Vector<uint16>(values.Slice(i, width))
+            minAcc <- Vector.Min(minAcc, v)
+            maxAcc <- Vector.Max(maxAcc, v)
+            let mutable lo = Vector<uint32>.Zero
+            let mutable hi = Vector<uint32>.Zero
+            Vector.Widen(v, &lo, &hi)
+            sum0 <- sum0 + lo
+            sum1 <- sum1 + hi
+            let loSq = lo * lo
+            let hiSq = hi * hi
+            let mutable loSq0 = Vector<uint64>.Zero
+            let mutable loSq1 = Vector<uint64>.Zero
+            let mutable hiSq0 = Vector<uint64>.Zero
+            let mutable hiSq1 = Vector<uint64>.Zero
+            Vector.Widen(loSq, &loSq0, &loSq1)
+            Vector.Widen(hiSq, &hiSq0, &hiSq1)
+            sq0 <- sq0 + loSq0
+            sq1 <- sq1 + loSq1
+            sq2 <- sq2 + hiSq0
+            sq3 <- sq3 + hiSq1
+            vectorsSinceFlush <- vectorsSinceFlush + 1
+            if vectorsSinceFlush = flushEvery then flush()
+            i <- i + width
+
+        flush()
+
+        let mutable minimum = float UInt16.MaxValue
+        let mutable maximum = float UInt16.MinValue
+        let mutable lane = 0
+        while lane < Vector<uint16>.Count do
+            let minValue = float minAcc[lane]
+            let maxValue = float maxAcc[lane]
+            if minValue < minimum then minimum <- minValue
+            if maxValue > maximum then maximum <- maxValue
+            lane <- lane + 1
+
+        while i < values.Length do
+            let value = float values[i]
+            sum <- sum + value
+            sumSq <- sumSq + value * value
+            if value < minimum then minimum <- value
+            if value > maximum then maximum <- value
+            i <- i + 1
+
+        statsFromSumSq (uint64 values.Length) minimum maximum sum sumSq
+
+    let private computeStatsFloat32VectorAccurate (values: Span<float32>) =
+        let width = Vector<float32>.Count
+        let vectorEnd = values.Length - values.Length % width
+        let mutable sum0 = Vector<float>.Zero
+        let mutable sum1 = Vector<float>.Zero
+        let mutable sumSq0 = Vector<float>.Zero
+        let mutable sumSq1 = Vector<float>.Zero
+        let mutable minAcc = Vector<float32>(Single.PositiveInfinity)
+        let mutable maxAcc = Vector<float32>(Single.NegativeInfinity)
+        let mutable i = 0
+
+        while i < vectorEnd do
+            let v = Vector<float32>(values.Slice(i, width))
+            minAcc <- Vector.Min(minAcc, v)
+            maxAcc <- Vector.Max(maxAcc, v)
+            let mutable lo = Vector<float>.Zero
+            let mutable hi = Vector<float>.Zero
+            Vector.Widen(v, &lo, &hi)
+            sum0 <- sum0 + lo
+            sum1 <- sum1 + hi
+            sumSq0 <- sumSq0 + lo * lo
+            sumSq1 <- sumSq1 + hi * hi
+            i <- i + width
+
+        let mutable sum = 0.0
+        let mutable sumSq = 0.0
+        let mutable lane = 0
+        while lane < Vector<float>.Count do
+            sum <- sum + sum0[lane] + sum1[lane]
+            sumSq <- sumSq + sumSq0[lane] + sumSq1[lane]
+            lane <- lane + 1
+
+        let mutable minimum = Double.PositiveInfinity
+        let mutable maximum = Double.NegativeInfinity
+        lane <- 0
+        while lane < Vector<float32>.Count do
+            let minValue = float minAcc[lane]
+            let maxValue = float maxAcc[lane]
+            if minValue < minimum then minimum <- minValue
+            if maxValue > maximum then maximum <- maxValue
+            lane <- lane + 1
+
+        while i < values.Length do
+            let value = float values[i]
+            sum <- sum + value
+            sumSq <- sumSq + value * value
+            if value < minimum then minimum <- value
+            if value > maximum then maximum <- value
+            i <- i + 1
+
+        statsFromSumSq (uint64 values.Length) minimum maximum sum sumSq
+
+    let private computeStatsFloat32VectorStable (values: Span<float32>) =
+        let width = Vector<float32>.Count
+        let vectorEnd = values.Length - values.Length % width
+        let mutable sum0 = Vector<float>.Zero
+        let mutable sum1 = Vector<float>.Zero
+        let mutable minAcc = Vector<float32>(Single.PositiveInfinity)
+        let mutable maxAcc = Vector<float32>(Single.NegativeInfinity)
+        let mutable i = 0
+
+        while i < vectorEnd do
+            let v = Vector<float32>(values.Slice(i, width))
+            minAcc <- Vector.Min(minAcc, v)
+            maxAcc <- Vector.Max(maxAcc, v)
+            let mutable lo = Vector<float>.Zero
+            let mutable hi = Vector<float>.Zero
+            Vector.Widen(v, &lo, &hi)
+            sum0 <- sum0 + lo
+            sum1 <- sum1 + hi
+            i <- i + width
+
+        let mutable sum = 0.0
+        let mutable minimum = Double.PositiveInfinity
+        let mutable maximum = Double.NegativeInfinity
+        let mutable lane = 0
+        while lane < Vector<float>.Count do
+            sum <- sum + sum0[lane] + sum1[lane]
+            lane <- lane + 1
+
+        lane <- 0
+        while lane < Vector<float32>.Count do
+            let minValue = float minAcc[lane]
+            let maxValue = float maxAcc[lane]
+            if minValue < minimum then minimum <- minValue
+            if maxValue > maximum then maximum <- maxValue
+            lane <- lane + 1
+
+        while i < values.Length do
+            let value = float values[i]
+            sum <- sum + value
+            if value < minimum then minimum <- value
+            if value > maximum then maximum <- value
+            i <- i + 1
+
+        let count = uint64 values.Length
+        let mean = sum / float values.Length
+        let meanVector = Vector<float>(mean)
+        let mutable m2Acc0 = Vector<float>.Zero
+        let mutable m2Acc1 = Vector<float>.Zero
+        i <- 0
+
+        while i < vectorEnd do
+            let v = Vector<float32>(values.Slice(i, width))
+            let mutable lo = Vector<float>.Zero
+            let mutable hi = Vector<float>.Zero
+            Vector.Widen(v, &lo, &hi)
+            let delta0 = lo - meanVector
+            let delta1 = hi - meanVector
+            m2Acc0 <- m2Acc0 + delta0 * delta0
+            m2Acc1 <- m2Acc1 + delta1 * delta1
+            i <- i + width
+
+        let mutable m2 = 0.0
+        lane <- 0
+        while lane < Vector<float>.Count do
+            m2 <- m2 + m2Acc0[lane] + m2Acc1[lane]
+            lane <- lane + 1
+
+        while i < values.Length do
+            let delta = float values[i] - mean
+            m2 <- m2 + delta * delta
+            i <- i + 1
+
+        statsFromMoments count mean m2 minimum maximum sum
+
+    let private computeStatsFloat64Vector (values: Span<float>) =
+        let width = Vector<float>.Count
+        let vectorEnd = values.Length - values.Length % width
+        let mutable sumAcc = Vector<float>.Zero
+        let mutable sumSqAcc = Vector<float>.Zero
+        let mutable minAcc = Vector<float>(Double.PositiveInfinity)
+        let mutable maxAcc = Vector<float>(Double.NegativeInfinity)
+        let mutable i = 0
+
+        while i < vectorEnd do
+            let v = Vector<float>(values.Slice(i, width))
+            sumAcc <- sumAcc + v
+            sumSqAcc <- sumSqAcc + v * v
+            minAcc <- Vector.Min(minAcc, v)
+            maxAcc <- Vector.Max(maxAcc, v)
+            i <- i + width
+
+        let mutable sum = 0.0
+        let mutable sumSq = 0.0
+        let mutable minimum = Double.PositiveInfinity
+        let mutable maximum = Double.NegativeInfinity
+        let mutable lane = 0
+        while lane < Vector<float>.Count do
+            sum <- sum + sumAcc[lane]
+            sumSq <- sumSq + sumSqAcc[lane]
+            if minAcc[lane] < minimum then minimum <- minAcc[lane]
+            if maxAcc[lane] > maximum then maximum <- maxAcc[lane]
+            lane <- lane + 1
+
+        while i < values.Length do
+            let value = values[i]
+            sum <- sum + value
+            sumSq <- sumSq + value * value
+            if value < minimum then minimum <- value
+            if value > maximum then maximum <- value
+            i <- i + 1
+
+        statsFromSumSq (uint64 values.Length) minimum maximum sum sumSq
+
     let inline private computeStatsTyped (values: Span< ^T>) =
         let first = float values[0]
-        let mutable count = 1UL
-        let mutable mean = first
-        let mutable m2 = 0.0
         let mutable minimum = first
         let mutable maximum = first
         let mutable sum = first
+        let mutable sumSq = first * first
         let mutable i = 1
 
         while i < values.Length do
             let value = float values[i]
-            count <- count + 1UL
-            let n = float count
-            let delta = value - mean
-            mean <- mean + delta / n
-            m2 <- m2 + delta * (value - mean)
             if value < minimum then minimum <- value
             if value > maximum then maximum <- value
             sum <- sum + value
+            sumSq <- sumSq + value * value
             i <- i + 1
 
-        statsFromMoments count mean m2 minimum maximum sum
+        let count = uint64 values.Length
+        let n = float values.Length
+        let mean = sum / n
+        let var = if values.Length > 1 then max 0.0 ((sumSq - sum * sum / n) / (n - 1.0)) else 0.0
+        { NumPixels = count
+          Mean = mean
+          Std = sqrt var
+          Min = minimum
+          Max = maximum
+          Sum = sum
+          Var = var }
 
     let computeStats<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
         (chunk: Chunk<'T>)
@@ -1422,11 +1797,11 @@ module ChunkFunctions =
         else
             let t = typeof<'T>
             if t = typeof<uint8> then
-                computeStatsTyped (MemoryMarshal.Cast<'T, uint8>(values))
+                computeStatsUInt8Vector (MemoryMarshal.Cast<'T, uint8>(values))
             elif t = typeof<int8> then
                 computeStatsTyped (MemoryMarshal.Cast<'T, int8>(values))
             elif t = typeof<uint16> then
-                computeStatsTyped (MemoryMarshal.Cast<'T, uint16>(values))
+                computeStatsUInt16Vector (MemoryMarshal.Cast<'T, uint16>(values))
             elif t = typeof<int16> then
                 computeStatsTyped (MemoryMarshal.Cast<'T, int16>(values))
             elif t = typeof<uint32> then
@@ -1434,9 +1809,9 @@ module ChunkFunctions =
             elif t = typeof<int32> then
                 computeStatsTyped (MemoryMarshal.Cast<'T, int32>(values))
             elif t = typeof<float32> then
-                computeStatsTyped (MemoryMarshal.Cast<'T, float32>(values))
+                computeStatsFloat32VectorStable (MemoryMarshal.Cast<'T, float32>(values))
             elif t = typeof<float> then
-                computeStatsTyped (MemoryMarshal.Cast<'T, float>(values))
+                computeStatsFloat64Vector (MemoryMarshal.Cast<'T, float>(values))
             else
                 let first = Convert.ToDouble(box values[0])
                 let mutable count = 1UL

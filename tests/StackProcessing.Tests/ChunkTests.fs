@@ -621,6 +621,99 @@ let chunkSuite =
             finally
                 Chunk.decRef uint32Chunk
 
+        testCase "ChunkFunctions.computeStats SIMD paths match scalar moment reference on adversarial finite data" <| fun _ ->
+            let expectedMomentStats (values: float[]) : ChunkKernel.ChunkStats =
+                let first = values[0]
+                let mutable minimum = first
+                let mutable maximum = first
+                let mutable sum = first
+                let mutable sumSq = first * first
+                let mutable i = 1
+                while i < values.Length do
+                    let value = values[i]
+                    if value < minimum then minimum <- value
+                    if value > maximum then maximum <- value
+                    sum <- sum + value
+                    sumSq <- sumSq + value * value
+                    i <- i + 1
+                let count = uint64 values.Length
+                let n = float values.Length
+                let mean = sum / n
+                let var = if values.Length > 1 then max 0.0 ((sumSq - sum * sum / n) / (n - 1.0)) else 0.0
+                { NumPixels = count
+                  Mean = mean
+                  Std = sqrt var
+                  Min = minimum
+                  Max = maximum
+                  Sum = sum
+                  Var = var }
+
+            let expectedWelfordStats (values: float[]) : ChunkKernel.ChunkStats =
+                let first = values[0]
+                let mutable count = 1UL
+                let mutable mean = first
+                let mutable m2 = 0.0
+                let mutable minimum = first
+                let mutable maximum = first
+                let mutable sum = first
+                let mutable i = 1
+                while i < values.Length do
+                    let value = values[i]
+                    count <- count + 1UL
+                    let n = float count
+                    let delta = value - mean
+                    mean <- mean + delta / n
+                    m2 <- m2 + delta * (value - mean)
+                    if value < minimum then minimum <- value
+                    if value > maximum then maximum <- value
+                    sum <- sum + value
+                    i <- i + 1
+                let var = if count > 1UL then m2 / float (count - 1UL) else 0.0
+                { NumPixels = count
+                  Mean = mean
+                  Std = sqrt var
+                  Min = minimum
+                  Max = maximum
+                  Sum = sum
+                  Var = var }
+
+            let checkStatsWith (expectedStats: float[] -> ChunkKernel.ChunkStats) name tolerance expectedValues (actual: ChunkKernel.ChunkStats) =
+                let expected = expectedStats expectedValues
+                Expect.equal actual.NumPixels expected.NumPixels $"{name} pixel count should match."
+                Expect.floatClose tolerance actual.Mean expected.Mean $"{name} mean should match."
+                Expect.floatClose tolerance actual.Std expected.Std $"{name} standard deviation should match."
+                Expect.floatClose tolerance actual.Min expected.Min $"{name} minimum should match."
+                Expect.floatClose tolerance actual.Max expected.Max $"{name} maximum should match."
+                Expect.floatClose tolerance actual.Sum expected.Sum $"{name} sum should match."
+                Expect.floatClose tolerance actual.Var expected.Var $"{name} variance should match."
+
+            let checkStats name tolerance expectedValues actual =
+                checkStatsWith expectedMomentStats name tolerance expectedValues actual
+
+            let withChunk chunk f =
+                try f chunk
+                finally Chunk.decRef chunk
+
+            let uint8Values = Array.create 257 42uy
+            withChunk (chunkFromPixels 257 1 uint8Values) (fun chunk ->
+                checkStats "UInt8 constant tail" Accuracy.high (uint8Values |> Array.map float) (ChunkKernel.computeStats chunk))
+
+            let uint16Values = Array.init 513 (fun i -> uint16 ((i * 257 + i / 7) &&& 0xFFFF))
+            withChunk (chunkFromUInt16Pixels 513 1 uint16Values) (fun chunk ->
+                checkStats "UInt16 ramp tail" Accuracy.high (uint16Values |> Array.map float) (ChunkKernel.computeStats chunk))
+
+            let random = Random 1234
+            let float32Values = Array.init 1025 (fun _ -> float32 (random.NextDouble() * 2000.0 - 1000.0))
+            withChunk (chunkFromFloat32Pixels 1025 1 float32Values) (fun chunk ->
+                checkStats "Float32 random tail" Accuracy.high (float32Values |> Array.map float) (ChunkKernel.computeStats chunk))
+
+            let largeOffsetValues =
+                [| for i in 0 .. 1024 ->
+                    let offset = float32 ((i % 9) - 4) * 8.0f
+                    100000000.0f + offset |]
+            withChunk (chunkFromFloat32Pixels 1025 1 largeOffsetValues) (fun chunk ->
+                checkStatsWith expectedWelfordStats "Float32 large offset small variance finite policy" Accuracy.medium (largeOffsetValues |> Array.map float) (ChunkKernel.computeStats chunk))
+
         testCase "ChunkFunctions connectedComponentsSauf3DUInt8 labels 6-connected foreground across slices" <| fun _ ->
             let width = 4
             let height = 3
