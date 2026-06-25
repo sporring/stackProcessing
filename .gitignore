@@ -46,3 +46,4 @@ benchmarks/results/raw.before-chunk-sauf-parallelcollect.csv
 slow
 tests/**/coverage.info
 *.info
+benchmarks/results/raw.before-sp-copy-native-tiff-20260619.csv

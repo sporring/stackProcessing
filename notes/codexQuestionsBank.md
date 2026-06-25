@@ -14,6 +14,9 @@ Questions to consider:
 
 - Should ChunkFunctions/computeStats be SIMD'ed or Vector<>'ized, e.g., sum v = dot v ones
 
+- For the ph dense median filter path, is there any good reason why the codomain is uint16 and not uint32. The latter would let us extend the reach of the ph algorithm to square regions of size about (2^10)^3 for unit8 images.
+
+
 ---
 
 Ignore anything below here:

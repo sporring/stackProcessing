@@ -1379,6 +1379,40 @@ module ChunkFunctions =
               Sum = a.Sum + b.Sum
               Var = var }
 
+    let private statsFromMoments count mean m2 minimum maximum sum =
+        let var = if count > 1UL then m2 / float (count - 1UL) else 0.0
+        { NumPixels = count
+          Mean = mean
+          Std = sqrt var
+          Min = minimum
+          Max = maximum
+          Sum = sum
+          Var = var }
+
+    let inline private computeStatsTyped (values: Span< ^T>) =
+        let first = float values[0]
+        let mutable count = 1UL
+        let mutable mean = first
+        let mutable m2 = 0.0
+        let mutable minimum = first
+        let mutable maximum = first
+        let mutable sum = first
+        let mutable i = 1
+
+        while i < values.Length do
+            let value = float values[i]
+            count <- count + 1UL
+            let n = float count
+            let delta = value - mean
+            mean <- mean + delta / n
+            m2 <- m2 + delta * (value - mean)
+            if value < minimum then minimum <- value
+            if value > maximum then maximum <- value
+            sum <- sum + value
+            i <- i + 1
+
+        statsFromMoments count mean m2 minimum maximum sum
+
     let computeStats<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
         (chunk: Chunk<'T>)
         =
@@ -1386,35 +1420,44 @@ module ChunkFunctions =
         if values.Length = 0 then
             zeroStats
         else
-            let first = Convert.ToDouble(box values[0])
-            let mutable count = 1UL
-            let mutable mean = first
-            let mutable m2 = 0.0
-            let mutable minimum = first
-            let mutable maximum = first
-            let mutable sum = first
-            let mutable i = 1
-
-            while i < values.Length do
-                let value = Convert.ToDouble(box values[i])
-                count <- count + 1UL
-                let n = float count
-                let delta = value - mean
-                mean <- mean + delta / n
-                m2 <- m2 + delta * (value - mean)
-                if value < minimum then minimum <- value
-                if value > maximum then maximum <- value
-                sum <- sum + value
-                i <- i + 1
-
-            let var = if count > 1UL then m2 / float (count - 1UL) else 0.0
-            { NumPixels = count
-              Mean = mean
-              Std = sqrt var
-              Min = minimum
-              Max = maximum
-              Sum = sum
-              Var = var }
+            let t = typeof<'T>
+            if t = typeof<uint8> then
+                computeStatsTyped (MemoryMarshal.Cast<'T, uint8>(values))
+            elif t = typeof<int8> then
+                computeStatsTyped (MemoryMarshal.Cast<'T, int8>(values))
+            elif t = typeof<uint16> then
+                computeStatsTyped (MemoryMarshal.Cast<'T, uint16>(values))
+            elif t = typeof<int16> then
+                computeStatsTyped (MemoryMarshal.Cast<'T, int16>(values))
+            elif t = typeof<uint32> then
+                computeStatsTyped (MemoryMarshal.Cast<'T, uint32>(values))
+            elif t = typeof<int32> then
+                computeStatsTyped (MemoryMarshal.Cast<'T, int32>(values))
+            elif t = typeof<float32> then
+                computeStatsTyped (MemoryMarshal.Cast<'T, float32>(values))
+            elif t = typeof<float> then
+                computeStatsTyped (MemoryMarshal.Cast<'T, float>(values))
+            else
+                let first = Convert.ToDouble(box values[0])
+                let mutable count = 1UL
+                let mutable mean = first
+                let mutable m2 = 0.0
+                let mutable minimum = first
+                let mutable maximum = first
+                let mutable sum = first
+                let mutable i = 1
+                while i < values.Length do
+                    let value = Convert.ToDouble(box values[i])
+                    count <- count + 1UL
+                    let n = float count
+                    let delta = value - mean
+                    mean <- mean + delta / n
+                    m2 <- m2 + delta * (value - mean)
+                    if value < minimum then minimum <- value
+                    if value > maximum then maximum <- value
+                    sum <- sum + value
+                    i <- i + 1
+                statsFromMoments count mean m2 minimum maximum sum
 
     let inline private clampRoundToByte (value: float32) =
         if Single.IsNaN value || value <= 0.0f then

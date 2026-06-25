@@ -559,6 +559,68 @@ let chunkSuite =
             finally
                 Chunk.decRef chunk
 
+        testCase "ChunkFunctions.computeStats uses typed numeric paths" <| fun _ ->
+            let expectedStats (values: float[]) : ChunkKernel.ChunkStats =
+                let first = values[0]
+                let mutable count = 1UL
+                let mutable mean = first
+                let mutable m2 = 0.0
+                let mutable minimum = first
+                let mutable maximum = first
+                let mutable sum = first
+                let mutable i = 1
+                while i < values.Length do
+                    let value = values[i]
+                    count <- count + 1UL
+                    let n = float count
+                    let delta = value - mean
+                    mean <- mean + delta / n
+                    m2 <- m2 + delta * (value - mean)
+                    if value < minimum then minimum <- value
+                    if value > maximum then maximum <- value
+                    sum <- sum + value
+                    i <- i + 1
+                let var = if count > 1UL then m2 / float (count - 1UL) else 0.0
+                { NumPixels = count
+                  Mean = mean
+                  Std = sqrt var
+                  Min = minimum
+                  Max = maximum
+                  Sum = sum
+                  Var = var }
+
+            let check name (expectedValues: float[]) (actual: ChunkKernel.ChunkStats) =
+                let expected = expectedStats expectedValues
+                Expect.equal actual.NumPixels expected.NumPixels $"{name} pixel count should match."
+                Expect.floatClose Accuracy.high actual.Mean expected.Mean $"{name} mean should match."
+                Expect.floatClose Accuracy.high actual.Std expected.Std $"{name} standard deviation should match."
+                Expect.floatClose Accuracy.high actual.Min expected.Min $"{name} minimum should match."
+                Expect.floatClose Accuracy.high actual.Max expected.Max $"{name} maximum should match."
+                Expect.floatClose Accuracy.high actual.Sum expected.Sum $"{name} sum should match."
+                Expect.floatClose Accuracy.high actual.Var expected.Var $"{name} variance should match."
+
+            let checkChunk name values makeChunk =
+                let chunk = makeChunk ()
+                try
+                    check name values (ChunkKernel.computeStats chunk)
+                finally
+                    Chunk.decRef chunk
+
+            checkChunk "UInt8" [| 1.0; 2.0; 9.0; 10.0; 250.0; 255.0 |] (fun () -> chunkFromPixels 3 2 [| 1uy; 2uy; 9uy; 10uy; 250uy; 255uy |])
+            checkChunk "Int8" [| -5.0; -1.0; 0.0; 3.0; 12.0; 127.0 |] (fun () -> chunkFromInt8Pixels 3 2 [| -5y; -1y; 0y; 3y; 12y; 127y |])
+            checkChunk "UInt16" [| 1.0; 2.0; 1024.0; 4096.0; 32768.0; 65535.0 |] (fun () -> chunkFromUInt16Pixels 3 2 [| 1us; 2us; 1024us; 4096us; 32768us; 65535us |])
+            checkChunk "Int16" [| -32768.0; -1000.0; -1.0; 0.0; 7.0; 32767.0 |] (fun () -> chunkFromInt16Pixels 3 2 [| -32768s; -1000s; -1s; 0s; 7s; 32767s |])
+            checkChunk "Int32" [| -100000.0; -1.0; 0.0; 1.0; 17.0; 100000.0 |] (fun () -> chunkFromInt32Pixels 3 2 [| -100000; -1; 0; 1; 17; 100000 |])
+            checkChunk "Float32" [| -1.5; 0.25; 1.0; 3.5; 8.0; 16.25 |] (fun () -> chunkFromFloat32Pixels 3 2 [| -1.5f; 0.25f; 1.0f; 3.5f; 8.0f; 16.25f |])
+            checkChunk "Float64" [| -1.5; 0.25; 1.0; 3.5; 8.0; 16.25 |] (fun () -> chunkFromFloat64Pixels 3 2 [| -1.5; 0.25; 1.0; 3.5; 8.0; 16.25 |])
+
+            let uint32Chunk = Chunk.create<uint32> (3UL, 2UL, 1UL)
+            try
+                [| 1u; 2u; 1024u; 65536u; 16777216u; UInt32.MaxValue |].CopyTo(Chunk.span<uint32> uint32Chunk)
+                check "UInt32" [| 1.0; 2.0; 1024.0; 65536.0; 16777216.0; float UInt32.MaxValue |] (ChunkKernel.computeStats uint32Chunk)
+            finally
+                Chunk.decRef uint32Chunk
+
         testCase "ChunkFunctions connectedComponentsSauf3DUInt8 labels 6-connected foreground across slices" <| fun _ ->
             let width = 4
             let height = 3
