@@ -3520,20 +3520,66 @@ module ChunkFunctions =
             lut[i] <- outputMinimum + float cumulative * scale
         edges, lut
 
-    let private convertEqualized<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: float) =
+    let inline private equalizeDenseUInt8 (lut: float[]) (inputPixels: Span<uint8>) (outputPixels: Span<uint8>) =
+        let mutable i = 0
+        while i < inputPixels.Length do
+            outputPixels[i] <- clampRoundToByte (float32 lut[int inputPixels[i]])
+            i <- i + 1
+
+    let inline private equalizeDenseInt8 (lut: float[]) (inputPixels: Span<int8>) (outputPixels: Span<int8>) =
+        let offset = -int SByte.MinValue
+        let mutable i = 0
+        while i < inputPixels.Length do
+            outputPixels[i] <- clampRoundToSByte (float32 lut[int inputPixels[i] + offset])
+            i <- i + 1
+
+    let inline private equalizeDenseUInt16 (lut: float[]) (inputPixels: Span<uint16>) (outputPixels: Span<uint16>) =
+        let mutable i = 0
+        while i < inputPixels.Length do
+            outputPixels[i] <- clampRoundToUInt16 (float32 lut[int inputPixels[i]])
+            i <- i + 1
+
+    let inline private equalizeDenseInt16 (lut: float[]) (inputPixels: Span<int16>) (outputPixels: Span<int16>) =
+        let offset = -int Int16.MinValue
+        let mutable i = 0
+        while i < inputPixels.Length do
+            outputPixels[i] <- clampRoundToInt16 (float32 lut[int inputPixels[i] + offset])
+            i <- i + 1
+
+    let inline private equalizeLeftEdgesTyped
+        (edges: float[])
+        (lut: float[])
+        (inputPixels: Span< ^T>)
+        (outputPixels: Span< ^T>)
+        (convert: float -> ^T)
+        =
+        let mutable i = 0
+        while i < inputPixels.Length do
+            let value = float inputPixels[i]
+            if Double.IsNaN value || Double.IsInfinity value then
+                outputPixels[i] <- inputPixels[i]
+            else
+                outputPixels[i] <- convert lut[leftEdgeBin edges value]
+            i <- i + 1
+
+    let private convertEqualizedGeneric<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: float) =
         let t = typeof<'T>
         if t = typeof<uint8> then
-            box (clampRoundToByte (float32 value)) :?> 'T
+            box (clampRoundDoubleToByte value) :?> 'T
         elif t = typeof<int8> then
-            box (clampRoundToSByte (float32 value)) :?> 'T
+            box (clampRoundDoubleToSByte value) :?> 'T
         elif t = typeof<uint16> then
-            box (clampRoundToUInt16 (float32 value)) :?> 'T
+            box (clampRoundDoubleToUInt16 value) :?> 'T
         elif t = typeof<int16> then
-            box (clampRoundToInt16 (float32 value)) :?> 'T
+            box (clampRoundDoubleToInt16 value) :?> 'T
         elif t = typeof<int32> then
-            box (clampRoundToInt32 (float32 value)) :?> 'T
+            box (clampRoundDoubleToInt32 value) :?> 'T
         elif t = typeof<uint32> then
-            box (uint32 (max 0.0 (min (float UInt32.MaxValue) (Math.Round value)))) :?> 'T
+            box (clampRoundDoubleToUInt32 value) :?> 'T
+        elif t = typeof<int64> then
+            box (clampRoundDoubleToInt64 value) :?> 'T
+        elif t = typeof<uint64> then
+            box (clampRoundDoubleToUInt64 value) :?> 'T
         elif t = typeof<float32> then
             box (float32 value) :?> 'T
         elif t = typeof<float> then
@@ -3548,27 +3594,15 @@ module ChunkFunctions =
         let lut = denseEqualizationLut dense
         let output = create<'T> chunk.Size
         try
-            let inputPixels = span<'T> chunk
-            let outputPixels = span<'T> output
             let t = typeof<'T>
             if t = typeof<uint8> then
-                for i in 0 .. inputPixels.Length - 1 do
-                    let value = unbox<uint8> (box inputPixels[i])
-                    outputPixels[i] <- convertEqualized<'T> lut[int value]
+                equalizeDenseUInt8 lut (MemoryMarshal.Cast<byte, uint8>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, uint8>(output.Bytes.AsSpan(0, output.ByteLength)))
             elif t = typeof<int8> then
-                let offset = -int SByte.MinValue
-                for i in 0 .. inputPixels.Length - 1 do
-                    let value = unbox<int8> (box inputPixels[i])
-                    outputPixels[i] <- convertEqualized<'T> lut[int value + offset]
+                equalizeDenseInt8 lut (MemoryMarshal.Cast<byte, int8>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, int8>(output.Bytes.AsSpan(0, output.ByteLength)))
             elif t = typeof<uint16> then
-                for i in 0 .. inputPixels.Length - 1 do
-                    let value = unbox<uint16> (box inputPixels[i])
-                    outputPixels[i] <- convertEqualized<'T> lut[int value]
+                equalizeDenseUInt16 lut (MemoryMarshal.Cast<byte, uint16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, uint16>(output.Bytes.AsSpan(0, output.ByteLength)))
             elif t = typeof<int16> then
-                let offset = -int Int16.MinValue
-                for i in 0 .. inputPixels.Length - 1 do
-                    let value = unbox<int16> (box inputPixels[i])
-                    outputPixels[i] <- convertEqualized<'T> lut[int value + offset]
+                equalizeDenseInt16 lut (MemoryMarshal.Cast<byte, int16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, int16>(output.Bytes.AsSpan(0, output.ByteLength)))
             else
                 invalidArg "T" $"Dense histogram equalization supports UInt8, Int8, UInt16, and Int16 chunks, got {t.Name}."
             output
@@ -3588,7 +3622,7 @@ module ChunkFunctions =
             let outputPixels = span<'T> output
             for i in 0 .. inputPixels.Length - 1 do
                 match lut.TryGetValue inputPixels[i] with
-                | true, value -> outputPixels[i] <- convertEqualized<'T> value
+                | true, value -> outputPixels[i] <- convertEqualizedGeneric<'T> value
                 | false, _ -> outputPixels[i] <- inputPixels[i]
             output
         with
@@ -3603,14 +3637,29 @@ module ChunkFunctions =
         let edges, lut = leftEdgeEqualizationLut histogram
         let output = create<'T> chunk.Size
         try
-            let inputPixels = span<'T> chunk
-            let outputPixels = span<'T> output
-            for i in 0 .. inputPixels.Length - 1 do
-                let value = Convert.ToDouble(box inputPixels[i])
-                if Double.IsNaN value || Double.IsInfinity value then
-                    outputPixels[i] <- inputPixels[i]
-                else
-                    outputPixels[i] <- convertEqualized<'T> lut[leftEdgeBin edges value]
+            let t = typeof<'T>
+            if t = typeof<uint8> then
+                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, uint8>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, uint8>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToByte
+            elif t = typeof<int8> then
+                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, int8>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, int8>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToSByte
+            elif t = typeof<uint16> then
+                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, uint16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, uint16>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToUInt16
+            elif t = typeof<int16> then
+                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, int16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, int16>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToInt16
+            elif t = typeof<int32> then
+                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, int32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, int32>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToInt32
+            elif t = typeof<uint32> then
+                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, uint32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, uint32>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToUInt32
+            elif t = typeof<int64> then
+                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, int64>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, int64>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToInt64
+            elif t = typeof<uint64> then
+                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, uint64>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, uint64>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToUInt64
+            elif t = typeof<float32> then
+                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, float32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, float32>(output.Bytes.AsSpan(0, output.ByteLength))) float32
+            elif t = typeof<float> then
+                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, float>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, float>(output.Bytes.AsSpan(0, output.ByteLength))) id
+            else
+                invalidArg "T" $"Left-edge histogram equalization supports real numeric chunks, got {t.Name}."
             output
         with
         | _ ->

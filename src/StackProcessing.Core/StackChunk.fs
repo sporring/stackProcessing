@@ -1383,6 +1383,12 @@ let private projectionTransform (transformName: string) =
     | _ ->
         invalidArg "transformName" $"Unknown projection transform '{transformName}'."
 
+let inline private accumulateSumProjectionTyped (transform: float -> float) (pixels: Span< ^T>) (values: float32[]) =
+    let mutable i = 0
+    while i < pixels.Length do
+        values[i] <- values[i] + float32 (transform (float pixels[i]))
+        i <- i + 1
+
 let chunkSumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     transformName
     : Stage<Chunk<'T>, Chunk<float32>> =
@@ -1401,7 +1407,6 @@ let chunkSumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: st
                                     invalidArg "chunk" $"chunkSumProjection expects 2D slice chunks with depth 1, got {chunk.Size}."
                                 let width = int widthU
                                 let height = int heightU
-                                let pixels = (Chunk.span chunk).ToArray()
                                 let accumulator =
                                     match state with
                                     | None ->
@@ -1414,8 +1419,29 @@ let chunkSumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: st
                                 match accumulator with
                                 | None -> return None
                                 | Some(_, _, values) ->
-                                    for i in 0 .. pixels.Length - 1 do
-                                        values[i] <- values[i] + float32 (transform (Convert.ToDouble pixels[i]))
+                                    let t = typeof<'T>
+                                    if t = typeof<uint8> then
+                                        accumulateSumProjectionTyped transform (MemoryMarshal.Cast<byte, uint8>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) values
+                                    elif t = typeof<int8> then
+                                        accumulateSumProjectionTyped transform (MemoryMarshal.Cast<byte, int8>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) values
+                                    elif t = typeof<uint16> then
+                                        accumulateSumProjectionTyped transform (MemoryMarshal.Cast<byte, uint16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) values
+                                    elif t = typeof<int16> then
+                                        accumulateSumProjectionTyped transform (MemoryMarshal.Cast<byte, int16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) values
+                                    elif t = typeof<uint32> then
+                                        accumulateSumProjectionTyped transform (MemoryMarshal.Cast<byte, uint32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) values
+                                    elif t = typeof<int32> then
+                                        accumulateSumProjectionTyped transform (MemoryMarshal.Cast<byte, int32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) values
+                                    elif t = typeof<uint64> then
+                                        accumulateSumProjectionTyped transform (MemoryMarshal.Cast<byte, uint64>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) values
+                                    elif t = typeof<int64> then
+                                        accumulateSumProjectionTyped transform (MemoryMarshal.Cast<byte, int64>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) values
+                                    elif t = typeof<float32> then
+                                        accumulateSumProjectionTyped transform (MemoryMarshal.Cast<byte, float32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) values
+                                    elif t = typeof<float> then
+                                        accumulateSumProjectionTyped transform (MemoryMarshal.Cast<byte, float>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) values
+                                    else
+                                        invalidArg "T" $"chunkSumProjection supports real numeric chunks, got {t.Name}."
                                     return accumulator
                             finally
                                 Chunk.decRef chunk
@@ -1902,7 +1928,8 @@ let histogramEqualization<'T when 'T: equality and 'T: comparison and 'T: (new: 
     | :? LeftEdgeHistogram as leftEdges ->
         histogramEqualizationLeftEdges<'T> leftEdges
     | :? Histogram<'T> as exact ->
-        histogramEqualizationSparse<'T> exact.Counts
+        let counts: Map<'T, uint64> = exact.Counts
+        histogramEqualizationSparse<'T> counts
     | :? Map<'T, uint64> as counts ->
         histogramEqualizationSparse<'T> counts
     | null ->
