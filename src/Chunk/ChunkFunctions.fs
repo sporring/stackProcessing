@@ -2000,6 +2000,106 @@ module ChunkFunctions =
         Vector.Widen(values, &lo32, &hi32)
         Vector.ConvertToSingle(lo32), Vector.ConvertToSingle(hi32)
 
+    let private thresholdUInt8Vector (threshold: byte) (inputPixels: Span<byte>) (outputPixels: Span<byte>) =
+        let width = Vector<byte>.Count
+        let vectorEnd = inputPixels.Length - inputPixels.Length % width
+        let thresholdVector = Vector<byte>(threshold)
+        let oneVector = Vector<byte>(1uy)
+        let mutable i = 0
+
+        while i < vectorEnd do
+            let values = Vector<byte>(inputPixels.Slice(i, width))
+            let mask = Vector.GreaterThanOrEqual(values, thresholdVector)
+            let selected: Vector<byte> = Vector.BitwiseAnd(mask, oneVector)
+            let mutable lane = 0
+            while lane < width do
+                outputPixels[i + lane] <- selected[lane]
+                lane <- lane + 1
+            i <- i + width
+
+        while i < inputPixels.Length do
+            outputPixels[i] <- if inputPixels[i] >= threshold then 1uy else 0uy
+            i <- i + 1
+
+    let private thresholdUInt16Vector (threshold: uint16) (inputPixels: Span<uint16>) (outputPixels: Span<uint16>) =
+        let width = Vector<uint16>.Count
+        let vectorEnd = inputPixels.Length - inputPixels.Length % width
+        let thresholdVector = Vector<uint16>(threshold)
+        let oneVector = Vector<uint16>(1us)
+        let mutable i = 0
+
+        while i < vectorEnd do
+            let values = Vector<uint16>(inputPixels.Slice(i, width))
+            let mask = Vector.GreaterThanOrEqual(values, thresholdVector)
+            Vector.BitwiseAnd(mask, oneVector).CopyTo(outputPixels.Slice(i, width))
+            i <- i + width
+
+        while i < inputPixels.Length do
+            outputPixels[i] <- if inputPixels[i] >= threshold then 1us else 0us
+            i <- i + 1
+
+    let private thresholdFloat32Vector (threshold: float32) (inputPixels: Span<float32>) (outputPixels: Span<float32>) =
+        let width = Vector<float32>.Count
+        let vectorEnd = inputPixels.Length - inputPixels.Length % width
+        let thresholdVector = Vector<float32>(threshold)
+        let oneVector = Vector<float32>(1.0f)
+        let zeroVector = Vector<float32>.Zero
+        let mutable i = 0
+
+        while i < vectorEnd do
+            let values = Vector<float32>(inputPixels.Slice(i, width))
+            let mask = Vector.GreaterThanOrEqual(values, thresholdVector)
+            Vector.ConditionalSelect(mask, oneVector, zeroVector).CopyTo(outputPixels.Slice(i, width))
+            i <- i + width
+
+        while i < inputPixels.Length do
+            outputPixels[i] <- if inputPixels[i] >= threshold then 1.0f else 0.0f
+            i <- i + 1
+
+    let private clampRoundFloat32ToUInt32Vector (maximum: float32) (values: Vector<float32>) =
+        let zero = Vector<float32>.Zero
+        let maximumV = Vector<float32>(maximum)
+        let finiteValues = Vector.ConditionalSelect(Vector.Equals(values, values), values, zero)
+        Vector.ConvertToUInt32(Vector.Round(Vector.Min(maximumV, Vector.Max(zero, finiteValues))))
+
+    let private castFloat32ToUInt16Vector (inputPixels: Span<float32>) (outputPixels: Span<uint16>) =
+        let floatWidth = Vector<float32>.Count
+        let outputWidth = Vector<uint16>.Count
+        let vectorEnd = inputPixels.Length - inputPixels.Length % outputWidth
+        let mutable i = 0
+
+        while i < vectorEnd do
+            let lo = clampRoundFloat32ToUInt32Vector 65535.0f (Vector<float32>(inputPixels.Slice(i, floatWidth)))
+            let hi = clampRoundFloat32ToUInt32Vector 65535.0f (Vector<float32>(inputPixels.Slice(i + floatWidth, floatWidth)))
+            Vector.NarrowWithSaturation(lo, hi).CopyTo(outputPixels.Slice(i, outputWidth))
+            i <- i + outputWidth
+
+        while i < inputPixels.Length do
+            outputPixels[i] <- clampRoundToUInt16 inputPixels[i]
+            i <- i + 1
+
+    let private castFloat32ToUInt8Vector (inputPixels: Span<float32>) (outputPixels: Span<byte>) =
+        let floatWidth = Vector<float32>.Count
+        let uint16Width = Vector<uint16>.Count
+        let byteWidth = Vector<byte>.Count
+        let vectorEnd = inputPixels.Length - inputPixels.Length % byteWidth
+        let mutable i = 0
+
+        while i < vectorEnd do
+            let a = clampRoundFloat32ToUInt32Vector 255.0f (Vector<float32>(inputPixels.Slice(i, floatWidth)))
+            let b = clampRoundFloat32ToUInt32Vector 255.0f (Vector<float32>(inputPixels.Slice(i + floatWidth, floatWidth)))
+            let c = clampRoundFloat32ToUInt32Vector 255.0f (Vector<float32>(inputPixels.Slice(i + 2 * floatWidth, floatWidth)))
+            let d = clampRoundFloat32ToUInt32Vector 255.0f (Vector<float32>(inputPixels.Slice(i + 3 * floatWidth, floatWidth)))
+            let lo16: Vector<uint16> = Vector.NarrowWithSaturation(a, b)
+            let hi16: Vector<uint16> = Vector.NarrowWithSaturation(c, d)
+            let mutable packed: Vector<byte> = Vector.NarrowWithSaturation(lo16, hi16)
+            MemoryMarshal.Write(outputPixels.Slice(i, byteWidth), &packed)
+            i <- i + byteWidth
+
+        while i < inputPixels.Length do
+            outputPixels[i] <- clampRoundToByte inputPixels[i]
+            i <- i + 1
+
     let thresholdNativeChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (threshold: double) (chunk: Chunk<'T>) =
         let output = Chunk.create<'T> chunk.Size
         try
@@ -2008,10 +2108,7 @@ module ChunkFunctions =
                 let threshold = byte (Math.Clamp(Math.Ceiling(threshold), 0.0, 255.0))
                 let inputPixels = chunk.Bytes.AsSpan(0, chunk.ByteLength)
                 let outputPixels = output.Bytes.AsSpan(0, output.ByteLength)
-                let mutable i = 0
-                while i < inputPixels.Length do
-                    outputPixels[i] <- if inputPixels[i] >= threshold then 1uy else 0uy
-                    i <- i + 1
+                thresholdUInt8Vector threshold inputPixels outputPixels
             elif t = typeof<int8> then
                 let threshold = sbyte (Math.Clamp(Math.Ceiling(threshold), float SByte.MinValue, float SByte.MaxValue))
                 let inputPixels = MemoryMarshal.Cast<byte, sbyte>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
@@ -2024,10 +2121,7 @@ module ChunkFunctions =
                 let threshold = uint16 (Math.Clamp(Math.Ceiling(threshold), 0.0, float UInt16.MaxValue))
                 let inputPixels = MemoryMarshal.Cast<byte, uint16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
                 let outputPixels = MemoryMarshal.Cast<byte, uint16>(output.Bytes.AsSpan(0, output.ByteLength))
-                let mutable i = 0
-                while i < inputPixels.Length do
-                    outputPixels[i] <- if inputPixels[i] >= threshold then 1us else 0us
-                    i <- i + 1
+                thresholdUInt16Vector threshold inputPixels outputPixels
             elif t = typeof<int16> then
                 let threshold = int16 (Math.Clamp(Math.Ceiling(threshold), float Int16.MinValue, float Int16.MaxValue))
                 let inputPixels = MemoryMarshal.Cast<byte, int16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
@@ -2048,10 +2142,7 @@ module ChunkFunctions =
                 let threshold = float32 threshold
                 let inputPixels = MemoryMarshal.Cast<byte, float32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
                 let outputPixels = MemoryMarshal.Cast<byte, float32>(output.Bytes.AsSpan(0, output.ByteLength))
-                let mutable i = 0
-                while i < inputPixels.Length do
-                    outputPixels[i] <- if inputPixels[i] >= threshold then 1.0f else 0.0f
-                    i <- i + 1
+                thresholdFloat32Vector threshold inputPixels outputPixels
             else
                 invalidArg "T" $"ChunkFunctions.thresholdNative supports Int8, UInt8, Int16, UInt16, Int32, and Float32 chunks, got {t.Name}."
             output
@@ -2117,10 +2208,7 @@ module ChunkFunctions =
                     i <- i + 1
             elif t = typeof<float32> then
                 let inputPixels = MemoryMarshal.Cast<byte, float32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
-                let mutable i = 0
-                while i < inputPixels.Length do
-                    outputPixels[i] <- clampRoundToByte inputPixels[i]
-                    i <- i + 1
+                castFloat32ToUInt8Vector inputPixels outputPixels
             elif t = typeof<float> then
                 let inputPixels = MemoryMarshal.Cast<byte, float>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
                 let mutable i = 0
@@ -2262,10 +2350,7 @@ module ChunkFunctions =
                 inputPixels.CopyTo(outputPixels)
             elif t = typeof<uint8> then
                 let outputPixels = output.Bytes.AsSpan(0, output.ByteLength)
-                let mutable i = 0
-                while i < inputPixels.Length do
-                    outputPixels[i] <- clampRoundToByte inputPixels[i]
-                    i <- i + 1
+                castFloat32ToUInt8Vector inputPixels outputPixels
             elif t = typeof<int8> then
                 let outputPixels = MemoryMarshal.Cast<byte, sbyte>(output.Bytes.AsSpan(0, output.ByteLength))
                 let mutable i = 0
@@ -2274,10 +2359,7 @@ module ChunkFunctions =
                     i <- i + 1
             elif t = typeof<uint16> then
                 let outputPixels = MemoryMarshal.Cast<byte, uint16>(output.Bytes.AsSpan(0, output.ByteLength))
-                let mutable i = 0
-                while i < inputPixels.Length do
-                    outputPixels[i] <- clampRoundToUInt16 inputPixels[i]
-                    i <- i + 1
+                castFloat32ToUInt16Vector inputPixels outputPixels
             elif t = typeof<int16> then
                 let outputPixels = MemoryMarshal.Cast<byte, int16>(output.Bytes.AsSpan(0, output.ByteLength))
                 let mutable i = 0

@@ -105,7 +105,8 @@ ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-threshold-parallel --pixel-type UInt8|UInt16|Float32 --input DIR --output DIR [--threshold X] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-histogram --pixel-type UInt8|UInt16|Float32 --input DIR --variant dense|sparse|leftedges [--window-size N] [--bins N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-simd-reductions --pixel-type UInt8|UInt16|Float32|Float64 --shape WxHxD [--variant computeStats-current|sum-scalar|moments-scalar|sum-vector|moments-vector|sum-vector-accurate|moments-vector-accurate] [--iterations N]
-  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-pixelwise-float32 --shape WxHxD [--variant scalar-add|vector-add|scalar-mul|vector-mul|scalar-pair-add|vector-pair-add|scalar-pair-mul|vector-pair-mul] [--iterations N]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-cast --shape WxHxD [--variant uint8-to-float32|uint16-to-float32|float32-to-uint8|float32-to-uint16] [--iterations N]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-pixelwise-float32 --shape WxHxD [--variant scalar-add|vector-add|scalar-mul|vector-mul|scalar-threshold|vector-threshold|scalar-pair-add|vector-pair-add|scalar-pair-mul|vector-pair-mul|scalar-absdiff|vector-absdiff|scalar-blend|vector-blend] [--iterations N]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-connected-components --input DIR [--output DIR] [--threshold X] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-dilate --input DIR --output DIR [--radius N] [--threshold X] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-convolve --pixel-type UInt8|Int8|UInt16|Int16|Float32 --input DIR --output DIR [--kernel-size N] [--workers N] [--available-memory BYTES]
@@ -5668,6 +5669,136 @@ let private runChunkSimdReductions opts =
     | ReductionFloat64 ->
         runChunkSimdReductionsTyped<float> (reductionPixelName pixelType) shape variant iterations fillReductionChunkFloat64 sumScalarChunkFloat64 momentsScalarChunkFloat64 (Some sumVectorChunkFloat64) (Some momentsVectorChunkFloat64) None None
 
+let private fillCastUInt8Chunk (chunk: StackCore.Chunk<uint8>) =
+    let values = StackCore.Chunk.span<uint8> chunk
+    let mutable i = 0
+    while i < values.Length do
+        values[i] <- uint8 ((i * 37 + i / 17) &&& 0xFF)
+        i <- i + 1
+
+let private fillCastUInt16Chunk (chunk: StackCore.Chunk<uint16>) =
+    let values = StackCore.Chunk.span<uint16> chunk
+    let mutable i = 0
+    while i < values.Length do
+        values[i] <- uint16 ((i * 7919 + i / 11) &&& 0xFFFF)
+        i <- i + 1
+
+let private fillCastFloat32Chunk (chunk: StackCore.Chunk<float32>) =
+    let values = StackCore.Chunk.span<float32> chunk
+    let mutable i = 0
+    while i < values.Length do
+        values[i] <- float32 (((i * 37 + i / 13) &&& 0x1FFFF) - 32768) / 2.0f
+        i <- i + 1
+
+let private checksumFloat32Chunk (chunk: StackCore.Chunk<float32>) =
+    let values = StackCore.Chunk.span<float32> chunk
+    let stride = max 1 (values.Length / 4096)
+    let mutable checksum = 2166136261u
+    let mutable i = 0
+    while i < values.Length do
+        checksum <- (checksum * 16777619u) ^^^ uint32 (int values[i])
+        i <- i + stride
+    int checksum
+
+let private checksumUInt8Chunk (chunk: StackCore.Chunk<uint8>) =
+    let values = StackCore.Chunk.span<uint8> chunk
+    let stride = max 1 (values.Length / 4096)
+    let mutable checksum = 2166136261u
+    let mutable i = 0
+    while i < values.Length do
+        checksum <- (checksum * 16777619u) ^^^ uint32 values[i]
+        i <- i + stride
+    int checksum
+
+let private checksumUInt16Chunk (chunk: StackCore.Chunk<uint16>) =
+    let values = StackCore.Chunk.span<uint16> chunk
+    let stride = max 1 (values.Length / 4096)
+    let mutable checksum = 2166136261u
+    let mutable i = 0
+    while i < values.Length do
+        checksum <- (checksum * 16777619u) ^^^ uint32 values[i]
+        i <- i + stride
+    int checksum
+
+let private runChunkCast opts =
+    let shape = require "shape" opts |> parseShape
+    let variant = optional "variant" "uint8-to-float32" opts
+    let iterations = optional "iterations" "10" opts |> int
+    if iterations < 1 then invalidArg "iterations" "Expected at least one iteration."
+
+    let size = (uint64 shape.Width, uint64 shape.Height, uint64 shape.Depth)
+    match variant with
+    | "uint8-to-float32" ->
+        let input = StackCore.Chunk.create<uint8> size
+        let mutable lastOutput : StackCore.Chunk<float32> option = None
+        let replaceOutput output =
+            lastOutput |> Option.iter StackCore.Chunk.decRef
+            lastOutput <- Some output
+        try
+            fillCastUInt8Chunk input
+            printfn "shape=%ux%ux%u values=%d inputBytes=%d iterations=%d" shape.Width shape.Height shape.Depth (StackCore.Chunk.span<uint8> input).Length input.ByteLength iterations
+            runTimedHotLoopMeasured
+                (int64 input.ByteLength + int64 input.ByteLength * int64 sizeof<float32>)
+                iterations
+                (fun () -> ChunkCore.ChunkFunctions.castChunkToFloat32 input |> replaceOutput)
+                (fun () -> lastOutput |> Option.map checksumFloat32Chunk |> Option.defaultValue 0)
+        finally
+            lastOutput |> Option.iter StackCore.Chunk.decRef
+            StackCore.Chunk.decRef input
+    | "uint16-to-float32" ->
+        let input = StackCore.Chunk.create<uint16> size
+        let mutable lastOutput : StackCore.Chunk<float32> option = None
+        let replaceOutput output =
+            lastOutput |> Option.iter StackCore.Chunk.decRef
+            lastOutput <- Some output
+        try
+            fillCastUInt16Chunk input
+            printfn "shape=%ux%ux%u values=%d inputBytes=%d iterations=%d" shape.Width shape.Height shape.Depth (StackCore.Chunk.span<uint16> input).Length input.ByteLength iterations
+            runTimedHotLoopMeasured
+                (int64 input.ByteLength + (int64 input.ByteLength / int64 sizeof<uint16>) * int64 sizeof<float32>)
+                iterations
+                (fun () -> ChunkCore.ChunkFunctions.castChunkToFloat32 input |> replaceOutput)
+                (fun () -> lastOutput |> Option.map checksumFloat32Chunk |> Option.defaultValue 0)
+        finally
+            lastOutput |> Option.iter StackCore.Chunk.decRef
+            StackCore.Chunk.decRef input
+    | "float32-to-uint8" ->
+        let input = StackCore.Chunk.create<float32> size
+        let mutable lastOutput : StackCore.Chunk<uint8> option = None
+        let replaceOutput output =
+            lastOutput |> Option.iter StackCore.Chunk.decRef
+            lastOutput <- Some output
+        try
+            fillCastFloat32Chunk input
+            printfn "shape=%ux%ux%u values=%d inputBytes=%d iterations=%d" shape.Width shape.Height shape.Depth (StackCore.Chunk.span<float32> input).Length input.ByteLength iterations
+            runTimedHotLoopMeasured
+                (int64 input.ByteLength + int64 input.ByteLength / int64 sizeof<float32>)
+                iterations
+                (fun () -> ChunkCore.ChunkFunctions.castFloat32ToChunk<uint8> input |> replaceOutput)
+                (fun () -> lastOutput |> Option.map checksumUInt8Chunk |> Option.defaultValue 0)
+        finally
+            lastOutput |> Option.iter StackCore.Chunk.decRef
+            StackCore.Chunk.decRef input
+    | "float32-to-uint16" ->
+        let input = StackCore.Chunk.create<float32> size
+        let mutable lastOutput : StackCore.Chunk<uint16> option = None
+        let replaceOutput output =
+            lastOutput |> Option.iter StackCore.Chunk.decRef
+            lastOutput <- Some output
+        try
+            fillCastFloat32Chunk input
+            printfn "shape=%ux%ux%u values=%d inputBytes=%d iterations=%d" shape.Width shape.Height shape.Depth (StackCore.Chunk.span<float32> input).Length input.ByteLength iterations
+            runTimedHotLoopMeasured
+                (int64 input.ByteLength + (int64 input.ByteLength / int64 sizeof<float32>) * int64 sizeof<uint16>)
+                iterations
+                (fun () -> ChunkCore.ChunkFunctions.castFloat32ToChunk<uint16> input |> replaceOutput)
+                (fun () -> lastOutput |> Option.map checksumUInt16Chunk |> Option.defaultValue 0)
+        finally
+            lastOutput |> Option.iter StackCore.Chunk.decRef
+            StackCore.Chunk.decRef input
+    | other ->
+        invalidArg "variant" $"Unsupported chunk cast variant '{other}'."
+
 let private fillPixelwiseFloat32Chunk seed (chunk: StackCore.Chunk<float32>) =
     let values = StackCore.Chunk.span<float32> chunk
     let mutable i = 0
@@ -5706,16 +5837,6 @@ let private scalarMap2Float32 name scalarOp (a: StackCore.Chunk<float32>) (b: St
         StackCore.Chunk.decRef output
         reraise()
 
-let private checksumFloat32Chunk (chunk: StackCore.Chunk<float32>) =
-    let values = StackCore.Chunk.span<float32> chunk
-    let stride = max 1 (values.Length / 4096)
-    let mutable checksum = 2166136261u
-    let mutable i = 0
-    while i < values.Length do
-        checksum <- (checksum * 16777619u) ^^^ uint32 (int values[i])
-        i <- i + stride
-    int checksum
-
 let private runChunkPixelwiseFloat32 opts =
     let shape = require "shape" opts |> parseShape
     let variant = optional "variant" "vector-add" opts
@@ -5737,7 +5858,10 @@ let private runChunkPixelwiseFloat32 opts =
         printfn "shape=%ux%ux%u values=%d inputBytes=%d iterations=%d" shape.Width shape.Height shape.Depth (StackCore.Chunk.span<float32> a).Length a.ByteLength iterations
         let bytesPerIteration =
             match variant with
-            | "scalar-pair-add" | "vector-pair-add" | "scalar-pair-mul" | "vector-pair-mul" -> int64 a.ByteLength * 3L
+            | "scalar-pair-add" | "vector-pair-add"
+            | "scalar-pair-mul" | "vector-pair-mul"
+            | "scalar-absdiff" | "vector-absdiff"
+            | "scalar-blend" | "vector-blend" -> int64 a.ByteLength * 3L
             | _ -> int64 a.ByteLength * 2L
         let action =
             match variant with
@@ -5745,10 +5869,35 @@ let private runChunkPixelwiseFloat32 opts =
             | "vector-add" -> fun () -> ChunkCore.ChunkFunctions.mapFloat32Vector "vectorAddFloat32" (fun x -> x + 3.25f) (fun v -> v + Vector<float32>(3.25f)) a |> replaceOutput
             | "scalar-mul" -> fun () -> scalarMapFloat32 "scalarMulFloat32" (fun x -> x * 1.25f) a |> replaceOutput
             | "vector-mul" -> fun () -> ChunkCore.ChunkFunctions.mapFloat32Vector "vectorMulFloat32" (fun x -> x * 1.25f) (fun v -> v * Vector<float32>(1.25f)) a |> replaceOutput
+            | "scalar-threshold" -> fun () -> scalarMapFloat32 "scalarThresholdFloat32" (fun x -> if x >= 128.0f then 1.0f else 0.0f) a |> replaceOutput
+            | "vector-threshold" ->
+                let threshold = Vector<float32>(128.0f)
+                let one = Vector<float32>(1.0f)
+                let zero = Vector<float32>.Zero
+                fun () ->
+                    ChunkCore.ChunkFunctions.mapFloat32Vector
+                        "vectorThresholdFloat32"
+                        (fun x -> if x >= 128.0f then 1.0f else 0.0f)
+                        (fun v -> Vector.ConditionalSelect(Vector.GreaterThanOrEqual(v, threshold), one, zero))
+                        a
+                    |> replaceOutput
             | "scalar-pair-add" -> fun () -> scalarMap2Float32 "scalarPairAddFloat32" (fun x y -> x + y) a b |> replaceOutput
             | "vector-pair-add" -> fun () -> ChunkCore.ChunkFunctions.map2Float32Vector "vectorPairAddFloat32" (fun x y -> x + y) (fun x y -> x + y) a b |> replaceOutput
             | "scalar-pair-mul" -> fun () -> scalarMap2Float32 "scalarPairMulFloat32" (fun x y -> x * y) a b |> replaceOutput
             | "vector-pair-mul" -> fun () -> ChunkCore.ChunkFunctions.map2Float32Vector "vectorPairMulFloat32" (fun x y -> x * y) (fun x y -> x * y) a b |> replaceOutput
+            | "scalar-absdiff" -> fun () -> scalarMap2Float32 "scalarAbsDiffFloat32" (fun x y -> abs (x - y)) a b |> replaceOutput
+            | "vector-absdiff" -> fun () -> ChunkCore.ChunkFunctions.map2Float32Vector "vectorAbsDiffFloat32" (fun x y -> abs (x - y)) (fun x y -> Vector.Abs(x - y)) a b |> replaceOutput
+            | "scalar-blend" -> fun () -> scalarMap2Float32 "scalarBlendFloat32" (fun x y -> if x >= 128.0f then x else y) a b |> replaceOutput
+            | "vector-blend" ->
+                let threshold = Vector<float32>(128.0f)
+                fun () ->
+                    ChunkCore.ChunkFunctions.map2Float32Vector
+                        "vectorBlendFloat32"
+                        (fun x y -> if x >= 128.0f then x else y)
+                        (fun x y -> Vector.ConditionalSelect(Vector.GreaterThanOrEqual(x, threshold), x, y))
+                        a
+                        b
+                    |> replaceOutput
             | other -> invalidArg "variant" $"Unsupported pixelwise float32 variant '{other}'."
         runTimedHotLoopMeasured bytesPerIteration iterations action (fun () -> lastOutput |> Option.map checksumFloat32Chunk |> Option.defaultValue 0)
     finally
@@ -6935,6 +7084,7 @@ let main args =
         | _ when args[0] = "run-chunk-threshold-parallel" -> args[1..] |> parseArgs |> runChunkThresholdParallelCollect
         | _ when args[0] = "run-chunk-histogram" -> args[1..] |> parseArgs |> runChunkHistogram
         | _ when args[0] = "run-chunk-simd-reductions" -> args[1..] |> parseArgs |> runChunkSimdReductions
+        | _ when args[0] = "run-chunk-cast" -> args[1..] |> parseArgs |> runChunkCast
         | _ when args[0] = "run-chunk-pixelwise-float32" -> args[1..] |> parseArgs |> runChunkPixelwiseFloat32
         | _ when args[0] = "run-chunk-connected-components" -> args[1..] |> parseArgs |> runChunkConnectedComponentsCommand
         | _ when args[0] = "run-chunk-dilate" -> args[1..] |> parseArgs |> runChunkDilate

@@ -834,6 +834,34 @@ let chunkSuite =
             finally
                 notted |> List.iter Chunk.decRef
 
+        testCase "ChunkFunctions.thresholdNative SIMD paths produce in-type binary chunks with tails" <| fun _ ->
+            let uint8Pixels = Array.init 103 (fun i -> byte ((i * 37 + 11) &&& 0xFF))
+            let uint8Input = chunkFromPixels 103 1 uint8Pixels
+            let uint8Output = runStageList (ChunkFunctions.thresholdNative<uint8> 127.0) [ uint8Input ]
+            try
+                let expected = uint8Pixels |> Array.map (fun value -> if value >= 127uy then 1uy else 0uy)
+                Expect.sequenceEqual ((Chunk.span<uint8> uint8Output[0]).ToArray()) expected "UInt8 thresholdNative should match scalar threshold semantics."
+            finally
+                uint8Output |> List.iter Chunk.decRef
+
+            let uint16Pixels = Array.init 131 (fun i -> uint16 ((i * 7919 + 1234) &&& 0xFFFF))
+            let uint16Input = chunkFromUInt16Pixels 131 1 uint16Pixels
+            let uint16Output = runStageList (ChunkFunctions.thresholdNative<uint16> 32768.0) [ uint16Input ]
+            try
+                let expected = uint16Pixels |> Array.map (fun value -> if value >= 32768us then 1us else 0us)
+                Expect.sequenceEqual ((Chunk.span<uint16> uint16Output[0]).ToArray()) expected "UInt16 thresholdNative should match scalar threshold semantics."
+            finally
+                uint16Output |> List.iter Chunk.decRef
+
+            let float32Pixels = Array.init 137 (fun i -> float32 ((i * 17) % 257) - 128.0f)
+            let float32Input = chunkFromFloat32Pixels 137 1 float32Pixels
+            let float32Output = runStageList (ChunkFunctions.thresholdNative<float32> 0.5) [ float32Input ]
+            try
+                let expected = float32Pixels |> Array.map (fun value -> if value >= 0.5f then 1.0f else 0.0f)
+                Expect.sequenceEqual ((Chunk.span<float32> float32Output[0]).ToArray()) expected "Float32 thresholdNative should match scalar threshold semantics."
+            finally
+                float32Output |> List.iter Chunk.decRef
+
         testCase "ChunkFunctions Float32 intensity stages use span-sized outputs" <| fun _ ->
             let shiftedInput = chunkFromFloat32Pixels 4 1 [| -1.0f; 0.0f; 1.0f; 2.0f |]
             let shifted = runStageList (ChunkFunctions.shiftScaleFloat32 (1.0: double) (2.0: double)) [ shiftedInput ]
@@ -1864,6 +1892,49 @@ let chunkSuite =
                 Expect.sequenceEqual ((Chunk.span<int8> output[0]).ToArray()) [| SByte.MinValue; -5y; 13y; SByte.MaxValue |] "Int8 narrowing should round and clamp signed values."
             finally
                 output |> List.iter Chunk.decRef
+
+        testCase "ChunkFunctions castFromFloat32 narrows UInt8 and UInt16 with scalar clamp-round semantics" <| fun _ ->
+            let width = 2 * System.Numerics.Vector<byte>.Count + 7
+            let pixels =
+                Array.init width (fun i ->
+                    match i with
+                    | 0 -> Single.NaN
+                    | 1 -> -1.0f
+                    | 2 -> 0.5f
+                    | 3 -> 1.5f
+                    | 4 -> 2.5f
+                    | 5 -> 254.6f
+                    | 6 -> 255.6f
+                    | 7 -> 65534.5f
+                    | 8 -> 65534.6f
+                    | 9 -> 70000.0f
+                    | _ -> float32 ((i * 37) % 70000) + if i % 2 = 0 then 0.5f else 0.25f)
+
+            let inputForUInt8 = chunkFromFloat32Pixels width 1 pixels
+            let uint8Output = runStageList ChunkFunctions.castFromFloat32<uint8> [ inputForUInt8 ]
+            try
+                let expected =
+                    pixels
+                    |> Array.map (fun value ->
+                        if Single.IsNaN value || value <= 0.0f then 0uy
+                        elif value >= 255.0f then 255uy
+                        else uint8 (MathF.Round value))
+                Expect.sequenceEqual ((Chunk.span<uint8> uint8Output[0]).ToArray()) expected "UInt8 narrowing should preserve NaN, clamp, and to-even rounding semantics."
+            finally
+                uint8Output |> List.iter Chunk.decRef
+
+            let inputForUInt16 = chunkFromFloat32Pixels width 1 pixels
+            let uint16Output = runStageList ChunkFunctions.castFromFloat32<uint16> [ inputForUInt16 ]
+            try
+                let expected =
+                    pixels
+                    |> Array.map (fun value ->
+                        if Single.IsNaN value || value <= 0.0f then 0us
+                        elif value >= 65535.0f then 65535us
+                        else uint16 (MathF.Round value))
+                Expect.sequenceEqual ((Chunk.span<uint16> uint16Output[0]).ToArray()) expected "UInt16 narrowing should preserve NaN, clamp, and to-even rounding semantics."
+            finally
+                uint16Output |> List.iter Chunk.decRef
 
         testCase "ChunkFunctions.convolveFixedKernel supports Int32 chunks" <| fun _ ->
             let kernel = Array3D.zeroCreate<float32> 1 1 3

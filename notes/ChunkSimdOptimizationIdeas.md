@@ -225,8 +225,9 @@ The `float32` "accurate" variants widen the `float32` lanes to `float` lanes
 before accumulating `sum` and `sumSq`. In the focused benchmark, the accurate
 moments variant was only modestly slower than the fast float-lane variant and
 matched the scalar moments checksum, while the fast float-lane moments checksum
-differed slightly. This makes the widened `float32 -> float` variant the more
-credible production candidate.
+differed slightly. The production implementation therefore uses a stability-first
+two-pass `float32` vector path rather than the fastest cancellation-prone
+variant.
 
 Widened integer SIMD results, same shape:
 
@@ -236,28 +237,22 @@ Widened integer SIMD results, same shape:
 | `moments-vector` | ~0.020 s/iter | ~0.031 s/iter |
 
 The integer variants widen before accumulation and periodically flush partial
-lane sums so the vector accumulators cannot overflow on larger chunks. `uint8`
-is a very strong candidate. `uint16` still improves meaningfully, but its
-`sumSq` path is heavier because squared `uint16` values need `uint64`
-accumulators.
+lane sums so the vector accumulators cannot overflow on larger chunks. Both
+`uint8` and `uint16` are now production-vectorized. The `uint16` `sumSq` path is
+heavier because squared `uint16` values need `uint64` accumulators.
 
 Compared with the old Welford-based `computeStats`, scalar moments are about 5x
 faster, `float32` vector moments are about 20x faster, and `float64` vector
 moments are about 9.5x faster. Compared with the new production scalar path,
 SIMD still offers about 3.8x for `float32` and about 1.9x for `float64`.
 
-The production SIMD decision needs care:
+Remaining numerical policy questions:
 
 - SIMD changes accumulation order, so exact low-bit agreement is not expected.
-- The fastest `float32` vector experiment accumulates in `float32` lanes before
-  converting to `float`, which is fast but less accurate than the scalar
-  `float` accumulator.
-- The widened `float32 -> float` vector variant is a better production
-  candidate because it preserves the scalar accumulator type for `sum` and
-  `sumSq`.
-- Integer SIMD reductions need widening (`uint8`/`uint16` -> larger lanes) to
-  avoid overflow. The benchmark now does this, including periodic flushes of
-  partial accumulators.
+- The production `float32` path deliberately uses the more stable two-pass
+  vector algorithm instead of the fastest `sumSq - sum*sum/n` variant.
+- Integer SIMD reductions widen (`uint8`/`uint16` -> larger lanes) and
+  periodically flush partial accumulators to avoid vector-lane overflow.
 
 Good next reduction experiments:
 
@@ -266,8 +261,9 @@ Good next reduction experiments:
    behavior is explicit.
 2. Track effective GB/s and allocated bytes for article-facing reduction runs;
    the focused benchmark now reports both.
-3. Consider whether `float64` should stay vectorized in production or keep the
-   scalar path for maximum reproducibility. The speedup is smaller, but real.
+3. Keep an eye on `float64` reproducibility if article-facing numbers require
+   bit-level repeatability across hardware. The production vector path is fast,
+   but SIMD accumulation order is still different from scalar order.
 4. Consider a pairwise/block compensated variant if future data shows
    `float64` or `float32` statistics are still too sensitive to accumulation
    order.
@@ -296,8 +292,11 @@ Current status:
 - Existing `float32` unary stages such as `abs`, `sqrt`, `square`,
   `shiftScale`, `clamp`, intensity window, and invert already use
   `Vector<float32>`.
+- `thresholdNative` now uses SIMD kernels for in-type `uint8`, `uint16`, and
+  `float32` 0/1 threshold images. Signed integer cases remain on the scalar
+  path for now.
 - A focused benchmark command exists:
-  `run-chunk-pixelwise-float32 --shape WxHxD --variant scalar-add|vector-add|scalar-mul|vector-mul|scalar-pair-add|vector-pair-add|scalar-pair-mul|vector-pair-mul`.
+  `run-chunk-pixelwise-float32 --shape WxHxD --variant scalar-add|vector-add|scalar-mul|vector-mul|scalar-threshold|vector-threshold|scalar-pair-add|vector-pair-add|scalar-pair-mul|vector-pair-mul|scalar-absdiff|vector-absdiff|scalar-blend|vector-blend`.
 
 Focused benchmark, `1024x1024x64`, 67,108,864 values:
 
@@ -305,8 +304,11 @@ Focused benchmark, `1024x1024x64`, 67,108,864 values:
 |---|---:|---:|
 | unary add | ~0.164 s/iter | ~0.149 s/iter |
 | unary multiply | ~0.042 s/iter | ~0.022 s/iter |
+| in-type threshold | ~0.055 s/iter | ~0.022 s/iter |
 | pairwise add | ~0.258 s/iter | ~0.131 s/iter |
 | pairwise multiply | ~0.229 s/iter | ~0.066 s/iter |
+| absolute difference | ~0.241 s/iter | ~0.104 s/iter |
+| compare-select blend | ~0.212 s/iter | ~0.070 s/iter |
 
 The exact numbers vary with ArrayPool state and memory pressure because these
 kernels allocate a new output chunk each iteration. The robust conclusion is
@@ -315,9 +317,12 @@ substantially; simple unary add is mostly memory-bandwidth-bound but not worse.
 
 Good next pixelwise experiments:
 
-1. Add SIMD threshold/comparison to binary mask for `uint8`, `uint16`, and
-   `float32`, with output type policy made explicit.
-2. Add `absdiff`, `blend/select`, and min/max benchmarks.
+1. Add a separate comparison-to-`uint8` mask benchmark. The in-type threshold
+   path is now vectorized, but pair comparisons such as `greaterEqual<float32>`
+   produce compact byte masks, which need different packing/store decisions.
+2. Promote `absdiff` and `blend/select` only when there is a natural production
+   API. The benchmark evidence is strong, but adding loose API surface just for
+   SIMD would make the library harder to read.
 3. For integer arithmetic, benchmark before promoting: overflow/clamp semantics
    matter and SIMD may need widening or saturating logic.
 4. Separate kernel-only benchmarks from production allocation benchmarks, so we
@@ -383,7 +388,7 @@ lane shuffles must be measured carefully.
 
 ### Copy and Cast Paths
 
-Candidates:
+Implemented hot conversions:
 
 - `uint8 -> float32`
 - `uint16 -> float32`
@@ -400,6 +405,45 @@ cast-on-read and cast-on-write should preserve the Chunk `byte[]` ownership
 model. The fast path should read into a pooled Chunk buffer and transform
 directly into the destination Chunk buffer, not materialize old image classes or
 temporary typed arrays.
+
+Current status:
+
+- The core cast stages are Chunk-native. `castToFloat32`, `castFromFloat32`,
+  `castToUInt8`, StackProcessing `cast<'S,'T>`, and StackIO cast-on-read/write
+  all route through Chunk buffers for the hot cases. The inspected paths do not
+  materialize old `Image` classes or temporary typed arrays.
+- `uint8 -> float32` and `uint16 -> float32` already use widened SIMD:
+  byte/ushort lanes are widened through integer lanes and converted to
+  `float32` directly into the destination Chunk buffer.
+- `float32 -> uint8` and `float32 -> uint16` now use SIMD clamp, NaN-to-zero,
+  to-even rounding, unsigned conversion, and saturating narrow before writing
+  directly into the destination Chunk buffer. Scalar tails keep the same
+  clamp-round helpers, and tests cover NaN, saturation, and midpoint rounding.
+- A focused benchmark command exists:
+  `run-chunk-cast --shape WxHxD --variant uint8-to-float32|uint16-to-float32|float32-to-uint8|float32-to-uint16`.
+
+Focused benchmark, `1024x1024x64`, 67,108,864 values:
+
+| Variant | Time | Effective GB/s |
+|---|---:|---:|
+| `uint8 -> float32` | ~0.043 s/iter | ~7.8 GB/s |
+| `uint16 -> float32` | ~0.057 s/iter | ~7.1 GB/s |
+| `float32 -> uint8` | ~0.017 s/iter | ~20.1 GB/s |
+| `float32 -> uint16` | ~0.021 s/iter | ~19.3 GB/s |
+
+The upcast paths allocate a larger output chunk and therefore report higher
+allocated bytes per iteration. That is expected and reflects the real cast
+memory pressure; it is not evidence of temporary arrays.
+
+Remaining cast questions:
+
+1. Keep the specialized `castToFloat32`/`castFromFloat32` route preferred for
+   common IO and Studio casts. The fully generic `castChunk<'S,'T>` is still a
+   scalar double bridge for uncommon type pairs.
+2. Add new cast specializations only when a measured workflow uses the generic
+   bridge heavily enough to justify the extra code.
+3. Preserve the Chunk `byte[]` ownership contract for all future cast-on-read
+   and cast-on-write work.
 
 ### Endian Swap And Format Repair
 
@@ -472,20 +516,26 @@ Add small focused benchmarks before changing user-facing stages:
      only if the portable version remains important and stable
 
 2. `chunk-simd-pixelwise`
-   - current status: focused `float32` benchmark covers scalar/vector unary and
-     pairwise add/multiply
+   - current status: focused `float32` benchmark covers scalar/vector unary
+     add/multiply, in-type threshold, pairwise add/multiply, absdiff, and
+     blend/select
    - current status: production float32 arithmetic stages dispatch to
      SIMD-backed kernels
-   - next: threshold/comparison, absdiff, blend/select, and integer semantics
+   - current status: production `thresholdNative` uses SIMD for in-type
+     `uint8`, `uint16`, and `float32`
+   - next: comparison-to-compact-`uint8` masks and integer arithmetic semantics
 
 3. `chunk-simd-vector`
    - next: vector dot/magnitude/angle for 3-component float32 vector chunks
    - next: compare current interleaved layout against component-plane ceiling
 
 4. `chunk-simd-cast`
-   - `uint8 <-> float32`
-   - `uint16 <-> float32`
-   - include peak memory and allocation counts
+   - current status: focused benchmark covers `uint8 -> float32`,
+     `uint16 -> float32`, `float32 -> uint8`, and `float32 -> uint16`
+   - current status: production Chunk cast paths are SIMD-specialized for
+     those four conversions
+   - next: only specialize more casts if a measured workflow hits the generic
+     scalar bridge
 
 5. `chunk-plane-row-kernels`
    - row-major x pass
