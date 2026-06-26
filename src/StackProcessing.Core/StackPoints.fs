@@ -27,10 +27,7 @@ type PointSet =
 module PointSet =
     let empty = { Points = [] }
 
-type VectorizedMatrix =
-    { Rows: uint
-      Columns: uint
-      Values: float list }
+type VectorizedMatrix = StackCore.VectorizedMatrix
 
 let private invariant = CultureInfo.InvariantCulture
 

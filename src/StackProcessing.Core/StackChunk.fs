@@ -851,6 +851,178 @@ let selectGroupedVectorOutput<'T when 'T: equality>
         (fun slices -> (slices + uint64 groupSize - 1UL) / uint64 groupSize)
     --> flattenList ()
 
+let covarianceMatrix : Stage<VectorChunk<float32>, VectorizedMatrix> =
+    let reducer (_debug: bool) (input: AsyncSeq<VectorChunk<float32>>) =
+        async {
+            let mutable count = 0UL
+            let mutable sx = 0.0
+            let mutable sy = 0.0
+            let mutable sz = 0.0
+            let mutable sxx = 0.0
+            let mutable sxy = 0.0
+            let mutable sxz = 0.0
+            let mutable syy = 0.0
+            let mutable syz = 0.0
+            let mutable szz = 0.0
+
+            let accumulate (vector: VectorChunk<float32>) =
+                if Chunk.vectorComponentCount vector <> 3u then
+                    invalidArg "vector" $"chunkCovarianceMatrix expected 3-component vector chunks, got {Chunk.vectorComponentCount vector}."
+
+                let xPixels = Chunk.span<float32> vector.Components[0]
+                let yPixels = Chunk.span<float32> vector.Components[1]
+                let zPixels = Chunk.span<float32> vector.Components[2]
+                let spatialCount = xPixels.Length
+
+                if yPixels.Length <> spatialCount || zPixels.Length <> spatialCount then
+                    invalidArg "vector" "chunkCovarianceMatrix expected all vector components to have the same spatial size."
+
+                let mutable i = 0
+                while i < spatialCount do
+                    let x = float xPixels[i]
+                    let y = float yPixels[i]
+                    let z = float zPixels[i]
+                    sx <- sx + x
+                    sy <- sy + y
+                    sz <- sz + z
+                    sxx <- sxx + x * x
+                    sxy <- sxy + x * y
+                    sxz <- sxz + x * z
+                    syy <- syy + y * y
+                    syz <- syz + y * z
+                    szz <- szz + z * z
+                    i <- i + 1
+
+                count <- count + uint64 spatialCount
+
+            do!
+                input
+                |> AsyncSeq.iterAsync (fun vector ->
+                    async {
+                        try
+                            accumulate vector
+                        finally
+                            Chunk.decRefVector vector
+                    })
+
+            if count = 0UL then
+                invalidOp "chunkCovarianceMatrix cannot reduce an empty vector sequence."
+
+            let n = float count
+            let mx = sx / n
+            let my = sy / n
+            let mz = sz / n
+            let xx = sxx / n - mx * mx
+            let xy = sxy / n - mx * my
+            let xz = sxz / n - mx * mz
+            let yy = syy / n - my * my
+            let yz = syz / n - my * mz
+            let zz = szz / n - mz * mz
+
+            return
+                [ { Rows = 3u
+                    Columns = 3u
+                    Values =
+                        [ xx; xy; xz
+                          xy; yy; yz
+                          xz; yz; zz ] } ]
+        }
+
+    Stage.reduce
+        "chunkCovarianceMatrix"
+        reducer
+        Streaming
+        (fun _ -> 6UL * chunkMemoryNeed<float32> 1UL)
+        (fun _ -> 1UL)
+    --> flattenList ()
+
+let symmetricMatrixEigenbasis (matrix: VectorizedMatrix) : VectorizedMatrix =
+    if matrix.Rows <> matrix.Columns then
+        invalidArg "matrix" $"symmetricMatrixEigenbasis expects a square matrix, got {matrix.Rows}x{matrix.Columns}."
+    let n = int matrix.Rows
+    if n < 2 then
+        invalidArg "matrix" $"symmetricMatrixEigenbasis expects at least two dimensions, got {n}."
+    if matrix.Values.Length <> n * n then
+        invalidArg "matrix" $"symmetricMatrixEigenbasis expected {n * n} values, got {matrix.Values.Length}."
+
+    let values = matrix.Values |> List.toArray
+    let dense = Array2D.zeroCreate<float> n n
+    for row in 0 .. n - 1 do
+        for column in 0 .. n - 1 do
+            dense[row, column] <- values[row * n + column]
+
+    let eigen = symmetricEigenN dense
+    { Rows = uint eigen.Length
+      Columns = matrix.Columns
+      Values =
+        [ for _, vector in eigen do
+            yield! vector ] }
+
+let symmetricMatrixEigenvalues (matrix: VectorizedMatrix) : float list =
+    if matrix.Rows <> matrix.Columns then
+        invalidArg "matrix" $"symmetricMatrixEigenvalues expects a square matrix, got {matrix.Rows}x{matrix.Columns}."
+    let n = int matrix.Rows
+    if matrix.Values.Length <> n * n then
+        invalidArg "matrix" $"symmetricMatrixEigenvalues expected {n * n} values, got {matrix.Values.Length}."
+
+    let values = matrix.Values |> List.toArray
+    let dense = Array2D.zeroCreate<float> n n
+    for row in 0 .. n - 1 do
+        for column in 0 .. n - 1 do
+            dense[row, column] <- values[row * n + column]
+
+    symmetricEigenN dense |> List.map fst
+
+let projectVectorBasisFloat32 (basis: VectorizedMatrix) : Stage<VectorChunk<float32>, VectorChunk<float32>> =
+    let rows = int basis.Rows
+    let columns = int basis.Columns
+    if rows <> 3 || columns <> 3 then
+        invalidArg "basis" $"projectVectorBasisFloat32 currently expects a 3x3 basis matrix, got {basis.Rows}x{basis.Columns}."
+    if basis.Values.Length <> 9 then
+        invalidArg "basis" $"projectVectorBasisFloat32 expected 9 basis values, got {basis.Values.Length}."
+    let weights = basis.Values |> List.map float32 |> List.toArray
+
+    let mapper (vector: VectorChunk<float32>) =
+        let components = int (Chunk.vectorComponentCount vector)
+        if components <> 3 then
+            invalidArg "vector" $"projectVectorBasisFloat32 expected 3-component vector chunks, got {components}."
+
+        let xPixels = Chunk.span<float32> vector.Components[0]
+        let yPixels = Chunk.span<float32> vector.Components[1]
+        let zPixels = Chunk.span<float32> vector.Components[2]
+        let spatialCount = xPixels.Length
+        if yPixels.Length <> spatialCount || zPixels.Length <> spatialCount then
+            invalidArg "vector" "projectVectorBasisFloat32 expected all vector components to have the same spatial size."
+
+        let output = Array.init 3 (fun _ -> Chunk.create<float32> vector.SpatialSize)
+        try
+            let out0 = Chunk.span<float32> output[0]
+            let out1 = Chunk.span<float32> output[1]
+            let out2 = Chunk.span<float32> output[2]
+            let mutable i = 0
+            while i < spatialCount do
+                let x = xPixels[i]
+                let y = yPixels[i]
+                let z = zPixels[i]
+                out0[i] <- weights[0] * x + weights[1] * y + weights[2] * z
+                out1[i] <- weights[3] * x + weights[4] * y + weights[5] * z
+                out2[i] <- weights[6] * x + weights[7] * y + weights[8] * z
+                i <- i + 1
+
+            let outputVector: VectorChunk<float32> =
+                { SpatialSize = vector.SpatialSize
+                  Components = output }
+            outputVector
+        with
+        | _ ->
+            output |> Array.iter Chunk.decRef
+            reraise()
+
+    releaseUnaryVectorToVectorChunk
+        "chunkProjectVectorBasisFloat32"
+        mapper
+        (fun n -> 6UL * chunkMemoryNeed<float32> n)
+
 let vectorDotFloat32 : Stage<VectorChunk<float32> * VectorChunk<float32>, Chunk<float32>> =
     releaseBinaryVectorChunk
         "chunkVectorDotFloat32"

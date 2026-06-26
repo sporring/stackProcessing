@@ -1550,24 +1550,25 @@ module BuiltInCatalog =
           Outputs = [ makePort "Eigenvector Float32" vectorImageFloat32 ]
           Parameters = [ makeParameter "eigenIndex" "Eigen index" "0" (BasicType.Numeric UInt32) ] }
 
+        { Id = "CovarianceMatrix"
+          DisplayName = "covarianceMatrix"
+          Category = "Vector Images"
+          Summary = "Reduce three-component vector chunks to one covariance matrix."
+          Description = "Computes one covariance matrix over all positions in a Float32 three-component vector stream and emits it as a Float64 matrix. This is a global reducer, not a per-chunk image stage."
+          Aliases = [ "pca"; "covariance"; "matrix"; "principal"; "component"; "eigen"; "vector"; "reducer" ]
+          Inputs = [ makePort "Vector Float32" vectorImageFloat32 ]
+          Outputs = [ makePort "Covariance matrix" float64Matrix ]
+          Parameters = [] }
+
         { Id = "PCA"
           DisplayName = "PCA"
           Category = "Vector Images"
-          Summary = "Reduce vector images to a principal-component eigensystem."
-          Description = "Computes principal component analysis over all Float32 vector pixels in the input stream. Components selects the vector dimensionality, from 2 to 8 in Studio. The reducer emits singleton Float32 vector streams: eigenvalues followed by one eigenvector stream per component, sorted by descending eigenvalue."
+          Summary = "Reduce vector images to a covariance matrix."
+          Description = "Computes one covariance matrix over all Float32 vector pixels in the input stream. Diagonalize this global matrix once, then project the original vector stream into the resulting eigenbasis."
           Aliases = [ "pca"; "principal"; "component"; "covariance"; "eigen"; "vector"; "reducer" ]
           Inputs = [ makePort "Vector Float32" vectorImageFloat32 ]
-          Outputs =
-            [ makePort "Eigenvalues" vectorImageFloat32
-              makePort "Eigenvector 0" vectorImageFloat32
-              makePort "Eigenvector 1" vectorImageFloat32
-              makePort "Eigenvector 2" vectorImageFloat32
-              makePort "Eigenvector 3" vectorImageFloat32
-              makePort "Eigenvector 4" vectorImageFloat32
-              makePort "Eigenvector 5" vectorImageFloat32
-              makePort "Eigenvector 6" vectorImageFloat32
-              makePort "Eigenvector 7" vectorImageFloat32 ]
-          Parameters = [ makeParameter "components" "Components" "3" (BasicType.Numeric UInt32) ] }
+          Outputs = [ makePort "Covariance matrix" float64Matrix ]
+          Parameters = [] }
 
         { Id = "SmoothWGauss"
           DisplayName = "smoothWGauss"

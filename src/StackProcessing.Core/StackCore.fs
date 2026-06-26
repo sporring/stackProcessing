@@ -31,6 +31,11 @@ type Histogram<'T when 'T: comparison> =
     { Counts: Map<'T, uint64>
       Binning: HistogramBinning option }
 
+type VectorizedMatrix =
+    { Rows: uint
+      Columns: uint
+      Values: float list }
+
 type ImageStats =
     { NumPixels: uint64
       Mean: float

@@ -3014,7 +3014,7 @@ let main args =
                                      |> read<float32> inputDir ".tiff"
                                      >=> gradientMagnitude<float32> (Some 7u)
                                      >=> intensityStretch 0.0 255.0 0.0 255.0
-                                     >=> castTo<uint8>
+                                     >=> cast<_, uint8>
                                      >=> write (outputDir size "bio-edge-filter-float-write") ".tiff")
 
                        yield runSinkProbe
@@ -3038,7 +3038,7 @@ let main args =
                                      |> read<float32> inputDir ".tiff"
                                      >=> smoothWGauss canonicalSigma None None None
                                      >=> intensityStretch 0.0 255.0 0.0 255.0
-                                     >=> castTo<uint8>
+                                     >=> cast<_, uint8>
                                      >=> threshold<uint8> 128.0 infinity
                                      >=> write (outputDir size "bio-background-mask-float-write") ".tiff")
 
@@ -3062,7 +3062,7 @@ let main args =
                                      |> read<uint8> inputDir ".tiff"
                                      >=> sumProjection<uint8> "Identity"
                                      >=> intensityStretch 0.0 255.0 0.0 255.0
-                                     >=> castTo<uint8>
+                                     >=> cast<_, uint8>
                                      >=> write (outputDir size "bio-projection-inspection-uint8-write") ".tiff")
 
                        if includeNonBoilerplate then
@@ -3126,7 +3126,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> shotNoise<float32> size.Width size.Height size.Depth 2.0
-                                         >=> castTo<uint8>
+                                         >=> cast<_, uint8>
                                          >=> write (outputDir size "shot-noise-float-write") ".tiff")
 
                            yield runSinkProbe
@@ -3250,7 +3250,7 @@ let main args =
                                          >=> sobelEdge<float32> (Some 7u)
                                          >=> laplacian<float32> (Some 7u)
                                          >=> intensityStretch 0.0 255.0 0.0 255.0
-                                         >=> castTo<uint8>
+                                         >=> cast<_, uint8>
                                          >=> write (outputDir size "filters-float-write") ".tiff")
 
                            let readUInt8Feature =
@@ -3327,7 +3327,7 @@ let main args =
                                          source availableMemory
                                          |> normalNoise<float32> size.Width size.Height size.Depth 128.0 25.0
                                          |> resample<float32> 1.5 1.5 1.5 "Linear"
-                                         >=> castTo<uint8>
+                                         >=> cast<_, uint8>
                                          >=> write (outputDir size "resample-float32-write") ".tiff")
 
                if
@@ -3401,7 +3401,7 @@ let main args =
                                      |> zero<float32> size.Width size.Height size.Depth
                                      >=> imageAddScalar 4.0f
                                      >=> sqrt<float32>
-                                     >=> castTo<uint8>
+                                     >=> cast<_, uint8>
                                      >=> write (outputDir size "sqrt-float-write") ".tiff")
 
                        for windowSize in unaryWindowSizes do
@@ -3431,7 +3431,7 @@ let main args =
                                          |> zero<float32> size.Width size.Height size.Depth
                                          >=> imageAddScalar 4.0f
                                          >=> sqrtWindowed<float32> windowSize
-                                         >=> castTo<uint8>
+                                         >=> cast<_, uint8>
                                          >=> write (outputDir size $"sqrt-windowed-float-write-win-{windowSize}") ".tiff")
 
                        if not options.SqrtOnly then
@@ -3449,7 +3449,7 @@ let main args =
                                          source availableMemory
                                          |> read<float32> inputDir ".tiff"
                                              >=> smoothWGauss canonicalSigma None None (Some windowSize)
-                                             >=> castTo<uint8>
+                                             >=> cast<_, uint8>
                                             >=> write (outputDir size $"smoothWGauss-read-float32-cast-write-win-{windowSize}") ".tiff")
 
                () |]

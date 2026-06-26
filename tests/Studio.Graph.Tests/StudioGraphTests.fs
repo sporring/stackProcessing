@@ -172,6 +172,7 @@ let catalogSuite =
             let symmetricMatrixEigensystem = BuiltInCatalog.find "SymmetricMatrixEigensystem"
             let symmetricMatrixEigenvalues = BuiltInCatalog.find "SymmetricMatrixEigenvalues"
             let symmetricMatrixEigenvector = BuiltInCatalog.find "SymmetricMatrixEigenvector"
+            let covarianceMatrix = BuiltInCatalog.find "CovarianceMatrix"
             let pca = BuiltInCatalog.find "PCA"
 
             Expect.equal toVectorImage.Outputs.[0].Type vectorType "toVectorImage should emit a vector-valued image stream."
@@ -200,9 +201,11 @@ let catalogSuite =
             Expect.equal symmetricMatrixEigenvalues.Outputs.[0].Type (PortType.Custom "VectorImageFloat32") "symmetricMatrixEigenvalues should expose one Float32 three-component eigenvalue vector output."
             Expect.equal symmetricMatrixEigenvector.Inputs.[0].Type (PortType.Custom "VectorImageFloat32") "symmetricMatrixEigenvector should consume Float32 vector-valued tensor chunks."
             Expect.equal symmetricMatrixEigenvector.Outputs.[0].Type (PortType.Custom "VectorImageFloat32") "symmetricMatrixEigenvector should expose one Float32 three-component vector output."
+            Expect.equal covarianceMatrix.Inputs.[0].Type (PortType.Custom "VectorImageFloat32") "covarianceMatrix should consume Float32 vector-valued chunks."
+            Expect.equal covarianceMatrix.Outputs.[0].Type (PortType.Custom "Float64Matrix") "covarianceMatrix should expose one global Float64 matrix."
             Expect.equal pca.Inputs.[0].Type (PortType.Custom "VectorImageFloat32") "PCA should consume Float32 vector-valued chunks."
-            Expect.equal pca.Outputs.Length 9 "PCA should expose eigenvalues plus up to eight eigenvector outputs."
-            Expect.equal (pca.Outputs |> List.map _.Type) (List.replicate 9 (PortType.Custom "VectorImageFloat32")) "PCA outputs should be Float32 vector-valued chunks."
+            Expect.equal pca.Outputs.Length 1 "PCA should expose one global covariance matrix output."
+            Expect.equal pca.Outputs.[0].Type (PortType.Custom "Float64Matrix") "PCA output should be a Float64 matrix."
 
         testCase "complex image catalog uses complex and Float64 ports" <| fun _ ->
             let fromReIm = BuiltInCatalog.find "ComplexFromReIm"

@@ -1939,16 +1939,33 @@ let generatorSuite =
                 graph
                     [ read "x" "x"; read "y" "y"
                       node "toVector" "ToVectorImage" []
-                      node "pca" "PCA" [ p "components" "3" false ]
-                      write ]
+                      node "pca" "PCA" []
+                      node "writeMatrix" "WriteMatrix" [ p "output" "pca" false; p "suffix" ".csv" false ] ]
                     [ edge "x" "output" 0 "toVector" "I" 0
                       edge "y" "output" 0 "toVector" "J" 1
                       edge "toVector" "output" 0 "pca" "input" 0
-                      edge "pca" "output" 1 "write" "input" 0 ]
+                      edge "pca" "output" 0 "writeMatrix" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains pcaCode ">=> pcaFloat32 3u" "PCA should lower as a reducer stage with component count."
-            Expect.stringContains pcaCode ">=> selectGroupedVectorOutput (3u + 1u) 1u" "Connecting a PCA output port should select the corresponding eigensystem stream."
+            Expect.stringContains pcaCode ">=> pcaFloat32" "PCA should lower as the covariance reducer."
+            Expect.stringContains pcaCode ">=> writeMatrix \"pca\" \".csv\"" "PCA covariance matrices should be writable as matrices."
+            Expect.isFalse (pcaCode.Contains("selectGroupedVectorOutput")) "PCA should no longer lower through grouped eigensystem streams."
+
+            let covarianceCode =
+                graph
+                    [ read "x" "x"; read "y" "y"; read "z" "z"
+                      node "toVector" "ToVectorImage" []
+                      node "covariance" "CovarianceMatrix" []
+                      node "writeMatrix" "WriteMatrix" [ p "output" "covariance" false; p "suffix" ".csv" false ] ]
+                    [ edge "x" "output" 0 "toVector" "I" 0
+                      edge "y" "output" 0 "toVector" "J" 1
+                      edge "z" "output" 0 "toVector" "K" 2
+                      edge "toVector" "output" 0 "covariance" "input" 0
+                      edge "covariance" "output" 0 "writeMatrix" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains covarianceCode ">=> covarianceMatrix" "CovarianceMatrix should lower to the explicit covariance reducer."
+            Expect.stringContains covarianceCode ">=> writeMatrix \"covariance\" \".csv\"" "CovarianceMatrix output should be writable as a matrix."
 
             let dotCode =
                 graph

@@ -827,7 +827,6 @@ module PipelineCodeGenerator =
                         | "SymmetricMatrixEigensystem", 0 -> Some "float32"
                         | "SymmetricMatrixEigenvalues", 0 -> Some "float32"
                         | "SymmetricMatrixEigenvector", 0 -> Some "float32"
-                        | "PCA", port when port >= 0 && port <= 8 -> Some "float32"
                         | "VectorRange", 0
                         | "AppendVectorElement", 0
                         | "VectorMapElements", 0 ->
@@ -1502,9 +1501,10 @@ module PipelineCodeGenerator =
         | "SymmetricMatrixEigenvector" ->
             let eigenIndex = parameterValueOrDefault "eigenIndex" "0"
             $">=> symmetricMatrixEigenvector {eigenIndex}"
+        | "CovarianceMatrix" ->
+            ">=> covarianceMatrix"
         | "PCA" ->
-            let components = parameterValue "components"
-            $">=> pcaFloat32 {components}"
+            ">=> pcaFloat32"
         | id when isScalarImageFunction id ->
             let value = parameterValue "value"
             $">=> {scalarImageFunctionName node |> Option.get} ({value})"
@@ -2312,13 +2312,7 @@ module PipelineCodeGenerator =
                         match nodesById |> Map.tryFind edge.FromNode with
                         | Some upstream ->
                             let upstreamExpression = pipelineExpression visited upstream
-                            if upstream.FunctionId = "PCA" && edge.FromPort >= 0 && edge.FromPort <= 8 then
-                                let rawComponents = savedParamValue "components" upstream
-                                let components =
-                                    if String.IsNullOrWhiteSpace rawComponents then "3u"
-                                    else numericLiteral UInt32 rawComponents
-                                $"{upstreamExpression}{newLine}>=> selectGroupedVectorOutput ({components} + 1u) {edge.FromPort}u"
-                            elif upstream.FunctionId = "AffineRegistration" && edge.FromPort >= 0 && edge.FromPort <= 1 then
+                            if upstream.FunctionId = "AffineRegistration" && edge.FromPort >= 0 && edge.FromPort <= 1 then
                                 $"{upstreamExpression}{newLine}>=> selectGroupedValueOutput 2u {edge.FromPort}u"
                             elif upstream.FunctionId = "EstimateHistogram" && edge.FromPort = 0 then
                                 $"{upstreamExpression}{newLine}>=> histogramEstimateMap"
@@ -2450,13 +2444,7 @@ module PipelineCodeGenerator =
                 match nodesById |> Map.tryFind edge.FromNode with
                 | Some upstream ->
                     let upstreamExpression = pipelineExpression Set.empty upstream
-                    if upstream.FunctionId = "PCA" && edge.FromPort >= 0 && edge.FromPort <= 8 then
-                        let rawComponents = savedParamValue "components" upstream
-                        let components =
-                            if String.IsNullOrWhiteSpace rawComponents then "3u"
-                            else numericLiteral UInt32 rawComponents
-                        $"{upstreamExpression}{newLine}>=> selectGroupedVectorOutput ({components} + 1u) {edge.FromPort}u"
-                    elif upstream.FunctionId = "AffineRegistration" && edge.FromPort >= 0 && edge.FromPort <= 1 then
+                    if upstream.FunctionId = "AffineRegistration" && edge.FromPort >= 0 && edge.FromPort <= 1 then
                         $"{upstreamExpression}{newLine}>=> selectGroupedValueOutput 2u {edge.FromPort}u"
                     elif upstream.FunctionId = "EstimateHistogram" && edge.FromPort = 0 then
                         $"{upstreamExpression}{newLine}>=> histogramEstimateMap"
