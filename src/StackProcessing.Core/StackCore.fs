@@ -71,8 +71,11 @@ module Chunk =
         ChunkPrimitive.span<'T> chunk
     let incRef = ChunkPrimitive.incRef
     let decRef = ChunkPrimitive.decRef
-    let vectorSpan<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (vector: VectorChunk<'T>) =
-        ChunkPrimitive.vectorSpan<'T> vector
+    let incRefVector = ChunkPrimitive.incRefVector
+    let decRefVector = ChunkPrimitive.decRefVector
+    let vectorComponentCount = ChunkPrimitive.vectorComponentCount
+    let toChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkPrimitive.toChunk<'T>
+    let ofChunk = ChunkPrimitive.ofChunk
     let toVectorImage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkPrimitive.toVectorImage<'T>
     let vectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkPrimitive.vectorElement<'T>
     let appendVectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkPrimitive.appendVectorElement<'T>

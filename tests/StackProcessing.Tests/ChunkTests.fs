@@ -78,6 +78,13 @@ let private chunkFromInt32Pixels width height (pixels: int32[]) =
     pixels.CopyTo(values)
     chunk
 
+let private vectorToArray<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (vector: VectorChunk<'T>) =
+    let packed = Chunk.toChunk vector
+    try
+        (Chunk.span<'T> packed).ToArray()
+    finally
+        Chunk.decRef packed
+
 let private identity3 =
     { m00 = 1.0; m01 = 0.0; m02 = 0.0
       m10 = 0.0; m11 = 1.0; m12 = 0.0
@@ -406,9 +413,10 @@ let chunkSuite =
                 let vector2 = Chunk.toVectorImage [ x; y ]
                 try
                     Expect.equal vector2.SpatialSize (2UL, 2UL, 1UL) "Vector chunk should preserve spatial size."
-                    Expect.equal vector2.Components 2u "Vector chunk should record component count."
-                    Expect.equal vector2.Chunk.Size (4UL, 2UL, 1UL) "Vector chunk storage should widen X by the component count."
-                    Expect.sequenceEqual ((Chunk.vectorSpan vector2).ToArray()) [| 1.0f; 10.0f; 2.0f; 20.0f; 3.0f; 30.0f; 4.0f; 40.0f |] "Vector storage should be component-fastest."
+                    Expect.equal (Chunk.vectorComponentCount vector2) 2u "Vector chunk should record component count."
+                    Expect.equal vector2.Components[0].Size (2UL, 2UL, 1UL) "Vector component chunks should preserve spatial size."
+                    Expect.equal vector2.Components[1].Size (2UL, 2UL, 1UL) "Vector component chunks should preserve spatial size."
+                    Expect.sequenceEqual (vectorToArray vector2) [| 1.0f; 10.0f; 2.0f; 20.0f; 3.0f; 30.0f; 4.0f; 40.0f |] "Packing a vector chunk should be component-fastest."
 
                     let second = Chunk.vectorElement 1u vector2
                     try
@@ -418,12 +426,12 @@ let chunkSuite =
 
                     let vector3 = Chunk.appendVectorElement vector2 z
                     try
-                        Expect.equal vector3.Components 3u "appendVectorElement should add one component."
-                        Expect.sequenceEqual ((Chunk.vectorSpan vector3).ToArray()) [| 1.0f; 10.0f; 100.0f; 2.0f; 20.0f; 200.0f; 3.0f; 30.0f; 300.0f; 4.0f; 40.0f; 400.0f |] "appendVectorElement should append the scalar component last."
+                        Expect.equal (Chunk.vectorComponentCount vector3) 3u "appendVectorElement should add one component."
+                        Expect.sequenceEqual (vectorToArray vector3) [| 1.0f; 10.0f; 100.0f; 2.0f; 20.0f; 200.0f; 3.0f; 30.0f; 300.0f; 4.0f; 40.0f; 400.0f |] "appendVectorElement should append the scalar component last."
                     finally
-                        Chunk.decRef vector3.Chunk
+                        Chunk.decRefVector vector3
                 finally
-                    Chunk.decRef vector2.Chunk
+                    Chunk.decRefVector vector2
             finally
                 Chunk.decRef x
                 Chunk.decRef y
@@ -442,9 +450,9 @@ let chunkSuite =
                 try
                     let mapped = Chunk.mapVectorElements (fun value -> value + 1.0) a
                     try
-                        Expect.sequenceEqual ((Chunk.vectorSpan mapped).ToArray()) [| 2.0; 1.0; 1.0; 1.0; 2.0; 1.0 |] "mapVectorElements should transform every scalar component."
+                        Expect.sequenceEqual (vectorToArray mapped) [| 2.0; 1.0; 1.0; 1.0; 2.0; 1.0 |] "mapVectorElements should transform every scalar component."
                     finally
-                        Chunk.decRef mapped.Chunk
+                        Chunk.decRefVector mapped
 
                     let dot = Chunk.vectorDot a b
                     try
@@ -454,9 +462,9 @@ let chunkSuite =
 
                     let cross = Chunk.vectorCross3D a b
                     try
-                        Expect.sequenceEqual ((Chunk.vectorSpan cross).ToArray()) [| 0.0; 0.0; 1.0; 0.0; 0.0; -1.0 |] "vectorCross3D should compute per-voxel cross products."
+                        Expect.sequenceEqual (vectorToArray cross) [| 0.0; 0.0; 1.0; 0.0; 0.0; -1.0 |] "vectorCross3D should compute per-voxel cross products."
                     finally
-                        Chunk.decRef cross.Chunk
+                        Chunk.decRefVector cross
 
                     let angle = Chunk.vectorAngleTo [ 1.0; 0.0; 0.0 ] a
                     try
@@ -466,8 +474,8 @@ let chunkSuite =
                     finally
                         Chunk.decRef angle
                 finally
-                    Chunk.decRef a.Chunk
-                    Chunk.decRef b.Chunk
+                    Chunk.decRefVector a
+                    Chunk.decRefVector b
             finally
                 [ ax; ay; az; bx; by; bz ] |> List.iter Chunk.decRef
 
@@ -500,8 +508,8 @@ let chunkSuite =
                     finally
                         Chunk.decRef angle
                 finally
-                    Chunk.decRef a.Chunk
-                    Chunk.decRef b.Chunk
+                    Chunk.decRefVector a
+                    Chunk.decRefVector b
             finally
                 [ ax; ay; bx; by ] |> List.iter Chunk.decRef
 
@@ -1523,19 +1531,19 @@ let chunkSuite =
                 Expect.equal gradientMagnitude.Length 3 "Gradient magnitude stage should emit one scalar chunk per input slice."
                 Expect.equal sobelMagnitude.Length 3 "Sobel magnitude stage should emit one scalar chunk per input slice."
 
-                Expect.equal gradient.[1].Components 3u "Gradient should contain Dx, Dy, Dz."
-                Expect.equal hessian.[1].Components 6u "Hessian should contain Dxx, Dxy, Dxz, Dyy, Dyz, Dzz."
+                Expect.equal (Chunk.vectorComponentCount gradient.[1]) 3u "Gradient should contain Dx, Dy, Dz."
+                Expect.equal (Chunk.vectorComponentCount hessian.[1]) 6u "Hessian should contain Dxx, Dxy, Dxz, Dyy, Dyz, Dzz."
                 Expect.equal gradient.[1].SpatialSize (uint64 width, uint64 height, 1UL) "Gradient should preserve spatial slice size."
                 Expect.equal hessian.[1].SpatialSize (uint64 width, uint64 height, 1UL) "Hessian should preserve spatial slice size."
 
                 Expect.sequenceEqual
-                    ((Chunk.vectorSpan gradient.[1]).ToArray())
-                    ((Chunk.vectorSpan expectedGradient).ToArray())
+                    (vectorToArray gradient.[1])
+                    (vectorToArray expectedGradient)
                     "Gradient stage center slice should match the pure Chunk derivative helper."
 
                 Expect.sequenceEqual
-                    ((Chunk.vectorSpan hessian.[1]).ToArray())
-                    ((Chunk.vectorSpan expectedHessian).ToArray())
+                    (vectorToArray hessian.[1])
+                    (vectorToArray expectedHessian)
                     "Hessian stage center slice should match the pure Chunk derivative helper."
 
                 Expect.sequenceEqual
@@ -1553,17 +1561,51 @@ let chunkSuite =
                     ((Chunk.span<float32> expectedSobelMagnitude).ToArray())
                     "Sobel magnitude stage center slice should match the pure Chunk Sobel helper."
             finally
-                gradient |> List.iter (fun vector -> Chunk.decRef vector.Chunk)
-                hessian |> List.iter (fun vector -> Chunk.decRef vector.Chunk)
+                gradient |> List.iter Chunk.decRefVector
+                hessian |> List.iter Chunk.decRefVector
                 laplacian |> List.iter Chunk.decRef
                 gradientMagnitude |> List.iter Chunk.decRef
                 sobelMagnitude |> List.iter Chunk.decRef
-                Chunk.decRef expectedGradient.Chunk
-                Chunk.decRef expectedHessian.Chunk
+                Chunk.decRefVector expectedGradient
+                Chunk.decRefVector expectedHessian
                 Chunk.decRef expectedLaplacian
                 Chunk.decRef expectedGradientMagnitude
                 Chunk.decRef expectedSobelMagnitude
                 expectedSlices |> Array.iter Chunk.decRef
+
+        testCase "Chunk structureTensor releases all intermediate component chunks" <| fun _ ->
+            Chunk.resetStats()
+
+            let width = 8
+            let height = 8
+            let depth = 5
+
+            let makeSlice z =
+                let pixels =
+                    Array.init (width * height) (fun i ->
+                        let x = i % width
+                        let y = i / width
+                        float32 (x + 2 * y + 3 * z))
+                chunkFromFloat32Pixels width height pixels
+
+            let inputs = [ for z in 0 .. depth - 1 -> makeSlice z ]
+            let stage =
+                ChunkFunctions.structureTensorNativeParallelCollect 1.0 1 1.0 1 2
+                --> ChunkFunctions.vectorRange<float32> 3u 3u
+                --> ChunkFunctions.vector3ToColorFloat32 -1.0f 1.0f
+
+            let outputs = runStageList stage inputs
+            try
+                Expect.equal outputs.Length depth "structureTensor pipeline should preserve slice count."
+                outputs
+                |> List.iter (fun vector ->
+                    Expect.equal (Chunk.vectorComponentCount vector) 3u "vector3ToColor should produce RGB component vectors.")
+            finally
+                outputs |> List.iter Chunk.decRefVector
+
+            let stats = Chunk.stats()
+            Expect.equal stats.Live 0L $"structureTensor pipeline should release every Chunk; stats={Chunk.formatStats stats}"
+            Expect.equal stats.LiveBytes 0L $"structureTensor pipeline should return all ArrayPool buffers; stats={Chunk.formatStats stats}"
 
         testCase "Chunk noise adders preserve shape and deterministic no-op paths" <| fun _ ->
             let pixels = [| 1.0f; 2.0f; 3.0f; 4.0f; 5.0f; 6.0f |]

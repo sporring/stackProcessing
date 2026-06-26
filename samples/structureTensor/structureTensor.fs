@@ -1,5 +1,5 @@
-// Computes the Chunk structure tensor eigensystem and writes the first eigenvector
-// as RGB color chunk slices.
+// Computes the Chunk structure tensor, decomposes it, and writes the first
+// eigenvector as RGB color chunk slices.
 open StackProcessing
 open System.IO
 
@@ -18,7 +18,7 @@ let main args =
     src
     |> read<float32> input ".tiff"
     >=> structureTensor 1.0 7 1.0 7 4
-    >=> vectorRange<float32> 3u 3u
+    >=> symmetricTensorEigenvector 0u
     >=> vector3ToColorFloat32 -1.0f 1.0f
     >=> writeColor output ".tiff"
     |> sink

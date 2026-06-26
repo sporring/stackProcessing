@@ -824,6 +824,8 @@ module PipelineCodeGenerator =
                         match sourceNode.FunctionId, edge.FromPort with
                         | "Gradient", 0 -> Some "float32"
                         | "StructureTensor", 0 -> Some "float32"
+                        | "SymmetricTensorEigensystem", 0 -> Some "float32"
+                        | "SymmetricTensorEigenvector", 0 -> Some "float32"
                         | "PCA", port when port >= 0 && port <= 8 -> Some "float32"
                         | "VectorRange", 0
                         | "AppendVectorElement", 0
@@ -1493,6 +1495,11 @@ module PipelineCodeGenerator =
             let rhoRadius = parameterValueOrDefault "rhoRadius" "7"
             let workers = parameterValueOrDefault "workers" "4"
             $">=> structureTensor {sigma} {radius} {rho} {rhoRadius} {workers}"
+        | "SymmetricTensorEigensystem" ->
+            ">=> symmetricTensorEigensystem"
+        | "SymmetricTensorEigenvector" ->
+            let eigenIndex = parameterValueOrDefault "eigenIndex" "0"
+            $">=> symmetricTensorEigenvector {eigenIndex}"
         | "PCA" ->
             let components = parameterValue "components"
             $">=> pcaFloat32 {components}"

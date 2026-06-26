@@ -107,6 +107,7 @@ ArrayPool experiment:
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-simd-reductions --pixel-type UInt8|UInt16|Float32|Float64 --shape WxHxD [--variant computeStats-current|sum-scalar|moments-scalar|sum-vector|moments-vector|sum-vector-accurate|moments-vector-accurate] [--iterations N]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-cast --shape WxHxD [--variant uint8-to-float32|uint16-to-float32|float32-to-uint8|float32-to-uint16] [--iterations N]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-pixelwise-float32 --shape WxHxD [--variant scalar-add|vector-add|scalar-mul|vector-mul|scalar-threshold|vector-threshold|scalar-pair-add|vector-pair-add|scalar-pair-mul|vector-pair-mul|scalar-absdiff|vector-absdiff|scalar-blend|vector-blend] [--iterations N]
+  dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-structure-tensor-layout --shape WxHxD [--variant aos-outer|soa-outer|soa-outer-vector|components-outer-vector|aos-smooth|soa-smooth-vector|components-smooth-vector|aos-eigenvalues|soa-eigenvalues|components-eigenvalues|components-eigenvalues-jacobi6|components-eigenvalues-jacobi8|components-eigensystem|components-eigensystem-chunk-algebra|components-eigensystem-jacobi-alloc|aos-pipeline|soa-pipeline-vector|components-pipeline-vector|components-pipeline-jacobi6|components-pipeline-jacobi8|components-pipeline-eigensystem|components-pipeline-eigensystem-chunk-algebra|components-pipeline-eigensystem-jacobi-alloc|aos-to-soa|soa-to-aos|all] [--iterations N]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-connected-components --input DIR [--output DIR] [--threshold X] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-dilate --input DIR --output DIR [--radius N] [--threshold X] [--workers N] [--available-memory BYTES]
   dotnet run --project benchmarks/StackProcessing.Benchmarks -- run-chunk-convolve --pixel-type UInt8|Int8|UInt16|Int16|Float32 --input DIR --output DIR [--kernel-size N] [--workers N] [--available-memory BYTES]
@@ -4408,6 +4409,1126 @@ let private runChunkDilate opts =
     writeInternalSeconds stopwatch.Elapsed
     exitCode
 
+let private fillStructureTensorAosGradient (chunk: StackCore.Chunk<float32>) =
+    let values = StackCore.Chunk.span<float32> chunk
+    let spatialCount = values.Length / 3
+    let mutable i = 0
+    while i < spatialCount do
+        let baseIndex = i * 3
+        values[baseIndex] <- float32 ((i * 37 + 11) &&& 0x3FF) / 257.0f
+        values[baseIndex + 1] <- float32 ((i * 53 + 17) &&& 0x3FF) / 263.0f
+        values[baseIndex + 2] <- float32 ((i * 71 + 23) &&& 0x3FF) / 269.0f
+        i <- i + 1
+
+let private fillStructureTensorSoaGradient (chunk: StackCore.Chunk<float32>) =
+    let values = StackCore.Chunk.span<float32> chunk
+    let spatialCount = values.Length / 3
+    let mutable i = 0
+    while i < spatialCount do
+        values[i] <- float32 ((i * 37 + 11) &&& 0x3FF) / 257.0f
+        values[spatialCount + i] <- float32 ((i * 53 + 17) &&& 0x3FF) / 263.0f
+        values[2 * spatialCount + i] <- float32 ((i * 71 + 23) &&& 0x3FF) / 269.0f
+        i <- i + 1
+
+let private fillStructureTensorComponentGradient (window: StackCore.Window<StackCore.Chunk<float32>>) =
+    match window.Items with
+    | [ gxChunk; gyChunk; gzChunk ] ->
+        let gxValues = StackCore.Chunk.span<float32> gxChunk
+        let gyValues = StackCore.Chunk.span<float32> gyChunk
+        let gzValues = StackCore.Chunk.span<float32> gzChunk
+        let mutable i = 0
+        while i < gxValues.Length do
+            gxValues[i] <- float32 ((i * 37 + 11) &&& 0x3FF) / 257.0f
+            gyValues[i] <- float32 ((i * 53 + 17) &&& 0x3FF) / 263.0f
+            gzValues[i] <- float32 ((i * 71 + 23) &&& 0x3FF) / 269.0f
+            i <- i + 1
+    | _ ->
+        invalidArg "window" "Expected a 3-component gradient window."
+
+let private structureTensorOuterAos (input: StackCore.Chunk<float32>) (output: StackCore.Chunk<float32>) =
+    let inputValues = StackCore.Chunk.span<float32> input
+    let outputValues = StackCore.Chunk.span<float32> output
+    let spatialCount = inputValues.Length / 3
+    let mutable i = 0
+    while i < spatialCount do
+        let inputBase = i * 3
+        let gx = inputValues[inputBase]
+        let gy = inputValues[inputBase + 1]
+        let gz = inputValues[inputBase + 2]
+        let outputBase = i * 6
+        outputValues[outputBase] <- gx * gx
+        outputValues[outputBase + 1] <- gx * gy
+        outputValues[outputBase + 2] <- gx * gz
+        outputValues[outputBase + 3] <- gy * gy
+        outputValues[outputBase + 4] <- gy * gz
+        outputValues[outputBase + 5] <- gz * gz
+        i <- i + 1
+
+let private structureTensorOuterSoaScalar (input: StackCore.Chunk<float32>) (output: StackCore.Chunk<float32>) =
+    let inputValues = StackCore.Chunk.span<float32> input
+    let outputValues = StackCore.Chunk.span<float32> output
+    let spatialCount = inputValues.Length / 3
+    let mutable i = 0
+    while i < spatialCount do
+        let gx = inputValues[i]
+        let gy = inputValues[spatialCount + i]
+        let gz = inputValues[2 * spatialCount + i]
+        outputValues[i] <- gx * gx
+        outputValues[spatialCount + i] <- gx * gy
+        outputValues[2 * spatialCount + i] <- gx * gz
+        outputValues[3 * spatialCount + i] <- gy * gy
+        outputValues[4 * spatialCount + i] <- gy * gz
+        outputValues[5 * spatialCount + i] <- gz * gz
+        i <- i + 1
+
+let private structureTensorOuterSoaVector (input: StackCore.Chunk<float32>) (output: StackCore.Chunk<float32>) =
+    let inputValues = StackCore.Chunk.span<float32> input
+    let outputValues = StackCore.Chunk.span<float32> output
+    let spatialCount = inputValues.Length / 3
+    let width = Vector<float32>.Count
+    let vectorEnd = spatialCount - spatialCount % width
+    let mutable i = 0
+    while i < vectorEnd do
+        let gx = Vector<float32>(inputValues.Slice(i, width))
+        let gy = Vector<float32>(inputValues.Slice(spatialCount + i, width))
+        let gz = Vector<float32>(inputValues.Slice(2 * spatialCount + i, width))
+        (gx * gx).CopyTo(outputValues.Slice(i, width))
+        (gx * gy).CopyTo(outputValues.Slice(spatialCount + i, width))
+        (gx * gz).CopyTo(outputValues.Slice(2 * spatialCount + i, width))
+        (gy * gy).CopyTo(outputValues.Slice(3 * spatialCount + i, width))
+        (gy * gz).CopyTo(outputValues.Slice(4 * spatialCount + i, width))
+        (gz * gz).CopyTo(outputValues.Slice(5 * spatialCount + i, width))
+        i <- i + width
+    while i < spatialCount do
+        let gx = inputValues[i]
+        let gy = inputValues[spatialCount + i]
+        let gz = inputValues[2 * spatialCount + i]
+        outputValues[i] <- gx * gx
+        outputValues[spatialCount + i] <- gx * gy
+        outputValues[2 * spatialCount + i] <- gx * gz
+        outputValues[3 * spatialCount + i] <- gy * gy
+        outputValues[4 * spatialCount + i] <- gy * gz
+        outputValues[5 * spatialCount + i] <- gz * gz
+        i <- i + 1
+
+let private structureTensorOuterComponentsVector
+    (input: StackCore.Window<StackCore.Chunk<float32>>)
+    (output: StackCore.Window<StackCore.Chunk<float32>>)
+    =
+    match input.Items, output.Items with
+    | [ gxChunk; gyChunk; gzChunk ], [ xxChunk; xyChunk; xzChunk; yyChunk; yzChunk; zzChunk ] ->
+        let gxValues = StackCore.Chunk.span<float32> gxChunk
+        let gyValues = StackCore.Chunk.span<float32> gyChunk
+        let gzValues = StackCore.Chunk.span<float32> gzChunk
+        let xxValues = StackCore.Chunk.span<float32> xxChunk
+        let xyValues = StackCore.Chunk.span<float32> xyChunk
+        let xzValues = StackCore.Chunk.span<float32> xzChunk
+        let yyValues = StackCore.Chunk.span<float32> yyChunk
+        let yzValues = StackCore.Chunk.span<float32> yzChunk
+        let zzValues = StackCore.Chunk.span<float32> zzChunk
+        let width = Vector<float32>.Count
+        let vectorEnd = gxValues.Length - gxValues.Length % width
+        let mutable i = 0
+        while i < vectorEnd do
+            let gx = Vector<float32>(gxValues.Slice(i, width))
+            let gy = Vector<float32>(gyValues.Slice(i, width))
+            let gz = Vector<float32>(gzValues.Slice(i, width))
+            (gx * gx).CopyTo(xxValues.Slice(i, width))
+            (gx * gy).CopyTo(xyValues.Slice(i, width))
+            (gx * gz).CopyTo(xzValues.Slice(i, width))
+            (gy * gy).CopyTo(yyValues.Slice(i, width))
+            (gy * gz).CopyTo(yzValues.Slice(i, width))
+            (gz * gz).CopyTo(zzValues.Slice(i, width))
+            i <- i + width
+        while i < gxValues.Length do
+            let gx = gxValues[i]
+            let gy = gyValues[i]
+            let gz = gzValues[i]
+            xxValues[i] <- gx * gx
+            xyValues[i] <- gx * gy
+            xzValues[i] <- gx * gz
+            yyValues[i] <- gy * gy
+            yzValues[i] <- gy * gz
+            zzValues[i] <- gz * gz
+            i <- i + 1
+    | _ ->
+        invalidArg "window" "Expected 3 input components and 6 output tensor components."
+
+let private smoothTensorAos3Point (input: StackCore.Chunk<float32>) (output: StackCore.Chunk<float32>) =
+    let inputValues = StackCore.Chunk.span<float32> input
+    let outputValues = StackCore.Chunk.span<float32> output
+    let spatialCount = inputValues.Length / 6
+    let last = spatialCount - 1
+    let mutable i = 0
+    while i < spatialCount do
+        let prevBase = (if i = 0 then 0 else i - 1) * 6
+        let currentBase = i * 6
+        let nextBase = (if i = last then last else i + 1) * 6
+        let mutable c = 0
+        while c < 6 do
+            outputValues[currentBase + c] <-
+                0.25f * inputValues[prevBase + c]
+                + 0.5f * inputValues[currentBase + c]
+                + 0.25f * inputValues[nextBase + c]
+            c <- c + 1
+        i <- i + 1
+
+let private smoothTensorSoa3PointVector (input: StackCore.Chunk<float32>) (output: StackCore.Chunk<float32>) =
+    let inputValues = StackCore.Chunk.span<float32> input
+    let outputValues = StackCore.Chunk.span<float32> output
+    let spatialCount = inputValues.Length / 6
+    let width = Vector<float32>.Count
+    let quarter = Vector<float32>(0.25f)
+    let half = Vector<float32>(0.5f)
+    let mutable comp = 0
+    while comp < 6 do
+        let offset = comp * spatialCount
+        outputValues[offset] <- 0.75f * inputValues[offset] + 0.25f * inputValues[offset + 1]
+        let mutable i = 1
+        let vectorEnd = spatialCount - 1 - ((spatialCount - 1) % width)
+        while i < vectorEnd do
+            let prev = Vector<float32>(inputValues.Slice(offset + i - 1, width))
+            let current = Vector<float32>(inputValues.Slice(offset + i, width))
+            let next = Vector<float32>(inputValues.Slice(offset + i + 1, width))
+            (quarter * prev + half * current + quarter * next).CopyTo(outputValues.Slice(offset + i, width))
+            i <- i + width
+        while i < spatialCount - 1 do
+            outputValues[offset + i] <-
+                0.25f * inputValues[offset + i - 1]
+                + 0.5f * inputValues[offset + i]
+                + 0.25f * inputValues[offset + i + 1]
+            i <- i + 1
+        outputValues[offset + spatialCount - 1] <-
+            0.25f * inputValues[offset + spatialCount - 2]
+            + 0.75f * inputValues[offset + spatialCount - 1]
+        comp <- comp + 1
+
+let private smoothTensorComponents3PointVector
+    (input: StackCore.Window<StackCore.Chunk<float32>>)
+    (output: StackCore.Window<StackCore.Chunk<float32>>)
+    =
+    let smoothComponent (inputChunk: StackCore.Chunk<float32>) (outputChunk: StackCore.Chunk<float32>) =
+        let inputValues = StackCore.Chunk.span<float32> inputChunk
+        let outputValues = StackCore.Chunk.span<float32> outputChunk
+        let width = Vector<float32>.Count
+        let quarter = Vector<float32>(0.25f)
+        let half = Vector<float32>(0.5f)
+        outputValues[0] <- 0.75f * inputValues[0] + 0.25f * inputValues[1]
+        let mutable i = 1
+        let vectorEnd = inputValues.Length - 1 - ((inputValues.Length - 1) % width)
+        while i < vectorEnd do
+            let prev = Vector<float32>(inputValues.Slice(i - 1, width))
+            let current = Vector<float32>(inputValues.Slice(i, width))
+            let next = Vector<float32>(inputValues.Slice(i + 1, width))
+            (quarter * prev + half * current + quarter * next).CopyTo(outputValues.Slice(i, width))
+            i <- i + width
+        while i < inputValues.Length - 1 do
+            outputValues[i] <-
+                0.25f * inputValues[i - 1]
+                + 0.5f * inputValues[i]
+                + 0.25f * inputValues[i + 1]
+            i <- i + 1
+        outputValues[inputValues.Length - 1] <-
+            0.25f * inputValues[inputValues.Length - 2]
+            + 0.75f * inputValues[inputValues.Length - 1]
+
+    match input.Items, output.Items with
+    | [ i0; i1; i2; i3; i4; i5 ], [ o0; o1; o2; o3; o4; o5 ] ->
+        smoothComponent i0 o0
+        smoothComponent i1 o1
+        smoothComponent i2 o2
+        smoothComponent i3 o3
+        smoothComponent i4 o4
+        smoothComponent i5 o5
+    | _ ->
+        invalidArg "window" "Expected 6 input and output tensor components."
+
+let private symmetricEigenvalues3x3Float32 xx xy xz yy yz zz =
+    let xx = float xx
+    let xy = float xy
+    let xz = float xz
+    let yy = float yy
+    let yz = float yz
+    let zz = float zz
+    let p1 = xy * xy + xz * xz + yz * yz
+    if p1 = 0.0 then
+        let mutable a = xx
+        let mutable b = yy
+        let mutable c = zz
+        if a < b then
+            let t = a
+            a <- b
+            b <- t
+        if b < c then
+            let t = b
+            b <- c
+            c <- t
+        if a < b then
+            let t = a
+            a <- b
+            b <- t
+        struct (float32 a, float32 b, float32 c)
+    else
+        let q = (xx + yy + zz) / 3.0
+        let axx = xx - q
+        let ayy = yy - q
+        let azz = zz - q
+        let p2 = axx * axx + ayy * ayy + azz * azz + 2.0 * p1
+        let p = sqrt (p2 / 6.0)
+        let bxx = axx / p
+        let bxy = xy / p
+        let bxz = xz / p
+        let byy = ayy / p
+        let byz = yz / p
+        let bzz = azz / p
+        let detB =
+            bxx * (byy * bzz - byz * byz)
+            - bxy * (bxy * bzz - byz * bxz)
+            + bxz * (bxy * byz - byy * bxz)
+        let r = detB / 2.0
+        let phi =
+            if r <= -1.0 then Math.PI / 3.0
+            elif r >= 1.0 then 0.0
+            else Math.Acos(r) / 3.0
+        let eig0 = q + 2.0 * p * Math.Cos(phi)
+        let eig2 = q + 2.0 * p * Math.Cos(phi + 2.0 * Math.PI / 3.0)
+        let eig1 = 3.0 * q - eig0 - eig2
+        struct (float32 eig0, float32 eig1, float32 eig2)
+
+let private symmetricEigenvalues3x3JacobiMaxFloat32 rotations xx xy xz yy yz zz =
+    let mutable a00 = float xx
+    let mutable a01 = float xy
+    let mutable a02 = float xz
+    let mutable a11 = float yy
+    let mutable a12 = float yz
+    let mutable a22 = float zz
+
+    let inline rotationCoefficients app aqq apq =
+        let tau = (aqq - app) / (2.0 * apq)
+        let sign = if tau >= 0.0 then 1.0 else -1.0
+        let t = sign / (abs tau + sqrt (1.0 + tau * tau))
+        let c = 1.0 / sqrt (1.0 + t * t)
+        let s = t * c
+        struct (t, c, s)
+
+    let inline rotate01 () =
+        if abs a01 > 1e-14 then
+            let app = a00
+            let aqq = a11
+            let apq = a01
+            let struct (t, c, s) = rotationCoefficients app aqq apq
+            a00 <- app - t * apq
+            a11 <- aqq + t * apq
+            a01 <- 0.0
+            let ar0 = a02
+            let ar1 = a12
+            a02 <- c * ar0 - s * ar1
+            a12 <- s * ar0 + c * ar1
+
+    let inline rotate02 () =
+        if abs a02 > 1e-14 then
+            let app = a00
+            let aqq = a22
+            let apq = a02
+            let struct (t, c, s) = rotationCoefficients app aqq apq
+            a00 <- app - t * apq
+            a22 <- aqq + t * apq
+            a02 <- 0.0
+            let ar0 = a01
+            let ar2 = a12
+            a01 <- c * ar0 - s * ar2
+            a12 <- s * ar0 + c * ar2
+
+    let inline rotate12 () =
+        if abs a12 > 1e-14 then
+            let app = a11
+            let aqq = a22
+            let apq = a12
+            let struct (t, c, s) = rotationCoefficients app aqq apq
+            a11 <- app - t * apq
+            a22 <- aqq + t * apq
+            a12 <- 0.0
+            let ar1 = a01
+            let ar2 = a02
+            a01 <- c * ar1 - s * ar2
+            a02 <- s * ar1 + c * ar2
+
+    let mutable r = 0
+    while r < rotations do
+        let abs01 = abs a01
+        let abs02 = abs a02
+        let abs12 = abs a12
+        if abs01 >= abs02 && abs01 >= abs12 then
+            rotate01()
+        elif abs02 >= abs12 then
+            rotate02()
+        else
+            rotate12()
+        r <- r + 1
+
+    let mutable l0 = a00
+    let mutable l1 = a11
+    let mutable l2 = a22
+    if l0 < l1 then
+        let t = l0
+        l0 <- l1
+        l1 <- t
+    if l1 < l2 then
+        let t = l1
+        l1 <- l2
+        l2 <- t
+    if l0 < l1 then
+        let t = l0
+        l0 <- l1
+        l1 <- t
+    struct (float32 l0, float32 l1, float32 l2)
+
+let private structureTensorEigenvaluesAos (input: StackCore.Chunk<float32>) (output: StackCore.Chunk<float32>) =
+    let inputValues = StackCore.Chunk.span<float32> input
+    let outputValues = StackCore.Chunk.span<float32> output
+    let spatialCount = inputValues.Length / 6
+    let mutable i = 0
+    while i < spatialCount do
+        let p = i * 6
+        let struct (l0, l1, l2) =
+            symmetricEigenvalues3x3Float32
+                inputValues[p]
+                inputValues[p + 1]
+                inputValues[p + 2]
+                inputValues[p + 3]
+                inputValues[p + 4]
+                inputValues[p + 5]
+        let o = i * 3
+        outputValues[o] <- l0
+        outputValues[o + 1] <- l1
+        outputValues[o + 2] <- l2
+        i <- i + 1
+
+let private structureTensorEigenvaluesSoa (input: StackCore.Chunk<float32>) (output: StackCore.Chunk<float32>) =
+    let inputValues = StackCore.Chunk.span<float32> input
+    let outputValues = StackCore.Chunk.span<float32> output
+    let spatialCount = inputValues.Length / 6
+    let mutable i = 0
+    while i < spatialCount do
+        let struct (l0, l1, l2) =
+            symmetricEigenvalues3x3Float32
+                inputValues[i]
+                inputValues[spatialCount + i]
+                inputValues[2 * spatialCount + i]
+                inputValues[3 * spatialCount + i]
+                inputValues[4 * spatialCount + i]
+                inputValues[5 * spatialCount + i]
+        outputValues[i] <- l0
+        outputValues[spatialCount + i] <- l1
+        outputValues[2 * spatialCount + i] <- l2
+        i <- i + 1
+
+let private structureTensorEigenvaluesComponents
+    (input: StackCore.Window<StackCore.Chunk<float32>>)
+    (output: StackCore.Window<StackCore.Chunk<float32>>)
+    =
+    match input.Items, output.Items with
+    | [ xxChunk; xyChunk; xzChunk; yyChunk; yzChunk; zzChunk ], [ l0Chunk; l1Chunk; l2Chunk ] ->
+        let xxValues = StackCore.Chunk.span<float32> xxChunk
+        let xyValues = StackCore.Chunk.span<float32> xyChunk
+        let xzValues = StackCore.Chunk.span<float32> xzChunk
+        let yyValues = StackCore.Chunk.span<float32> yyChunk
+        let yzValues = StackCore.Chunk.span<float32> yzChunk
+        let zzValues = StackCore.Chunk.span<float32> zzChunk
+        let l0Values = StackCore.Chunk.span<float32> l0Chunk
+        let l1Values = StackCore.Chunk.span<float32> l1Chunk
+        let l2Values = StackCore.Chunk.span<float32> l2Chunk
+        let mutable i = 0
+        while i < xxValues.Length do
+            let struct (l0, l1, l2) =
+                symmetricEigenvalues3x3Float32
+                    xxValues[i]
+                    xyValues[i]
+                    xzValues[i]
+                    yyValues[i]
+                    yzValues[i]
+                    zzValues[i]
+            l0Values[i] <- l0
+            l1Values[i] <- l1
+            l2Values[i] <- l2
+            i <- i + 1
+    | _ ->
+        invalidArg "window" "Expected 6 tensor components and 3 eigenvalue components."
+
+let private structureTensorEigenvaluesComponentsJacobi rotations
+    (input: StackCore.Window<StackCore.Chunk<float32>>)
+    (output: StackCore.Window<StackCore.Chunk<float32>>)
+    =
+    match input.Items, output.Items with
+    | [ xxChunk; xyChunk; xzChunk; yyChunk; yzChunk; zzChunk ], [ l0Chunk; l1Chunk; l2Chunk ] ->
+        let xxValues = StackCore.Chunk.span<float32> xxChunk
+        let xyValues = StackCore.Chunk.span<float32> xyChunk
+        let xzValues = StackCore.Chunk.span<float32> xzChunk
+        let yyValues = StackCore.Chunk.span<float32> yyChunk
+        let yzValues = StackCore.Chunk.span<float32> yzChunk
+        let zzValues = StackCore.Chunk.span<float32> zzChunk
+        let l0Values = StackCore.Chunk.span<float32> l0Chunk
+        let l1Values = StackCore.Chunk.span<float32> l1Chunk
+        let l2Values = StackCore.Chunk.span<float32> l2Chunk
+        let mutable i = 0
+        while i < xxValues.Length do
+            let struct (l0, l1, l2) =
+                symmetricEigenvalues3x3JacobiMaxFloat32
+                    rotations
+                    xxValues[i]
+                    xyValues[i]
+                    xzValues[i]
+                    yyValues[i]
+                    yzValues[i]
+                    zzValues[i]
+            l0Values[i] <- l0
+            l1Values[i] <- l1
+            l2Values[i] <- l2
+            i <- i + 1
+    | _ ->
+        invalidArg "window" "Expected 6 tensor components and 3 eigenvalue components."
+
+let private symmetricEigenJacobiAllocLocal xx xy xz yy yz zz =
+    let a = Array2D.zeroCreate<float> 3 3
+    let v = Array2D.zeroCreate<float> 3 3
+
+    a[0, 0] <- float xx; a[0, 1] <- float xy; a[0, 2] <- float xz
+    a[1, 0] <- float xy; a[1, 1] <- float yy; a[1, 2] <- float yz
+    a[2, 0] <- float xz; a[2, 1] <- float yz; a[2, 2] <- float zz
+
+    for i in 0 .. 2 do
+        for j in 0 .. 2 do
+            v[i, j] <- if i = j then 1.0 else 0.0
+
+    let rotate p q =
+        if abs a[p, q] > 1e-14 then
+            let tau = (a[q, q] - a[p, p]) / (2.0 * a[p, q])
+            let sign = if tau >= 0.0 then 1.0 else -1.0
+            let t = sign / (abs tau + sqrt (1.0 + tau * tau))
+            let c = 1.0 / sqrt (1.0 + t * t)
+            let s = t * c
+            let app = a[p, p]
+            let aqq = a[q, q]
+            let apq = a[p, q]
+
+            a[p, p] <- app - t * apq
+            a[q, q] <- aqq + t * apq
+            a[p, q] <- 0.0
+            a[q, p] <- 0.0
+
+            for r in 0 .. 2 do
+                if r <> p && r <> q then
+                    let arp = a[r, p]
+                    let arq = a[r, q]
+                    a[r, p] <- c * arp - s * arq
+                    a[p, r] <- a[r, p]
+                    a[r, q] <- s * arp + c * arq
+                    a[q, r] <- a[r, q]
+
+            for r in 0 .. 2 do
+                let vrp = v[r, p]
+                let vrq = v[r, q]
+                v[r, p] <- c * vrp - s * vrq
+                v[r, q] <- s * vrp + c * vrq
+
+    for _ in 1 .. 32 do
+        rotate 0 1
+        rotate 0 2
+        rotate 1 2
+
+    [ for i in 0 .. 2 ->
+        let vector = TinyLinAlg.normalize (TinyLinAlg.v3 v[0, i] v[1, i] v[2, i])
+        a[i, i], vector ]
+    |> List.sortByDescending fst
+
+let private structureTensorEigensystemComponents
+    (input: StackCore.Window<StackCore.Chunk<float32>>)
+    (output: StackCore.Window<StackCore.Chunk<float32>>)
+    =
+    match input.Items, output.Items with
+    | [ xxChunk; xyChunk; xzChunk; yyChunk; yzChunk; zzChunk ],
+      [ l0Chunk; l1Chunk; l2Chunk; v00Chunk; v01Chunk; v02Chunk; v10Chunk; v11Chunk; v12Chunk; v20Chunk; v21Chunk; v22Chunk ] ->
+        let xxValues = StackCore.Chunk.span<float32> xxChunk
+        let xyValues = StackCore.Chunk.span<float32> xyChunk
+        let xzValues = StackCore.Chunk.span<float32> xzChunk
+        let yyValues = StackCore.Chunk.span<float32> yyChunk
+        let yzValues = StackCore.Chunk.span<float32> yzChunk
+        let zzValues = StackCore.Chunk.span<float32> zzChunk
+        let l0Values = StackCore.Chunk.span<float32> l0Chunk
+        let l1Values = StackCore.Chunk.span<float32> l1Chunk
+        let l2Values = StackCore.Chunk.span<float32> l2Chunk
+        let v00Values = StackCore.Chunk.span<float32> v00Chunk
+        let v01Values = StackCore.Chunk.span<float32> v01Chunk
+        let v02Values = StackCore.Chunk.span<float32> v02Chunk
+        let v10Values = StackCore.Chunk.span<float32> v10Chunk
+        let v11Values = StackCore.Chunk.span<float32> v11Chunk
+        let v12Values = StackCore.Chunk.span<float32> v12Chunk
+        let v20Values = StackCore.Chunk.span<float32> v20Chunk
+        let v21Values = StackCore.Chunk.span<float32> v21Chunk
+        let v22Values = StackCore.Chunk.span<float32> v22Chunk
+        let mutable i = 0
+        while i < xxValues.Length do
+            let eigen =
+                TinyLinAlg.symmetricEigen3
+                    { m00 = float xxValues[i]; m01 = float xyValues[i]; m02 = float xzValues[i]
+                      m10 = float xyValues[i]; m11 = float yyValues[i]; m12 = float yzValues[i]
+                      m20 = float xzValues[i]; m21 = float yzValues[i]; m22 = float zzValues[i] }
+            l0Values[i] <- float32 eigen.Value0
+            l1Values[i] <- float32 eigen.Value1
+            l2Values[i] <- float32 eigen.Value2
+            v00Values[i] <- float32 eigen.Vector0.x
+            v01Values[i] <- float32 eigen.Vector0.y
+            v02Values[i] <- float32 eigen.Vector0.z
+            v10Values[i] <- float32 eigen.Vector1.x
+            v11Values[i] <- float32 eigen.Vector1.y
+            v12Values[i] <- float32 eigen.Vector1.z
+            v20Values[i] <- float32 eigen.Vector2.x
+            v21Values[i] <- float32 eigen.Vector2.y
+            v22Values[i] <- float32 eigen.Vector2.z
+            i <- i + 1
+    | _ ->
+        invalidArg "input" "Expected 6 tensor input components and 12 eigensystem output components."
+
+let private structureTensorEigensystemComponentsChunkAlgebra
+    (input: StackCore.Window<StackCore.Chunk<float32>>)
+    (output: StackCore.Window<StackCore.Chunk<float32>>)
+    =
+    let inline sortValuesDescending a b c =
+        let mutable x = a
+        let mutable y = b
+        let mutable z = c
+        if x < y then
+            let t = x
+            x <- y
+            y <- t
+        if y < z then
+            let t = y
+            y <- z
+            z <- t
+        if x < y then
+            let t = x
+            x <- y
+            y <- t
+        struct (x, y, z)
+
+    let inline normalize3 (x: float) (y: float) (z: float) =
+        let n = sqrt (x * x + y * y + z * z)
+        if n <= 1e-18 then
+            struct (1.0, 0.0, 0.0)
+        else
+            let inv = 1.0 / n
+            let mutable x = x * inv
+            let mutable y = y * inv
+            let mutable z = z * inv
+            let ax = abs x
+            let ay = abs y
+            let az = abs z
+            let sign =
+                if ax >= ay && ax >= az then x
+                elif ay >= az then y
+                else z
+            if sign < 0.0 then
+                x <- -x
+                y <- -y
+                z <- -z
+            struct (x, y, z)
+
+    let inline cross ax ay az bx by bz =
+        struct (ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx)
+
+    let inline tryEigenvector xx xy xz yy yz zz lambda tolerance =
+        let r00 = xx - lambda
+        let r01 = xy
+        let r02 = xz
+        let r10 = xy
+        let r11 = yy - lambda
+        let r12 = yz
+        let r20 = xz
+        let r21 = yz
+        let r22 = zz - lambda
+        let struct (c01x, c01y, c01z) = cross r00 r01 r02 r10 r11 r12
+        let struct (c02x, c02y, c02z) = cross r00 r01 r02 r20 r21 r22
+        let struct (c12x, c12y, c12z) = cross r10 r11 r12 r20 r21 r22
+        let n01 = c01x * c01x + c01y * c01y + c01z * c01z
+        let n02 = c02x * c02x + c02y * c02y + c02z * c02z
+        let n12 = c12x * c12x + c12y * c12y + c12z * c12z
+        let struct (cx, cy, cz, n) =
+            if n01 >= n02 && n01 >= n12 then struct (c01x, c01y, c01z, n01)
+            elif n02 >= n12 then struct (c02x, c02y, c02z, n02)
+            else struct (c12x, c12y, c12z, n12)
+        if n <= tolerance * tolerance then
+            struct (false, 1.0, 0.0, 0.0)
+        else
+            let struct (x, y, z) = normalize3 cx cy cz
+            struct (true, x, y, z)
+
+    let inline orthonormalComplement ax ay az =
+        let aax = abs ax
+        let aay = abs ay
+        let aaz = abs az
+        let struct (rx, ry, rz) =
+            if aax <= aay && aax <= aaz then struct (1.0, 0.0, 0.0)
+            elif aay <= aaz then struct (0.0, 1.0, 0.0)
+            else struct (0.0, 0.0, 1.0)
+        let struct (u0, u1, u2) = cross ax ay az rx ry rz
+        let struct (u0, u1, u2) = normalize3 u0 u1 u2
+        let struct (v0, v1, v2) = cross ax ay az u0 u1 u2
+        let struct (v0, v1, v2) = normalize3 v0 v1 v2
+        struct (u0, u1, u2, v0, v1, v2)
+
+    let inline eigenvalues xx xy xz yy yz zz =
+        let p1 = xy * xy + xz * xz + yz * yz
+        if p1 = 0.0 then
+            sortValuesDescending xx yy zz
+        else
+            let q = (xx + yy + zz) / 3.0
+            let axx = xx - q
+            let ayy = yy - q
+            let azz = zz - q
+            let p2 = axx * axx + ayy * ayy + azz * azz + 2.0 * p1
+            let p = sqrt (p2 / 6.0)
+            let bxx = axx / p
+            let bxy = xy / p
+            let bxz = xz / p
+            let byy = ayy / p
+            let byz = yz / p
+            let bzz = azz / p
+            let detB =
+                bxx * (byy * bzz - byz * byz)
+                - bxy * (bxy * bzz - byz * bxz)
+                + bxz * (bxy * byz - byy * bxz)
+            let r = detB / 2.0
+            let phi =
+                if r <= -1.0 then Math.PI / 3.0
+                elif r >= 1.0 then 0.0
+                else Math.Acos(r) / 3.0
+            let e0 = q + 2.0 * p * Math.Cos(phi)
+            let e2 = q + 2.0 * p * Math.Cos(phi + 2.0 * Math.PI / 3.0)
+            let e1 = 3.0 * q - e0 - e2
+            sortValuesDescending e0 e1 e2
+
+    match input.Items, output.Items with
+    | [ xxChunk; xyChunk; xzChunk; yyChunk; yzChunk; zzChunk ],
+      [ l0Chunk; l1Chunk; l2Chunk; v00Chunk; v01Chunk; v02Chunk; v10Chunk; v11Chunk; v12Chunk; v20Chunk; v21Chunk; v22Chunk ] ->
+        let xxValues = StackCore.Chunk.span<float32> xxChunk
+        let xyValues = StackCore.Chunk.span<float32> xyChunk
+        let xzValues = StackCore.Chunk.span<float32> xzChunk
+        let yyValues = StackCore.Chunk.span<float32> yyChunk
+        let yzValues = StackCore.Chunk.span<float32> yzChunk
+        let zzValues = StackCore.Chunk.span<float32> zzChunk
+        let l0Values = StackCore.Chunk.span<float32> l0Chunk
+        let l1Values = StackCore.Chunk.span<float32> l1Chunk
+        let l2Values = StackCore.Chunk.span<float32> l2Chunk
+        let v00Values = StackCore.Chunk.span<float32> v00Chunk
+        let v01Values = StackCore.Chunk.span<float32> v01Chunk
+        let v02Values = StackCore.Chunk.span<float32> v02Chunk
+        let v10Values = StackCore.Chunk.span<float32> v10Chunk
+        let v11Values = StackCore.Chunk.span<float32> v11Chunk
+        let v12Values = StackCore.Chunk.span<float32> v12Chunk
+        let v20Values = StackCore.Chunk.span<float32> v20Chunk
+        let v21Values = StackCore.Chunk.span<float32> v21Chunk
+        let v22Values = StackCore.Chunk.span<float32> v22Chunk
+        let mutable i = 0
+        while i < xxValues.Length do
+            let xx = float xxValues[i]
+            let xy = float xyValues[i]
+            let xz = float xzValues[i]
+            let yy = float yyValues[i]
+            let yz = float yzValues[i]
+            let zz = float zzValues[i]
+            let scale =
+                max 1.0
+                    (max (abs xx)
+                        (max (abs xy)
+                            (max (abs xz)
+                                (max (abs yy)
+                                    (max (abs yz) (abs zz))))))
+            let struct (e0, e1, e2) = eigenvalues xx xy xz yy yz zz
+            let gap = 1e-10 * scale
+            let vectorTol = 1e-12 * scale
+            let mutable x0 = 1.0
+            let mutable y0 = 0.0
+            let mutable z0 = 0.0
+            let mutable x1 = 0.0
+            let mutable y1 = 1.0
+            let mutable z1 = 0.0
+            let mutable x2 = 0.0
+            let mutable y2 = 0.0
+            let mutable z2 = 1.0
+            if abs (e0 - e1) <= gap && abs (e1 - e2) <= gap then
+                ()
+            elif abs (e0 - e1) <= gap then
+                let struct (ok, tx, ty, tz) = tryEigenvector xx xy xz yy yz zz e2 vectorTol
+                if ok then
+                    x2 <- tx; y2 <- ty; z2 <- tz
+                    let struct (u0, u1, u2, w0, w1, w2) = orthonormalComplement x2 y2 z2
+                    x0 <- u0; y0 <- u1; z0 <- u2
+                    x1 <- w0; y1 <- w1; z1 <- w2
+            elif abs (e1 - e2) <= gap then
+                let struct (ok, tx, ty, tz) = tryEigenvector xx xy xz yy yz zz e0 vectorTol
+                if ok then
+                    x0 <- tx; y0 <- ty; z0 <- tz
+                    let struct (u0, u1, u2, w0, w1, w2) = orthonormalComplement x0 y0 z0
+                    x1 <- u0; y1 <- u1; z1 <- u2
+                    x2 <- w0; y2 <- w1; z2 <- w2
+            else
+                let struct (ok0, tx0, ty0, tz0) = tryEigenvector xx xy xz yy yz zz e0 vectorTol
+                if ok0 then
+                    x0 <- tx0; y0 <- ty0; z0 <- tz0
+                let struct (ok1, tx1, ty1, tz1) = tryEigenvector xx xy xz yy yz zz e1 vectorTol
+                if ok1 then
+                    x1 <- tx1; y1 <- ty1; z1 <- tz1
+                let struct (ok2, tx2, ty2, tz2) = tryEigenvector xx xy xz yy yz zz e2 vectorTol
+                if ok2 then
+                    x2 <- tx2; y2 <- ty2; z2 <- tz2
+            l0Values[i] <- float32 e0
+            l1Values[i] <- float32 e1
+            l2Values[i] <- float32 e2
+            v00Values[i] <- float32 x0
+            v01Values[i] <- float32 y0
+            v02Values[i] <- float32 z0
+            v10Values[i] <- float32 x1
+            v11Values[i] <- float32 y1
+            v12Values[i] <- float32 z1
+            v20Values[i] <- float32 x2
+            v21Values[i] <- float32 y2
+            v22Values[i] <- float32 z2
+            i <- i + 1
+    | _ ->
+        invalidArg "input" "Expected 6 tensor input components and 12 eigensystem output components."
+
+let private structureTensorEigensystemComponentsJacobiAlloc
+    (input: StackCore.Window<StackCore.Chunk<float32>>)
+    (output: StackCore.Window<StackCore.Chunk<float32>>)
+    =
+    match input.Items, output.Items with
+    | [ xxChunk; xyChunk; xzChunk; yyChunk; yzChunk; zzChunk ],
+      [ l0Chunk; l1Chunk; l2Chunk; v00Chunk; v01Chunk; v02Chunk; v10Chunk; v11Chunk; v12Chunk; v20Chunk; v21Chunk; v22Chunk ] ->
+        let xxValues = StackCore.Chunk.span<float32> xxChunk
+        let xyValues = StackCore.Chunk.span<float32> xyChunk
+        let xzValues = StackCore.Chunk.span<float32> xzChunk
+        let yyValues = StackCore.Chunk.span<float32> yyChunk
+        let yzValues = StackCore.Chunk.span<float32> yzChunk
+        let zzValues = StackCore.Chunk.span<float32> zzChunk
+        let l0Values = StackCore.Chunk.span<float32> l0Chunk
+        let l1Values = StackCore.Chunk.span<float32> l1Chunk
+        let l2Values = StackCore.Chunk.span<float32> l2Chunk
+        let v00Values = StackCore.Chunk.span<float32> v00Chunk
+        let v01Values = StackCore.Chunk.span<float32> v01Chunk
+        let v02Values = StackCore.Chunk.span<float32> v02Chunk
+        let v10Values = StackCore.Chunk.span<float32> v10Chunk
+        let v11Values = StackCore.Chunk.span<float32> v11Chunk
+        let v12Values = StackCore.Chunk.span<float32> v12Chunk
+        let v20Values = StackCore.Chunk.span<float32> v20Chunk
+        let v21Values = StackCore.Chunk.span<float32> v21Chunk
+        let v22Values = StackCore.Chunk.span<float32> v22Chunk
+        let mutable i = 0
+        while i < xxValues.Length do
+            let eigen =
+                symmetricEigenJacobiAllocLocal
+                    xxValues[i]
+                    xyValues[i]
+                    xzValues[i]
+                    yyValues[i]
+                    yzValues[i]
+                    zzValues[i]
+            let e0, vec0 = eigen[0]
+            let e1, vec1 = eigen[1]
+            let e2, vec2 = eigen[2]
+            l0Values[i] <- float32 e0
+            l1Values[i] <- float32 e1
+            l2Values[i] <- float32 e2
+            v00Values[i] <- float32 vec0.x
+            v01Values[i] <- float32 vec0.y
+            v02Values[i] <- float32 vec0.z
+            v10Values[i] <- float32 vec1.x
+            v11Values[i] <- float32 vec1.y
+            v12Values[i] <- float32 vec1.z
+            v20Values[i] <- float32 vec2.x
+            v21Values[i] <- float32 vec2.y
+            v22Values[i] <- float32 vec2.z
+            i <- i + 1
+    | _ ->
+        invalidArg "input" "Expected 6 tensor input components and 12 eigensystem output components."
+
+let private convertAos3ToSoa3 (input: StackCore.Chunk<float32>) (output: StackCore.Chunk<float32>) =
+    let inputValues = StackCore.Chunk.span<float32> input
+    let outputValues = StackCore.Chunk.span<float32> output
+    let spatialCount = inputValues.Length / 3
+    let mutable i = 0
+    while i < spatialCount do
+        let inputBase = i * 3
+        outputValues[i] <- inputValues[inputBase]
+        outputValues[spatialCount + i] <- inputValues[inputBase + 1]
+        outputValues[2 * spatialCount + i] <- inputValues[inputBase + 2]
+        i <- i + 1
+
+let private convertSoa6ToAos6 (input: StackCore.Chunk<float32>) (output: StackCore.Chunk<float32>) =
+    let inputValues = StackCore.Chunk.span<float32> input
+    let outputValues = StackCore.Chunk.span<float32> output
+    let spatialCount = outputValues.Length / 6
+    let mutable i = 0
+    while i < spatialCount do
+        let outputBase = i * 6
+        outputValues[outputBase] <- inputValues[i]
+        outputValues[outputBase + 1] <- inputValues[spatialCount + i]
+        outputValues[outputBase + 2] <- inputValues[2 * spatialCount + i]
+        outputValues[outputBase + 3] <- inputValues[3 * spatialCount + i]
+        outputValues[outputBase + 4] <- inputValues[4 * spatialCount + i]
+        outputValues[outputBase + 5] <- inputValues[5 * spatialCount + i]
+        i <- i + 1
+
+let private checksumStructureTensorChunkFloat32 (chunk: StackCore.Chunk<float32>) =
+    let values = StackCore.Chunk.span<float32> chunk
+    let stride = max 1 (values.Length / 1024)
+    let mutable checksum = 2166136261u
+    let mutable i = 0
+    while i < values.Length do
+        let bits = uint32 (BitConverter.SingleToInt32Bits(values[i]))
+        checksum <- (checksum ^^^ bits) * 16777619u
+        i <- i + stride
+    int checksum
+
+let private checksumStructureTensorComponentWindowFloat32 (window: StackCore.Window<StackCore.Chunk<float32>>) =
+    let mutable checksum = 2166136261u
+    for chunk in window.Items do
+        let values = StackCore.Chunk.span<float32> chunk
+        let stride = max 1 (values.Length / 1024)
+        let mutable i = 0
+        while i < values.Length do
+            let bits = uint32 (BitConverter.SingleToInt32Bits(values[i]))
+            checksum <- (checksum ^^^ bits) * 16777619u
+            i <- i + stride
+    int checksum
+
+let private createStructureTensorComponentWindow shape componentCount : StackCore.Window<StackCore.Chunk<float32>> =
+    let chunks =
+        [ for _ in 1 .. componentCount ->
+            StackCore.Chunk.create<float32> (uint64 shape.Width, uint64 shape.Height, uint64 shape.Depth) ]
+    { Items = chunks
+      EmitRange = 0u, uint componentCount
+      ReleaseCount = uint componentCount }
+
+let private releaseStructureTensorComponentWindow (window: StackCore.Window<StackCore.Chunk<float32>>) =
+    window.Items |> List.iter StackCore.Chunk.decRef
+
+let private runStructureTensorTimedMeasured bytesPerIteration iterations (action: unit -> unit) (checksum: unit -> int) =
+    GC.Collect()
+    GC.WaitForPendingFinalizers()
+    GC.Collect()
+    let before = GC.GetAllocatedBytesForCurrentThread()
+    let stopwatch = Stopwatch.StartNew()
+    let mutable i = 0
+    while i < iterations do
+        action()
+        i <- i + 1
+    stopwatch.Stop()
+    let after = GC.GetAllocatedBytesForCurrentThread()
+    let checksumValue = checksum()
+    let bytes = float bytesPerIteration * float iterations
+    let gib = bytes / (1024.0 * 1024.0 * 1024.0)
+    let gibPerSecond = gib / stopwatch.Elapsed.TotalSeconds
+    printfn "checksum=%d elapsed=%.6fs throughput=%.3f GiB/s allocated=%d" checksumValue stopwatch.Elapsed.TotalSeconds gibPerSecond (after - before)
+    writeInternalSeconds stopwatch.Elapsed
+    0
+
+let private runStructureTensorLayoutVariant shape iterations variant =
+    let aosGradient = StackCore.Chunk.create<float32> (uint64 shape.Width * 3UL, uint64 shape.Height, uint64 shape.Depth)
+    let soaGradient = StackCore.Chunk.create<float32> (uint64 shape.Width, uint64 shape.Height, uint64 shape.Depth * 3UL)
+    let aosTensor = StackCore.Chunk.create<float32> (uint64 shape.Width * 6UL, uint64 shape.Height, uint64 shape.Depth)
+    let soaTensor = StackCore.Chunk.create<float32> (uint64 shape.Width, uint64 shape.Height, uint64 shape.Depth * 6UL)
+    let aosTensorScratch = StackCore.Chunk.create<float32> (uint64 shape.Width * 6UL, uint64 shape.Height, uint64 shape.Depth)
+    let soaTensorScratch = StackCore.Chunk.create<float32> (uint64 shape.Width, uint64 shape.Height, uint64 shape.Depth * 6UL)
+    let aosEigenvalues = StackCore.Chunk.create<float32> (uint64 shape.Width * 3UL, uint64 shape.Height, uint64 shape.Depth)
+    let soaEigenvalues = StackCore.Chunk.create<float32> (uint64 shape.Width, uint64 shape.Height, uint64 shape.Depth * 3UL)
+    let componentGradient = createStructureTensorComponentWindow shape 3
+    let componentTensor = createStructureTensorComponentWindow shape 6
+    let componentTensorScratch = createStructureTensorComponentWindow shape 6
+    let componentEigenvalues = createStructureTensorComponentWindow shape 3
+    let componentEigensystem = createStructureTensorComponentWindow shape 12
+    try
+        fillStructureTensorAosGradient aosGradient
+        fillStructureTensorSoaGradient soaGradient
+        fillStructureTensorComponentGradient componentGradient
+        structureTensorOuterAos aosGradient aosTensor
+        structureTensorOuterSoaVector soaGradient soaTensor
+        structureTensorOuterComponentsVector componentGradient componentTensor
+        let spatialCount = int64 shape.Width * int64 shape.Height * int64 shape.Depth
+        let outerBytes = spatialCount * int64 sizeof<float32> * int64 (3 + 6)
+        let smoothBytes = spatialCount * int64 sizeof<float32> * int64 (6 + 6)
+        let eigenBytes = spatialCount * int64 sizeof<float32> * int64 (6 + 3)
+        let eigensystemBytes = spatialCount * int64 sizeof<float32> * int64 (6 + 12)
+        let pipelineBytes = outerBytes + smoothBytes + eigenBytes
+        let eigensystemPipelineBytes = outerBytes + smoothBytes + eigensystemBytes
+        let convert3Bytes = spatialCount * int64 sizeof<float32> * int64 (3 + 3)
+        let convert6Bytes = spatialCount * int64 sizeof<float32> * int64 (6 + 6)
+        printfn "variant=%s shape=%ux%ux%u spatial=%d iterations=%d" variant shape.Width shape.Height shape.Depth spatialCount iterations
+        match variant with
+        | "aos-outer" ->
+            runStructureTensorTimedMeasured outerBytes iterations (fun () -> structureTensorOuterAos aosGradient aosTensor) (fun () -> checksumStructureTensorChunkFloat32 aosTensor)
+        | "soa-outer" ->
+            runStructureTensorTimedMeasured outerBytes iterations (fun () -> structureTensorOuterSoaScalar soaGradient soaTensor) (fun () -> checksumStructureTensorChunkFloat32 soaTensor)
+        | "soa-outer-vector" ->
+            runStructureTensorTimedMeasured outerBytes iterations (fun () -> structureTensorOuterSoaVector soaGradient soaTensor) (fun () -> checksumStructureTensorChunkFloat32 soaTensor)
+        | "components-outer-vector" ->
+            runStructureTensorTimedMeasured outerBytes iterations (fun () -> structureTensorOuterComponentsVector componentGradient componentTensor) (fun () -> checksumStructureTensorComponentWindowFloat32 componentTensor)
+        | "aos-smooth" ->
+            runStructureTensorTimedMeasured smoothBytes iterations (fun () -> smoothTensorAos3Point aosTensor aosTensorScratch) (fun () -> checksumStructureTensorChunkFloat32 aosTensorScratch)
+        | "soa-smooth-vector" ->
+            runStructureTensorTimedMeasured smoothBytes iterations (fun () -> smoothTensorSoa3PointVector soaTensor soaTensorScratch) (fun () -> checksumStructureTensorChunkFloat32 soaTensorScratch)
+        | "components-smooth-vector" ->
+            runStructureTensorTimedMeasured smoothBytes iterations (fun () -> smoothTensorComponents3PointVector componentTensor componentTensorScratch) (fun () -> checksumStructureTensorComponentWindowFloat32 componentTensorScratch)
+        | "aos-eigenvalues" ->
+            runStructureTensorTimedMeasured eigenBytes iterations (fun () -> structureTensorEigenvaluesAos aosTensor aosEigenvalues) (fun () -> checksumStructureTensorChunkFloat32 aosEigenvalues)
+        | "soa-eigenvalues" ->
+            runStructureTensorTimedMeasured eigenBytes iterations (fun () -> structureTensorEigenvaluesSoa soaTensor soaEigenvalues) (fun () -> checksumStructureTensorChunkFloat32 soaEigenvalues)
+        | "components-eigenvalues" ->
+            runStructureTensorTimedMeasured eigenBytes iterations (fun () -> structureTensorEigenvaluesComponents componentTensor componentEigenvalues) (fun () -> checksumStructureTensorComponentWindowFloat32 componentEigenvalues)
+        | "components-eigenvalues-jacobi6" ->
+            runStructureTensorTimedMeasured eigenBytes iterations (fun () -> structureTensorEigenvaluesComponentsJacobi 6 componentTensor componentEigenvalues) (fun () -> checksumStructureTensorComponentWindowFloat32 componentEigenvalues)
+        | "components-eigenvalues-jacobi8" ->
+            runStructureTensorTimedMeasured eigenBytes iterations (fun () -> structureTensorEigenvaluesComponentsJacobi 8 componentTensor componentEigenvalues) (fun () -> checksumStructureTensorComponentWindowFloat32 componentEigenvalues)
+        | "components-eigensystem" ->
+            runStructureTensorTimedMeasured eigensystemBytes iterations (fun () -> structureTensorEigensystemComponents componentTensor componentEigensystem) (fun () -> checksumStructureTensorComponentWindowFloat32 componentEigensystem)
+        | "components-eigensystem-chunk-algebra" ->
+            runStructureTensorTimedMeasured eigensystemBytes iterations (fun () -> structureTensorEigensystemComponentsChunkAlgebra componentTensor componentEigensystem) (fun () -> checksumStructureTensorComponentWindowFloat32 componentEigensystem)
+        | "components-eigensystem-jacobi-alloc" ->
+            runStructureTensorTimedMeasured eigensystemBytes iterations (fun () -> structureTensorEigensystemComponentsJacobiAlloc componentTensor componentEigensystem) (fun () -> checksumStructureTensorComponentWindowFloat32 componentEigensystem)
+        | "aos-pipeline" ->
+            runStructureTensorTimedMeasured
+                pipelineBytes
+                iterations
+                (fun () ->
+                    structureTensorOuterAos aosGradient aosTensor
+                    smoothTensorAos3Point aosTensor aosTensorScratch
+                    structureTensorEigenvaluesAos aosTensorScratch aosEigenvalues)
+                (fun () -> checksumStructureTensorChunkFloat32 aosEigenvalues)
+        | "soa-pipeline-vector" ->
+            runStructureTensorTimedMeasured
+                pipelineBytes
+                iterations
+                (fun () ->
+                    structureTensorOuterSoaVector soaGradient soaTensor
+                    smoothTensorSoa3PointVector soaTensor soaTensorScratch
+                    structureTensorEigenvaluesSoa soaTensorScratch soaEigenvalues)
+                (fun () -> checksumStructureTensorChunkFloat32 soaEigenvalues)
+        | "components-pipeline-vector" ->
+            runStructureTensorTimedMeasured
+                pipelineBytes
+                iterations
+                (fun () ->
+                    structureTensorOuterComponentsVector componentGradient componentTensor
+                    smoothTensorComponents3PointVector componentTensor componentTensorScratch
+                    structureTensorEigenvaluesComponents componentTensorScratch componentEigenvalues)
+                (fun () -> checksumStructureTensorComponentWindowFloat32 componentEigenvalues)
+        | "components-pipeline-jacobi6" ->
+            runStructureTensorTimedMeasured
+                pipelineBytes
+                iterations
+                (fun () ->
+                    structureTensorOuterComponentsVector componentGradient componentTensor
+                    smoothTensorComponents3PointVector componentTensor componentTensorScratch
+                    structureTensorEigenvaluesComponentsJacobi 6 componentTensorScratch componentEigenvalues)
+                (fun () -> checksumStructureTensorComponentWindowFloat32 componentEigenvalues)
+        | "components-pipeline-jacobi8" ->
+            runStructureTensorTimedMeasured
+                pipelineBytes
+                iterations
+                (fun () ->
+                    structureTensorOuterComponentsVector componentGradient componentTensor
+                    smoothTensorComponents3PointVector componentTensor componentTensorScratch
+                    structureTensorEigenvaluesComponentsJacobi 8 componentTensorScratch componentEigenvalues)
+                (fun () -> checksumStructureTensorComponentWindowFloat32 componentEigenvalues)
+        | "components-pipeline-eigensystem" ->
+            runStructureTensorTimedMeasured
+                eigensystemPipelineBytes
+                iterations
+                (fun () ->
+                    structureTensorOuterComponentsVector componentGradient componentTensor
+                    smoothTensorComponents3PointVector componentTensor componentTensorScratch
+                    structureTensorEigensystemComponents componentTensorScratch componentEigensystem)
+                (fun () -> checksumStructureTensorComponentWindowFloat32 componentEigensystem)
+        | "components-pipeline-eigensystem-chunk-algebra" ->
+            runStructureTensorTimedMeasured
+                eigensystemPipelineBytes
+                iterations
+                (fun () ->
+                    structureTensorOuterComponentsVector componentGradient componentTensor
+                    smoothTensorComponents3PointVector componentTensor componentTensorScratch
+                    structureTensorEigensystemComponentsChunkAlgebra componentTensorScratch componentEigensystem)
+                (fun () -> checksumStructureTensorComponentWindowFloat32 componentEigensystem)
+        | "components-pipeline-eigensystem-jacobi-alloc" ->
+            runStructureTensorTimedMeasured
+                eigensystemPipelineBytes
+                iterations
+                (fun () ->
+                    structureTensorOuterComponentsVector componentGradient componentTensor
+                    smoothTensorComponents3PointVector componentTensor componentTensorScratch
+                    structureTensorEigensystemComponentsJacobiAlloc componentTensorScratch componentEigensystem)
+                (fun () -> checksumStructureTensorComponentWindowFloat32 componentEigensystem)
+        | "aos-to-soa" ->
+            runStructureTensorTimedMeasured convert3Bytes iterations (fun () -> convertAos3ToSoa3 aosGradient soaGradient) (fun () -> checksumStructureTensorChunkFloat32 soaGradient)
+        | "soa-to-aos" ->
+            structureTensorOuterSoaVector soaGradient soaTensor
+            runStructureTensorTimedMeasured convert6Bytes iterations (fun () -> convertSoa6ToAos6 soaTensor aosTensor) (fun () -> checksumStructureTensorChunkFloat32 aosTensor)
+        | other ->
+            invalidArg "variant" $"Unsupported structure tensor layout variant '{other}'."
+    finally
+        releaseStructureTensorComponentWindow componentEigensystem
+        releaseStructureTensorComponentWindow componentEigenvalues
+        releaseStructureTensorComponentWindow componentTensorScratch
+        releaseStructureTensorComponentWindow componentTensor
+        releaseStructureTensorComponentWindow componentGradient
+        StackCore.Chunk.decRef soaEigenvalues
+        StackCore.Chunk.decRef aosEigenvalues
+        StackCore.Chunk.decRef soaTensorScratch
+        StackCore.Chunk.decRef aosTensorScratch
+        StackCore.Chunk.decRef soaTensor
+        StackCore.Chunk.decRef aosTensor
+        StackCore.Chunk.decRef soaGradient
+        StackCore.Chunk.decRef aosGradient
+
+let private runChunkStructureTensorLayout opts =
+    let shape = require "shape" opts |> parseShape
+    let variant = optional "variant" "all" opts
+    let iterations = optional "iterations" "10" opts |> int
+    if iterations < 1 then invalidArg "iterations" "Expected at least one iteration."
+    let variants =
+        if variant = "all" then
+            [ "aos-outer"
+              "soa-outer"
+              "soa-outer-vector"
+              "components-outer-vector"
+              "aos-smooth"
+              "soa-smooth-vector"
+              "components-smooth-vector"
+              "aos-eigenvalues"
+              "soa-eigenvalues"
+              "components-eigenvalues"
+              "components-eigenvalues-jacobi6"
+              "components-eigenvalues-jacobi8"
+              "components-eigensystem"
+              "components-eigensystem-chunk-algebra"
+              "components-eigensystem-jacobi-alloc"
+              "aos-pipeline"
+              "soa-pipeline-vector"
+              "components-pipeline-vector"
+              "components-pipeline-jacobi6"
+              "components-pipeline-jacobi8"
+              "components-pipeline-eigensystem"
+              "components-pipeline-eigensystem-chunk-algebra"
+              "components-pipeline-eigensystem-jacobi-alloc"
+              "aos-to-soa"
+              "soa-to-aos" ]
+        else
+            [ variant ]
+    variants
+    |> List.fold
+        (fun exitCode current ->
+            if exitCode <> 0 then exitCode
+            else runStructureTensorLayoutVariant shape iterations current)
+        0
+
 let private runChunkConnectedComponentsCommand opts =
     let input = require "input" opts
     let output = opts |> Map.tryFind "output"
@@ -7086,6 +8207,7 @@ let main args =
         | _ when args[0] = "run-chunk-simd-reductions" -> args[1..] |> parseArgs |> runChunkSimdReductions
         | _ when args[0] = "run-chunk-cast" -> args[1..] |> parseArgs |> runChunkCast
         | _ when args[0] = "run-chunk-pixelwise-float32" -> args[1..] |> parseArgs |> runChunkPixelwiseFloat32
+        | _ when args[0] = "run-chunk-structure-tensor-layout" -> args[1..] |> parseArgs |> runChunkStructureTensorLayout
         | _ when args[0] = "run-chunk-connected-components" -> args[1..] |> parseArgs |> runChunkConnectedComponentsCommand
         | _ when args[0] = "run-chunk-dilate" -> args[1..] |> parseArgs |> runChunkDilate
         | _ when args[0] = "run-chunk-convolve" -> args[1..] |> parseArgs |> runChunkConvolve

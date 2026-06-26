@@ -12,6 +12,9 @@ Questions to consider:
 
 - ChunkSimdOptimizationIdeas.md
 
+-     >=> vectorRange<float32> 3u 3u
+    >=> vector3ToColorFloat32 -1.0f 1.0f
+
 ---
 
 Ignore anything below here:

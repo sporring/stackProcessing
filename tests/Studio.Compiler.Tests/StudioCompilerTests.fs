@@ -1863,25 +1863,27 @@ let generatorSuite =
                 graph
                     [ read "source" "source"
                       node "tensor" "StructureTensor" [ p "sigma" "1.0" false; p "radius" "7" false; p "rho" "2.0" false; p "rhoRadius" "7" false; p "workers" "4" false ]
-                      node "range" "VectorRange" [ p "firstComponent" "3" false; p "componentCount" "3" false ]
+                      node "eigenvector" "SymmetricTensorEigenvector" [ p "eigenIndex" "0u" false ]
                       node "color" "Vector3ToColor" [ p "inputMinimum" "-1.0" false; p "inputMaximum" "1.0" false ]
                       node "vector" "ColorToVector3" [ p "outputMinimum" "-1.0" false; p "outputMaximum" "1.0" false ]
                       write ]
                     [ edge "source" "output" 0 "tensor" "input" 0
-                      edge "tensor" "output" 0 "range" "input" 0
-                      edge "range" "output" 0 "color" "input" 0
+                      edge "tensor" "output" 0 "eigenvector" "input" 0
+                      edge "eigenvector" "output" 0 "color" "input" 0
                       edge "color" "output" 0 "vector" "input" 0
                       edge "vector" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains colorCode ">=> chunkVectorRange<float32> 3u 3u" "VectorRange should lower with start, count, and the inferred Float32 vector type."
-            Expect.stringContains colorCode ">=> chunkVector3ToColorFloat32 (float32 (-1.0)) (float32 (1.0))" "Vector3ToColor should lower with its input range and the inferred Float32 vector type."
+            Expect.stringContains colorCode ">=> structureTensor 1.0 7 2.0 7 4" "StructureTensor should lower to the six-component tensor stage."
+            Expect.stringContains colorCode ">=> symmetricTensorEigenvector 0u" "SymmetricTensorEigenvector should lower as an explicit single-eigenvector stage."
+            Expect.isFalse (colorCode.Contains("vectorRange<float32> 3u 3u")) "The single-eigenvector path should not materialize the full eigensystem and then slice it."
+            Expect.stringContains colorCode ">=> vector3ToColorFloat32 (float32 (-1.0)) (float32 (1.0))" "Vector3ToColor should lower with its input range and the inferred Float32 vector type."
             Expect.stringContains colorCode ">=> colorToVector3 -1.0 1.0" "ColorToVector3 should lower with its output range."
 
             let gradientCode =
                 graph
                     [ read "source" "source"
-                      node "gradient" "Gradient" [ p "order" "1" false; p "windowSize" "5" false ]
+                      node "gradient" "Gradient" [ p "sigma" "1.0" false; p "radius" "7" false; p "workers" "4" false ]
                       node "element" "VectorElement" [ p "component" "0" false ]
                       write ]
                     [ edge "source" "output" 0 "gradient" "input" 0
@@ -1889,7 +1891,7 @@ let generatorSuite =
                       edge "element" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains gradientCode ">=> gradient 1u (Some 5u)" "Gradient should lower with order and window size."
+            Expect.stringContains gradientCode ">=> gradientVector 1.0 7 4" "Gradient should lower with sigma, radius, and workers."
 
             let angleCode =
                 graph
@@ -1914,8 +1916,8 @@ let generatorSuite =
                       edge "tensor" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains structureTensorCode ">=> chunkStructureTensorNativeParallelCollect 1.0 7 2.0 7 4" "StructureTensor should lower to the Chunk-native parallel collect stage."
-            Expect.isFalse (structureTensorCode.Contains("selectGroupedOutput 4u")) "StructureTensor now emits one vectorized eigensystem stream."
+            Expect.stringContains structureTensorCode ">=> structureTensor 1.0 7 2.0 7 4" "StructureTensor should lower to the six-component tensor stage."
+            Expect.isFalse (structureTensorCode.Contains("symmetricTensorEigensystem")) "StructureTensor should not implicitly perform eigensystem decomposition."
 
             let pcaCode =
                 graph
@@ -1929,8 +1931,8 @@ let generatorSuite =
                       edge "pca" "output" 1 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains pcaCode ">=> PCA 3u" "PCA should lower as a reducer stage with component count."
-            Expect.stringContains pcaCode ">=> selectGroupedOutput (3u + 1u) 1u" "Connecting a PCA output port should select the corresponding eigensystem stream."
+            Expect.stringContains pcaCode ">=> pcaFloat32 3u" "PCA should lower as a reducer stage with component count."
+            Expect.stringContains pcaCode ">=> selectGroupedVectorOutput (3u + 1u) 1u" "Connecting a PCA output port should select the corresponding eigensystem stream."
 
             let dotCode =
                 graph

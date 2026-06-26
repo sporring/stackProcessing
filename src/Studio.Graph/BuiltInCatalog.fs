@@ -1410,7 +1410,7 @@ module BuiltInCatalog =
           DisplayName = "vectorRange"
           Category = "Vector Images"
           Summary = "Extract a contiguous range of components from a vector image."
-          Description = "Extracts componentCount consecutive components starting at firstComponent from every vector-valued pixel. Component indices are zero-based. For structureTensor, the single output is a 12-component 3x4 matrix laid out as [eigenvalue0; eigenvalue1; eigenvalue2; eigenvector0.x; eigenvector0.y; eigenvector0.z; eigenvector1.x; eigenvector1.y; eigenvector1.z; eigenvector2.x; eigenvector2.y; eigenvector2.z]. Thus firstComponent=3 and componentCount=3 extracts eigenvector 0, firstComponent=6 extracts eigenvector 1, and firstComponent=9 extracts eigenvector 2."
+          Description = "Extracts componentCount consecutive components starting at firstComponent from every vector-valued pixel. Component indices are zero-based. For symmetricTensorEigensystem, the output is a 12-component 3x4 matrix laid out as [eigenvalue0; eigenvalue1; eigenvalue2; eigenvector0.x; eigenvector0.y; eigenvector0.z; eigenvector1.x; eigenvector1.y; eigenvector1.z; eigenvector2.x; eigenvector2.y; eigenvector2.z]. Thus firstComponent=3 and componentCount=3 extracts eigenvector 0, firstComponent=6 extracts eigenvector 1, and firstComponent=9 extracts eigenvector 2."
           Aliases = [ "vector"; "range"; "slice"; "component"; "eigenvector"; "structure"; "tensor" ]
           Inputs = [ makePort "Vector Float64" vectorImageFloat64 ]
           Outputs = [ makePort "Vector Float64" vectorImageFloat64 ]
@@ -1511,17 +1511,37 @@ module BuiltInCatalog =
         { Id = "StructureTensor"
           DisplayName = "structureTensor"
           Category = "Vector Images"
-          Summary = "Compute the structure-tensor eigensystem as a vectorized 3x4 matrix."
-          Description = "Pre-smooths Float32 scalar chunks with sigma, computes the finite-difference gradient, forms the six unique components of the symmetric exterior product, smooths those tensor components with rho, and emits one 12-component Float32 vector chunk per slice. The 12 components encode a 3x4 eigensystem matrix: components 0..2 are the sorted eigenvalues; components 3..5 are eigenvector 0; components 6..8 are eigenvector 1; components 9..11 are eigenvector 2. Use vectorRange to extract a 3-component eigenvector stream before colorizing or writing a scalar component."
-          Aliases = [ "structure"; "tensor"; "eigen"; "orientation"; "gradient"; "matrix" ]
+          Summary = "Compute the six-component smoothed structure tensor."
+          Description = "Pre-smooths Float32 scalar chunks with sigma, computes the finite-difference gradient, forms the six unique components of the symmetric exterior product, smooths those tensor components with rho, and emits six Float32 components ordered as xx, xy, xz, yy, yz, zz. Feed this into symmetricTensorEigensystem when eigenvalues or eigenvectors are needed."
+          Aliases = [ "structure"; "tensor"; "orientation"; "gradient"; "matrix"; "outer" ]
           Inputs = [ makePort "Float32" imageFloat32 ]
-          Outputs = [ makePort "Eigensystem 3x4 Float32" vectorImageFloat32 ]
+          Outputs = [ makePort "Tensor 3x3 Float32" vectorImageFloat32 ]
           Parameters =
             [ makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
               makeParameter "radius" "Sigma radius" "7" (BasicType.Numeric Int32)
               makeParameter "rho" "Rho" "2.0" (BasicType.Numeric Float64)
               makeParameter "rhoRadius" "Rho radius" "7" (BasicType.Numeric Int32)
               makeParameter "workers" "Workers" "4" (BasicType.Numeric Int32) ] }
+
+        { Id = "SymmetricTensorEigensystem"
+          DisplayName = "symmetricTensorEigensystem"
+          Category = "Vector Images"
+          Summary = "Compute eigenvalues and eigenvectors of a six-component structure tensor."
+          Description = "Consumes six-component Float32 tensor chunks ordered as xx, xy, xz, yy, yz, zz and emits one 12-component Float32 vector chunk per slice. The components encode a 3x4 eigensystem matrix: components 0..2 are the sorted eigenvalues; components 3..5 are eigenvector 0; components 6..8 are eigenvector 1; components 9..11 are eigenvector 2. Use vectorRange to extract a 3-component eigenvector stream before colorizing or writing a scalar component."
+          Aliases = [ "structure"; "tensor"; "eigen"; "eigensystem"; "orientation"; "matrix" ]
+          Inputs = [ makePort "Tensor 3x3 Float32" vectorImageFloat32 ]
+          Outputs = [ makePort "Eigensystem 3x4 Float32" vectorImageFloat32 ]
+          Parameters = [] }
+
+        { Id = "SymmetricTensorEigenvector"
+          DisplayName = "symmetricTensorEigenvector"
+          Category = "Vector Images"
+          Summary = "Compute one eigenvector of a six-component symmetric tensor."
+          Description = "Consumes six-component Float32 tensor chunks ordered as xx, xy, xz, yy, yz, zz, computes the sorted eigenvalues internally, and emits only the selected three-component eigenvector. This avoids materializing the full 12-component eigensystem when only one direction field is needed."
+          Aliases = [ "structure"; "tensor"; "eigen"; "eigenvector"; "orientation"; "direction" ]
+          Inputs = [ makePort "Tensor 3x3 Float32" vectorImageFloat32 ]
+          Outputs = [ makePort "Eigenvector Float32" vectorImageFloat32 ]
+          Parameters = [ makeParameter "eigenIndex" "Eigen index" "0" (BasicType.Numeric UInt32) ] }
 
         { Id = "PCA"
           DisplayName = "PCA"

@@ -2063,18 +2063,22 @@ let private bottomUpGraphTemplates config =
            ignoreTemplate
                $"bottomup-79-structureTensor-vector-ignore-{sizeSuffix}"
                "Float32 read structure tensor eigensystem consumed."
-               [ readFloat; "tensor", "StructureTensor", [ "sigma", "1.0"; "rho", "2.0" ] ]
+               [ readFloat
+                 "tensor", "StructureTensor", [ "sigma", "1.0"; "rho", "2.0" ]
+                 "eigensystem", "SymmetricTensorEigensystem", [] ]
            ignoreTemplate
                $"bottomup-80-structureTensor-vectorElement-ignore-{sizeSuffix}"
                "Float32 read structure tensor first component consumed."
                [ readFloat
                  "tensor", "StructureTensor", [ "sigma", "1.0"; "rho", "2.0" ]
+                 "eigensystem", "SymmetricTensorEigensystem", []
                  "component", "VectorElement", [ "component", "0" ] ]
            writeUInt8Template
                $"bottomup-81-structureTensor-vectorElement-write-{sizeSuffix}"
                "Float32 read structure tensor first component cast and written."
                [ readFloat
                  "tensor", "StructureTensor", [ "sigma", "1.0"; "rho", "2.0" ]
+                 "eigensystem", "SymmetricTensorEigensystem", []
                  "component", "VectorElement", [ "component", "0" ] ]
                "Float32" |]
 

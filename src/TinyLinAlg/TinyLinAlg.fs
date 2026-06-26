@@ -11,6 +11,15 @@ type M3 =
       m10: float; m11: float; m12: float
       m20: float; m21: float; m22: float }
 
+[<Struct>]
+type SymmetricEigen3 =
+    { Value0: float
+      Vector0: V3
+      Value1: float
+      Vector1: V3
+      Value2: float
+      Vector2: V3 }
+
 let v3 x y z = { x = x; y = y; z = z }
 
 let add (a:V3) (b:V3) = v3 (a.x+b.x) (a.y+b.y) (a.z+b.z)
@@ -53,7 +62,7 @@ let inv3 (m:M3) =
       m21 = -(m.m00*m.m21 - m.m01*m.m20) * invDet
       m22 =  (m.m00*m.m11 - m.m01*m.m10) * invDet }
 
-let symmetricEigen (m: M3) : (float * V3) list =
+let private symmetricEigenJacobi (m: M3) : (float * V3) list =
     let a = Array2D.zeroCreate<float> 3 3
     let v = Array2D.zeroCreate<float> 3 3
 
@@ -106,6 +115,338 @@ let symmetricEigen (m: M3) : (float * V3) list =
         let vector = normalize (v3 v[0,i] v[1,i] v[2,i])
         a[i,i], vector ]
     |> List.sortByDescending fst
+
+let private sortEigen3Struct e0 v0 e1 v1 e2 v2 =
+    let mutable a0 = e0
+    let mutable u0 = v0
+    let mutable a1 = e1
+    let mutable u1 = v1
+    let mutable a2 = e2
+    let mutable u2 = v2
+    if a0 < a1 then
+        let ta = a0
+        let tu = u0
+        a0 <- a1
+        u0 <- u1
+        a1 <- ta
+        u1 <- tu
+    if a1 < a2 then
+        let ta = a1
+        let tu = u1
+        a1 <- a2
+        u1 <- u2
+        a2 <- ta
+        u2 <- tu
+    if a0 < a1 then
+        let ta = a0
+        let tu = u0
+        a0 <- a1
+        u0 <- u1
+        a1 <- ta
+        u1 <- tu
+    { Value0 = a0
+      Vector0 = normalize u0
+      Value1 = a1
+      Vector1 = normalize u1
+      Value2 = a2
+      Vector2 = normalize u2 }
+
+let private symmetricEigenJacobi3 (m: M3) : SymmetricEigen3 =
+    let mutable a00 = m.m00
+    let mutable a01 = m.m01
+    let mutable a02 = m.m02
+    let mutable a11 = m.m11
+    let mutable a12 = m.m12
+    let mutable a22 = m.m22
+
+    let mutable v00 = 1.0
+    let mutable v01 = 0.0
+    let mutable v02 = 0.0
+    let mutable v10 = 0.0
+    let mutable v11 = 1.0
+    let mutable v12 = 0.0
+    let mutable v20 = 0.0
+    let mutable v21 = 0.0
+    let mutable v22 = 1.0
+
+    let inline coeff app aqq apq =
+        let tau = (aqq - app) / (2.0 * apq)
+        let sign = if tau >= 0.0 then 1.0 else -1.0
+        let t = sign / (abs tau + sqrt (1.0 + tau * tau))
+        let c = 1.0 / sqrt (1.0 + t * t)
+        let s = t * c
+        struct (t, c, s)
+
+    let inline rotate01 () =
+        if abs a01 > 1e-14 then
+            let app = a00
+            let aqq = a11
+            let apq = a01
+            let struct (t, c, s) = coeff app aqq apq
+            a00 <- app - t * apq
+            a11 <- aqq + t * apq
+            a01 <- 0.0
+            let a02Old = a02
+            let a12Old = a12
+            a02 <- c * a02Old - s * a12Old
+            a12 <- s * a02Old + c * a12Old
+
+            let r00 = v00
+            let r01 = v01
+            v00 <- c * r00 - s * r01
+            v01 <- s * r00 + c * r01
+            let r10 = v10
+            let r11 = v11
+            v10 <- c * r10 - s * r11
+            v11 <- s * r10 + c * r11
+            let r20 = v20
+            let r21 = v21
+            v20 <- c * r20 - s * r21
+            v21 <- s * r20 + c * r21
+
+    let inline rotate02 () =
+        if abs a02 > 1e-14 then
+            let app = a00
+            let aqq = a22
+            let apq = a02
+            let struct (t, c, s) = coeff app aqq apq
+            a00 <- app - t * apq
+            a22 <- aqq + t * apq
+            a02 <- 0.0
+            let a01Old = a01
+            let a12Old = a12
+            a01 <- c * a01Old - s * a12Old
+            a12 <- s * a01Old + c * a12Old
+
+            let r00 = v00
+            let r02 = v02
+            v00 <- c * r00 - s * r02
+            v02 <- s * r00 + c * r02
+            let r10 = v10
+            let r12 = v12
+            v10 <- c * r10 - s * r12
+            v12 <- s * r10 + c * r12
+            let r20 = v20
+            let r22 = v22
+            v20 <- c * r20 - s * r22
+            v22 <- s * r20 + c * r22
+
+    let inline rotate12 () =
+        if abs a12 > 1e-14 then
+            let app = a11
+            let aqq = a22
+            let apq = a12
+            let struct (t, c, s) = coeff app aqq apq
+            a11 <- app - t * apq
+            a22 <- aqq + t * apq
+            a12 <- 0.0
+            let a01Old = a01
+            let a02Old = a02
+            a01 <- c * a01Old - s * a02Old
+            a02 <- s * a01Old + c * a02Old
+
+            let r01 = v01
+            let r02 = v02
+            v01 <- c * r01 - s * r02
+            v02 <- s * r01 + c * r02
+            let r11 = v11
+            let r12 = v12
+            v11 <- c * r11 - s * r12
+            v12 <- s * r11 + c * r12
+            let r21 = v21
+            let r22 = v22
+            v21 <- c * r21 - s * r22
+            v22 <- s * r21 + c * r22
+
+    for _ in 1 .. 32 do
+        rotate01()
+        rotate02()
+        rotate12()
+
+    sortEigen3Struct
+        a00 (v3 v00 v10 v20)
+        a11 (v3 v01 v11 v21)
+        a22 (v3 v02 v12 v22)
+
+let private sortEigenvaluesDescending a b c =
+    let mutable x = a
+    let mutable y = b
+    let mutable z = c
+    if x < y then
+        let t = x
+        x <- y
+        y <- t
+    if y < z then
+        let t = y
+        y <- z
+        z <- t
+    if x < y then
+        let t = x
+        x <- y
+        y <- t
+    struct (x, y, z)
+
+let private symmetricEigenvalues3 (m: M3) =
+    let p1 = m.m01 * m.m01 + m.m02 * m.m02 + m.m12 * m.m12
+    if p1 = 0.0 then
+        sortEigenvaluesDescending m.m00 m.m11 m.m22
+    else
+        let q = (m.m00 + m.m11 + m.m22) / 3.0
+        let a00 = m.m00 - q
+        let a11 = m.m11 - q
+        let a22 = m.m22 - q
+        let p2 = a00 * a00 + a11 * a11 + a22 * a22 + 2.0 * p1
+        let p = sqrt (p2 / 6.0)
+        let b00 = a00 / p
+        let b01 = m.m01 / p
+        let b02 = m.m02 / p
+        let b11 = a11 / p
+        let b12 = m.m12 / p
+        let b22 = a22 / p
+        let detB =
+            b00 * (b11 * b22 - b12 * b12)
+            - b01 * (b01 * b22 - b12 * b02)
+            + b02 * (b01 * b12 - b11 * b02)
+        let r = detB / 2.0
+        let phi =
+            if r <= -1.0 then System.Math.PI / 3.0
+            elif r >= 1.0 then 0.0
+            else System.Math.Acos(r) / 3.0
+        let eig0 = q + 2.0 * p * System.Math.Cos(phi)
+        let eig2 = q + 2.0 * p * System.Math.Cos(phi + 2.0 * System.Math.PI / 3.0)
+        let eig1 = 3.0 * q - eig0 - eig2
+        sortEigenvaluesDescending eig0 eig1 eig2
+
+let private tryEigenvectorByCrossProduct (m: M3) eigenvalue tolerance (result: byref<V3>) =
+    let r0 = v3 (m.m00 - eigenvalue) m.m01 m.m02
+    let r1 = v3 m.m01 (m.m11 - eigenvalue) m.m12
+    let r2 = v3 m.m02 m.m12 (m.m22 - eigenvalue)
+    let c01 = cross r0 r1
+    let c02 = cross r0 r2
+    let c12 = cross r1 r2
+    let n01 = dot c01 c01
+    let n02 = dot c02 c02
+    let n12 = dot c12 c12
+
+    let struct (candidate, normSquared) =
+        if n01 >= n02 && n01 >= n12 then struct (c01, n01)
+        elif n02 >= n12 then struct (c02, n02)
+        else struct (c12, n12)
+
+    if normSquared <= tolerance * tolerance then
+        false
+    else
+        let vector = scale (1.0 / sqrt normSquared) candidate
+        let vector =
+            let ax = abs vector.x
+            let ay = abs vector.y
+            let az = abs vector.z
+            let sign =
+                if ax >= ay && ax >= az then vector.x
+                elif ay >= az then vector.y
+                else vector.z
+            if sign < 0.0 then scale -1.0 vector else vector
+        result <- vector
+        true
+
+let private eigenResidualNorm (m: M3) eigenvalue vector =
+    let av = mulMV m vector
+    let lv = scale eigenvalue vector
+    norm (sub av lv)
+
+let private orthonormalComplement (axis: V3) =
+    let reference =
+        let ax = abs axis.x
+        let ay = abs axis.y
+        let az = abs axis.z
+        if ax <= ay && ax <= az then v3 1.0 0.0 0.0
+        elif ay <= az then v3 0.0 1.0 0.0
+        else v3 0.0 0.0 1.0
+    let u = normalize (cross axis reference)
+    let v = normalize (cross axis u)
+    struct (u, v)
+
+let private eigenListToStruct (eigen: (float * V3) list) =
+    let e0, v0 = eigen[0]
+    let e1, v1 = eigen[1]
+    let e2, v2 = eigen[2]
+    { Value0 = e0
+      Vector0 = v0
+      Value1 = e1
+      Vector1 = v1
+      Value2 = e2
+      Vector2 = v2 }
+
+let symmetricEigen3 (m: M3) : SymmetricEigen3 =
+    let scale =
+        max 1.0
+            (max (abs m.m00)
+                (max (abs m.m01)
+                    (max (abs m.m02)
+                        (max (abs m.m11)
+                            (max (abs m.m12) (abs m.m22))))))
+    let struct (l0, l1, l2) = symmetricEigenvalues3 m
+    let gapTolerance = 1e-10 * scale
+
+    if abs (l0 - l1) <= gapTolerance && abs (l1 - l2) <= gapTolerance then
+        { Value0 = l0
+          Vector0 = v3 1.0 0.0 0.0
+          Value1 = l1
+          Vector1 = v3 0.0 1.0 0.0
+          Value2 = l2
+          Vector2 = v3 0.0 0.0 1.0 }
+    elif abs (l0 - l1) <= gapTolerance then
+        let mutable v2 = v3 0.0 0.0 0.0
+        if tryEigenvectorByCrossProduct m l2 (1e-12 * scale) &v2 then
+            let struct (v0, v1) = orthonormalComplement v2
+            { Value0 = l0
+              Vector0 = v0
+              Value1 = l1
+              Vector1 = v1
+              Value2 = l2
+              Vector2 = v2 }
+        else
+            symmetricEigenJacobi3 m
+    elif abs (l1 - l2) <= gapTolerance then
+        let mutable v0 = v3 0.0 0.0 0.0
+        if tryEigenvectorByCrossProduct m l0 (1e-12 * scale) &v0 then
+            let struct (v1, v2) = orthonormalComplement v0
+            { Value0 = l0
+              Vector0 = v0
+              Value1 = l1
+              Vector1 = v1
+              Value2 = l2
+              Vector2 = v2 }
+        else
+            symmetricEigenJacobi3 m
+    else
+        let vectorTolerance = 1e-12 * scale
+        let mutable v0 = v3 0.0 0.0 0.0
+        let mutable v1 = v3 0.0 0.0 0.0
+        let mutable v2 = v3 0.0 0.0 0.0
+        if tryEigenvectorByCrossProduct m l0 vectorTolerance &v0
+           && tryEigenvectorByCrossProduct m l1 vectorTolerance &v1
+           && tryEigenvectorByCrossProduct m l2 vectorTolerance &v2 then
+            let residualTolerance = 1e-7 * scale
+            if eigenResidualNorm m l0 v0 <= residualTolerance
+               && eigenResidualNorm m l1 v1 <= residualTolerance
+               && eigenResidualNorm m l2 v2 <= residualTolerance then
+                { Value0 = l0
+                  Vector0 = v0
+                  Value1 = l1
+                  Vector1 = v1
+                  Value2 = l2
+                  Vector2 = v2 }
+            else
+                symmetricEigenJacobi3 m
+        else
+            symmetricEigenJacobi3 m
+
+let symmetricEigen (m: M3) : (float * V3) list =
+    let eigen = symmetricEigen3 m
+    [ eigen.Value0, eigen.Vector0
+      eigen.Value1, eigen.Vector1
+      eigen.Value2, eigen.Vector2 ]
 
 let symmetricEigenN (matrix: float[,]) : (float * float list) list =
     let n = matrix.GetLength(0)

@@ -142,8 +142,7 @@ type EncodedLocatedChunk =
 
 type VectorChunk<'T when 'T: equality> =
     { SpatialSize: uint64 * uint64 * uint64
-      Components: uint32
-      Chunk: Chunk<'T> }
+      Components: Chunk<'T>[] }
 
 type SpectralLayout =
     | FullComplex64Interleaved
@@ -556,22 +555,87 @@ let private vectorStorageSize (width, height, depth) components =
         invalidArg "components" $"Vector chunk storage width overflow for width {width} and components {components}."
     width * c, height, depth
 
+let vectorComponentCount (vector: VectorChunk<'T>) =
+    uint32 vector.Components.Length
+
 let private validateVectorStorage name (vector: VectorChunk<'T>) =
-    let expectedSize = vectorStorageSize vector.SpatialSize vector.Components
-    if vector.Chunk.Size <> expectedSize then
-        invalidArg name $"Vector chunk storage size {vector.Chunk.Size} does not match spatial size {vector.SpatialSize} with {vector.Components} components."
+    if vector.Components.Length = 0 then
+        invalidArg name "Vector chunk requires at least one component."
+    vector.Components
+    |> Array.iteri (fun i chunk ->
+        if chunk.Size <> vector.SpatialSize then
+            invalidArg name $"Vector component {i} size {chunk.Size} does not match spatial size {vector.SpatialSize}.")
 
 let private vectorFlatIndex spatialIndex components componentIndex =
     spatialIndex * components + componentIndex
 
-let private createVectorChunk<'T when 'T: equality> spatialSize components =
+let private createVectorChunk<'T when 'T: equality> spatialSize components : VectorChunk<'T> =
+    let componentCount = checkedComponents components
     { SpatialSize = spatialSize
-      Components = components
-      Chunk = create<'T> (vectorStorageSize spatialSize components) }
+      Components = Array.init componentCount (fun _ -> create<'T> spatialSize) }
 
-let vectorSpan<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (vector: VectorChunk<'T>) =
+let incRefVector<'T when 'T: equality> (vector: VectorChunk<'T>) =
     validateVectorStorage "vector" vector
-    span<'T> vector.Chunk
+    vector.Components |> Array.iter (incRef >> ignore)
+    vector
+
+let decRefVector<'T when 'T: equality> (vector: VectorChunk<'T>) =
+    vector.Components |> Array.iter decRef
+
+let vectorComponent<'T when 'T: equality> (componentId: uint) (vector: VectorChunk<'T>) =
+    validateVectorStorage "vector" vector
+    let selectedComponent = int componentId
+    if selectedComponent < 0 || selectedComponent >= vector.Components.Length then
+        invalidArg "componentId" $"vectorComponent: component {componentId} is outside the available component range 0..{vector.Components.Length - 1}."
+    incRef vector.Components[selectedComponent]
+
+let ofChunk<'T when 'T: equality> (chunk: Chunk<'T>) : VectorChunk<'T> =
+    { SpatialSize = chunk.Size
+      Components = [| incRef chunk |] }
+
+let private ofChunkWithComponents<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> components (chunk: Chunk<'T>) : VectorChunk<'T> =
+    let componentCount = checkedComponents components
+    let width, height, depth = chunk.Size
+    if width % uint64 componentCount <> 0UL then
+        invalidArg "chunk" $"ofChunk expected width {width} to be divisible by component count {components}."
+    let spatialSize = width / uint64 componentCount, height, depth
+    let output = createVectorChunk<'T> spatialSize components
+    try
+        let inputPixels = span<'T> chunk
+        let spatialWidth, spatialHeight, spatialDepth = spatialSize
+        let count =
+            spatialCount
+                (checkedIntDimension "width" spatialWidth)
+                (checkedIntDimension "height" spatialHeight)
+                (checkedIntDimension "depth" spatialDepth)
+        for c in 0 .. componentCount - 1 do
+            let outputPixels = span<'T> output.Components[c]
+            for i in 0 .. count - 1 do
+                outputPixels[i] <- inputPixels[vectorFlatIndex i componentCount c]
+        output
+    with
+    | _ ->
+        decRefVector output
+        reraise()
+
+let toChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (vector: VectorChunk<'T>) =
+    validateVectorStorage "vector" vector
+    let components = vector.Components.Length
+    let output = create<'T> (vectorStorageSize vector.SpatialSize (uint32 components))
+    try
+        let outputPixels = span<'T> output
+        for c in 0 .. components - 1 do
+            let inputPixels = span<'T> vector.Components[c]
+            for i in 0 .. inputPixels.Length - 1 do
+                outputPixels[vectorFlatIndex i components c] <- inputPixels[i]
+        output
+    with
+    | _ ->
+        decRef output
+        reraise()
+
+let vectorSpan<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (_vector: VectorChunk<'T>) =
+    invalidOp "Chunk.vectorSpan is only valid for the old packed VectorChunk representation. Use VectorChunk components directly or VectorChunk.toChunk at packing boundaries."
 
 let toVectorImage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (components: Chunk<'T> list) =
     match components with
@@ -583,150 +647,94 @@ let toVectorImage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct 
             if chunk.Size <> spatialSize then
                 invalidArg "components" $"toVectorImage expects all chunks to have size {spatialSize}, got {chunk.Size} at component {i + 1}.")
 
-        let componentCount = uint32 components.Length
-        let output = createVectorChunk<'T> spatialSize componentCount
-        try
-            let outputPixels = vectorSpan output
-            let width, height, depth = spatialSize
-            let count = spatialCount (checkedIntDimension "width" width) (checkedIntDimension "height" height) (checkedIntDimension "depth" depth)
-            let componentCountI = int componentCount
-
-            let componentChunks = components |> List.toArray
-            for c in 0 .. componentCountI - 1 do
-                let chunk = componentChunks[c]
-                let inputPixels = span<'T> chunk
-                for i in 0 .. count - 1 do
-                    outputPixels[vectorFlatIndex i componentCountI c] <- inputPixels[i]
-
-            output
-        with
-        | _ ->
-            decRef output.Chunk
-            reraise()
+        { SpatialSize = spatialSize
+          Components = components |> List.map incRef |> List.toArray }
 
 let vectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (componentId: uint) (vector: VectorChunk<'T>) =
     validateVectorStorage "vector" vector
     let selectedComponent = int componentId
-    let components = checkedComponents vector.Components
+    let components = vector.Components.Length
     if selectedComponent < 0 || selectedComponent >= components then
         invalidArg "componentId" $"vectorElement: component {componentId} is outside the available component range 0..{components - 1}."
-
-    let output = create<'T> vector.SpatialSize
-    try
-        let inputPixels = vectorSpan vector
-        let outputPixels = span<'T> output
-        for i in 0 .. outputPixels.Length - 1 do
-            outputPixels[i] <- inputPixels[vectorFlatIndex i components selectedComponent]
-        output
-    with
-    | _ ->
-        decRef output
-        reraise()
+    incRef vector.Components[selectedComponent]
 
 let vectorRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (firstComponent: uint) (componentCount: uint) (vector: VectorChunk<'T>) =
     validateVectorStorage "vector" vector
     if componentCount = 0u then
         invalidArg "componentCount" "vectorRange needs at least one component."
-    if firstComponent + componentCount > vector.Components then
-        invalidArg "componentCount" $"vectorRange requested {firstComponent}..{firstComponent + componentCount - 1u}, but vector has {vector.Components} components."
+    let availableComponents = vectorComponentCount vector
+    if firstComponent + componentCount > availableComponents then
+        invalidArg "componentCount" $"vectorRange requested {firstComponent}..{firstComponent + componentCount - 1u}, but vector has {availableComponents} components."
 
-    let inputComponents = checkedComponents vector.Components
     let outputComponents = checkedComponents componentCount
     let first = int firstComponent
-    let output = createVectorChunk<'T> vector.SpatialSize componentCount
-    try
-        let inputPixels = vectorSpan vector
-        let outputPixels = vectorSpan output
-        let spatialCount = outputPixels.Length / outputComponents
-
-        for i in 0 .. spatialCount - 1 do
-            for c in 0 .. outputComponents - 1 do
-                outputPixels[vectorFlatIndex i outputComponents c] <- inputPixels[vectorFlatIndex i inputComponents (first + c)]
-
-        output
-    with
-    | _ ->
-        decRef output.Chunk
-        reraise()
+    { SpatialSize = vector.SpatialSize
+      Components = Array.init outputComponents (fun c -> incRef vector.Components[first + c]) }
 
 let appendVectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (vector: VectorChunk<'T>) (element: Chunk<'T>) =
     validateVectorStorage "vector" vector
     if element.Size <> vector.SpatialSize then
         invalidArg "element" $"appendVectorElement: chunk sizes differ: {vector.SpatialSize} vs {element.Size}."
 
-    let oldComponents = checkedComponents vector.Components
-    let newComponents = vector.Components + 1u
-    let output = createVectorChunk<'T> vector.SpatialSize newComponents
-    try
-        let inputPixels = vectorSpan vector
-        let elementPixels = span<'T> element
-        let outputPixels = vectorSpan output
-        let newComponentsI = int newComponents
-
-        for i in 0 .. elementPixels.Length - 1 do
-            for c in 0 .. oldComponents - 1 do
-                outputPixels[vectorFlatIndex i newComponentsI c] <- inputPixels[vectorFlatIndex i oldComponents c]
-            outputPixels[vectorFlatIndex i newComponentsI oldComponents] <- elementPixels[i]
-
-        output
-    with
-    | _ ->
-        decRef output.Chunk
-        reraise()
+    { SpatialSize = vector.SpatialSize
+      Components = Array.append (vector.Components |> Array.map incRef) [| incRef element |] }
 
 let mapVectorElements (f: float -> float) (vector: VectorChunk<float>) =
     validateVectorStorage "vector" vector
-    let output = createVectorChunk<float> vector.SpatialSize vector.Components
+    let output = createVectorChunk<float> vector.SpatialSize (vectorComponentCount vector)
     try
-        let inputPixels = vectorSpan vector
-        let outputPixels = vectorSpan output
-        for i in 0 .. inputPixels.Length - 1 do
-            outputPixels[i] <- f inputPixels[i]
+        for c in 0 .. vector.Components.Length - 1 do
+            let inputPixels = span<float> vector.Components[c]
+            let outputPixels = span<float> output.Components[c]
+            for i in 0 .. inputPixels.Length - 1 do
+                outputPixels[i] <- f inputPixels[i]
         output
     with
     | _ ->
-        decRef output.Chunk
+        decRefVector output
         reraise()
 
 let vector3ToColor inputMinimum inputMaximum (vector: VectorChunk<float>) =
     validateVectorStorage "vector" vector
     if inputMaximum <= inputMinimum then
         invalidArg "inputMaximum" "vector3ToColor input maximum must be greater than input minimum."
-    if vector.Components <> 3u then
-        invalidArg "vector" $"vector3ToColor expects 3 components, got {vector.Components}."
+    if vectorComponentCount vector <> 3u then
+        invalidArg "vector" $"vector3ToColor expects 3 components, got {vectorComponentCount vector}."
 
     let output = createVectorChunk<uint8> vector.SpatialSize 3u
     try
-        let inputPixels = vectorSpan vector
-        let outputPixels = vectorSpan output
         let scale = 255.0 / (inputMaximum - inputMinimum)
-        for i in 0 .. inputPixels.Length - 1 do
-            let value = (inputPixels[i] - inputMinimum) * scale
-            outputPixels[i] <- byte (max 0.0 (min 255.0 (Math.Round value)))
+        for c in 0 .. 2 do
+            let inputPixels = span<float> vector.Components[c]
+            let outputPixels = span<uint8> output.Components[c]
+            for i in 0 .. inputPixels.Length - 1 do
+                let value = (inputPixels[i] - inputMinimum) * scale
+                outputPixels[i] <- byte (max 0.0 (min 255.0 (Math.Round value)))
         output
     with
     | _ ->
-        decRef output.Chunk
+        decRefVector output
         reraise()
 
 let colorToVector3 outputMinimum outputMaximum (vector: VectorChunk<uint8>) =
     validateVectorStorage "vector" vector
     if outputMaximum <= outputMinimum then
         invalidArg "outputMaximum" "colorToVector3 output maximum must be greater than output minimum."
-    if vector.Components <> 3u then
-        invalidArg "vector" $"colorToVector3 expects 3 components, got {vector.Components}."
+    if vectorComponentCount vector <> 3u then
+        invalidArg "vector" $"colorToVector3 expects 3 components, got {vectorComponentCount vector}."
 
     let output = createVectorChunk<float> vector.SpatialSize 3u
     try
-        let inputPixels = vectorSpan vector
-        let outputPixels = vectorSpan output
         let scale = (outputMaximum - outputMinimum) / 255.0
-        for i in 0 .. inputPixels.Length - 1 do
-            outputPixels[i] <- outputMinimum + float inputPixels[i] * scale
+        for c in 0 .. 2 do
+            let inputPixels = span<uint8> vector.Components[c]
+            let outputPixels = span<float> output.Components[c]
+            for i in 0 .. inputPixels.Length - 1 do
+                outputPixels[i] <- outputMinimum + float inputPixels[i] * scale
         output
     with
     | _ ->
-        decRef output.Chunk
+        decRefVector output
         reraise()
 
 let private ensureMatchingVectorChunks name (a: VectorChunk<float>) (b: VectorChunk<float>) =
@@ -734,23 +742,21 @@ let private ensureMatchingVectorChunks name (a: VectorChunk<float>) (b: VectorCh
     validateVectorStorage "b" b
     if a.SpatialSize <> b.SpatialSize then
         invalidArg "b" $"{name}: spatial sizes differ: {a.SpatialSize} vs {b.SpatialSize}."
-    if a.Components <> b.Components then
-        invalidArg "b" $"{name}: component counts differ: {a.Components} vs {b.Components}."
+    if vectorComponentCount a <> vectorComponentCount b then
+        invalidArg "b" $"{name}: component counts differ: {vectorComponentCount a} vs {vectorComponentCount b}."
 
 let vectorDot (a: VectorChunk<float>) (b: VectorChunk<float>) =
     ensureMatchingVectorChunks "vectorDot" a b
-    let components = checkedComponents a.Components
+    let components = a.Components.Length
     let output = create<float> a.SpatialSize
     try
-        let aPixels = vectorSpan a
-        let bPixels = vectorSpan b
         let outputPixels = span<float> output
-        for i in 0 .. outputPixels.Length - 1 do
-            let mutable sum = 0.0
-            for c in 0 .. components - 1 do
-                let index = vectorFlatIndex i components c
-                sum <- sum + aPixels[index] * bPixels[index]
-            outputPixels[i] <- sum
+        outputPixels.Clear()
+        for c in 0 .. components - 1 do
+            let aPixels = span<float> a.Components[c]
+            let bPixels = span<float> b.Components[c]
+            for i in 0 .. outputPixels.Length - 1 do
+                outputPixels[i] <- outputPixels[i] + aPixels[i] * bPixels[i]
         output
     with
     | _ ->
@@ -759,17 +765,18 @@ let vectorDot (a: VectorChunk<float>) (b: VectorChunk<float>) =
 
 let vectorMagnitude (vector: VectorChunk<float>) =
     validateVectorStorage "vector" vector
-    let components = checkedComponents vector.Components
+    let components = vector.Components.Length
     let output = create<float> vector.SpatialSize
     try
-        let inputPixels = vectorSpan vector
         let outputPixels = span<float> output
+        outputPixels.Clear()
+        for c in 0 .. components - 1 do
+            let inputPixels = span<float> vector.Components[c]
+            for i in 0 .. outputPixels.Length - 1 do
+                let value = inputPixels[i]
+                outputPixels[i] <- outputPixels[i] + value * value
         for i in 0 .. outputPixels.Length - 1 do
-            let mutable normSquared = 0.0
-            for c in 0 .. components - 1 do
-                let value = inputPixels[vectorFlatIndex i components c]
-                normSquared <- normSquared + value * value
-            outputPixels[i] <- sqrt normSquared
+            outputPixels[i] <- sqrt outputPixels[i]
         output
     with
     | _ ->
@@ -778,35 +785,41 @@ let vectorMagnitude (vector: VectorChunk<float>) =
 
 let vectorCross3D (a: VectorChunk<float>) (b: VectorChunk<float>) =
     ensureMatchingVectorChunks "vectorCross3D" a b
-    if a.Components <> 3u then
-        invalidArg "a" $"vectorCross3D: expected 3-component vector chunks, got {a.Components} components."
+    if vectorComponentCount a <> 3u then
+        invalidArg "a" $"vectorCross3D: expected 3-component vector chunks, got {vectorComponentCount a} components."
 
     let output = createVectorChunk<float> a.SpatialSize 3u
     try
-        let aPixels = vectorSpan a
-        let bPixels = vectorSpan b
-        let outputPixels = vectorSpan output
-        for i in 0 .. (outputPixels.Length / 3) - 1 do
-            let ax = aPixels[vectorFlatIndex i 3 0]
-            let ay = aPixels[vectorFlatIndex i 3 1]
-            let az = aPixels[vectorFlatIndex i 3 2]
-            let bx = bPixels[vectorFlatIndex i 3 0]
-            let by = bPixels[vectorFlatIndex i 3 1]
-            let bz = bPixels[vectorFlatIndex i 3 2]
-            outputPixels[vectorFlatIndex i 3 0] <- ay * bz - az * by
-            outputPixels[vectorFlatIndex i 3 1] <- az * bx - ax * bz
-            outputPixels[vectorFlatIndex i 3 2] <- ax * by - ay * bx
+        let axSpan = span<float> a.Components[0]
+        let aySpan = span<float> a.Components[1]
+        let azSpan = span<float> a.Components[2]
+        let bxSpan = span<float> b.Components[0]
+        let bySpan = span<float> b.Components[1]
+        let bzSpan = span<float> b.Components[2]
+        let oxSpan = span<float> output.Components[0]
+        let oySpan = span<float> output.Components[1]
+        let ozSpan = span<float> output.Components[2]
+        for i in 0 .. oxSpan.Length - 1 do
+            let ax = axSpan[i]
+            let ay = aySpan[i]
+            let az = azSpan[i]
+            let bx = bxSpan[i]
+            let by = bySpan[i]
+            let bz = bzSpan[i]
+            oxSpan[i] <- ay * bz - az * by
+            oySpan[i] <- az * bx - ax * bz
+            ozSpan[i] <- ax * by - ay * bx
         output
     with
     | _ ->
-        decRef output.Chunk
+        decRefVector output
         reraise()
 
 let vectorAngleTo (reference: float list) (vector: VectorChunk<float>) =
     validateVectorStorage "vector" vector
-    let components = checkedComponents vector.Components
+    let components = vector.Components.Length
     if reference.Length <> components then
-        invalidArg "reference" $"vectorAngleTo: reference vector has {reference.Length} components, vector chunk has {vector.Components}."
+        invalidArg "reference" $"vectorAngleTo: reference vector has {reference.Length} components, vector chunk has {vectorComponentCount vector}."
 
     let referenceValues = reference |> List.toArray
     let referenceNorm = referenceValues |> Array.sumBy (fun value -> value * value) |> sqrt
@@ -815,13 +828,13 @@ let vectorAngleTo (reference: float list) (vector: VectorChunk<float>) =
 
     let output = create<float> vector.SpatialSize
     try
-        let inputPixels = vectorSpan vector
         let outputPixels = span<float> output
         for i in 0 .. outputPixels.Length - 1 do
             let mutable dot = 0.0
             let mutable normSquared = 0.0
             for c in 0 .. components - 1 do
-                let value = inputPixels[vectorFlatIndex i components c]
+                let inputPixels = span<float> vector.Components[c]
+                let value = inputPixels[i]
                 dot <- dot + value * referenceValues[c]
                 normSquared <- normSquared + value * value
             let valueNorm = sqrt normSquared
@@ -844,37 +857,36 @@ let private ensureMatchingVectorChunksFloat32 name (a: VectorChunk<float32>) (b:
     validateVectorStorage "b" b
     if a.SpatialSize <> b.SpatialSize then
         invalidArg "b" $"{name}: spatial sizes differ: {a.SpatialSize} vs {b.SpatialSize}."
-    if a.Components <> b.Components then
-        invalidArg "b" $"{name}: component counts differ: {a.Components} vs {b.Components}."
+    if vectorComponentCount a <> vectorComponentCount b then
+        invalidArg "b" $"{name}: component counts differ: {vectorComponentCount a} vs {vectorComponentCount b}."
 
 let mapVectorElementsFloat32 (f: float32 -> float32) (vector: VectorChunk<float32>) =
     validateVectorStorage "vector" vector
-    let output = createVectorChunk<float32> vector.SpatialSize vector.Components
+    let output = createVectorChunk<float32> vector.SpatialSize (vectorComponentCount vector)
     try
-        let inputPixels = vectorSpan vector
-        let outputPixels = vectorSpan output
-        for i in 0 .. inputPixels.Length - 1 do
-            outputPixels[i] <- f inputPixels[i]
+        for c in 0 .. vector.Components.Length - 1 do
+            let inputPixels = span<float32> vector.Components[c]
+            let outputPixels = span<float32> output.Components[c]
+            for i in 0 .. inputPixels.Length - 1 do
+                outputPixels[i] <- f inputPixels[i]
         output
     with
     | _ ->
-        decRef output.Chunk
+        decRefVector output
         reraise()
 
 let vectorDotFloat32 (a: VectorChunk<float32>) (b: VectorChunk<float32>) =
     ensureMatchingVectorChunksFloat32 "vectorDotFloat32" a b
-    let components = checkedComponents a.Components
+    let components = a.Components.Length
     let output = create<float32> a.SpatialSize
     try
-        let aPixels = vectorSpan a
-        let bPixels = vectorSpan b
         let outputPixels = span<float32> output
-        for i in 0 .. outputPixels.Length - 1 do
-            let mutable sum = 0.0f
-            for c in 0 .. components - 1 do
-                let index = vectorFlatIndex i components c
-                sum <- sum + aPixels[index] * bPixels[index]
-            outputPixels[i] <- sum
+        outputPixels.Clear()
+        for c in 0 .. components - 1 do
+            let aPixels = span<float32> a.Components[c]
+            let bPixels = span<float32> b.Components[c]
+            for i in 0 .. outputPixels.Length - 1 do
+                outputPixels[i] <- outputPixels[i] + aPixels[i] * bPixels[i]
         output
     with
     | _ ->
@@ -883,17 +895,18 @@ let vectorDotFloat32 (a: VectorChunk<float32>) (b: VectorChunk<float32>) =
 
 let vectorMagnitudeFloat32 (vector: VectorChunk<float32>) =
     validateVectorStorage "vector" vector
-    let components = checkedComponents vector.Components
+    let components = vector.Components.Length
     let output = create<float32> vector.SpatialSize
     try
-        let inputPixels = vectorSpan vector
         let outputPixels = span<float32> output
+        outputPixels.Clear()
+        for c in 0 .. components - 1 do
+            let inputPixels = span<float32> vector.Components[c]
+            for i in 0 .. outputPixels.Length - 1 do
+                let value = inputPixels[i]
+                outputPixels[i] <- outputPixels[i] + value * value
         for i in 0 .. outputPixels.Length - 1 do
-            let mutable normSquared = 0.0f
-            for c in 0 .. components - 1 do
-                let value = inputPixels[vectorFlatIndex i components c]
-                normSquared <- normSquared + value * value
-            outputPixels[i] <- sqrt normSquared
+            outputPixels[i] <- sqrt outputPixels[i]
         output
     with
     | _ ->
@@ -904,28 +917,29 @@ let vector3ToColorFloat32 inputMinimum inputMaximum (vector: VectorChunk<float32
     validateVectorStorage "vector" vector
     if inputMaximum <= inputMinimum then
         invalidArg "inputMaximum" "vector3ToColorFloat32 input maximum must be greater than input minimum."
-    if vector.Components <> 3u then
-        invalidArg "vector" $"vector3ToColorFloat32 expects 3 components, got {vector.Components}."
+    if vectorComponentCount vector <> 3u then
+        invalidArg "vector" $"vector3ToColorFloat32 expects 3 components, got {vectorComponentCount vector}."
 
     let output = createVectorChunk<uint8> vector.SpatialSize 3u
     try
-        let inputPixels = vectorSpan vector
-        let outputPixels = vectorSpan output
         let scale = 255.0f / (inputMaximum - inputMinimum)
-        for i in 0 .. inputPixels.Length - 1 do
-            let value = (inputPixels[i] - inputMinimum) * scale
-            outputPixels[i] <- byte (max 0.0f (min 255.0f (MathF.Round value)))
+        for c in 0 .. 2 do
+            let inputPixels = span<float32> vector.Components[c]
+            let outputPixels = span<uint8> output.Components[c]
+            for i in 0 .. inputPixels.Length - 1 do
+                let value = (inputPixels[i] - inputMinimum) * scale
+                outputPixels[i] <- byte (max 0.0f (min 255.0f (MathF.Round value)))
         output
     with
     | _ ->
-        decRef output.Chunk
+        decRefVector output
         reraise()
 
 let vectorAngleToFloat32 (reference: float32 list) (vector: VectorChunk<float32>) =
     validateVectorStorage "vector" vector
-    let components = checkedComponents vector.Components
+    let components = vector.Components.Length
     if reference.Length <> components then
-        invalidArg "reference" $"vectorAngleToFloat32: reference vector has {reference.Length} components, vector chunk has {vector.Components}."
+        invalidArg "reference" $"vectorAngleToFloat32: reference vector has {reference.Length} components, vector chunk has {vectorComponentCount vector}."
 
     let referenceValues = reference |> List.toArray
     let referenceNorm = referenceValues |> Array.sumBy (fun value -> value * value) |> sqrt
@@ -934,13 +948,13 @@ let vectorAngleToFloat32 (reference: float32 list) (vector: VectorChunk<float32>
 
     let output = create<float32> vector.SpatialSize
     try
-        let inputPixels = vectorSpan vector
         let outputPixels = span<float32> output
         for i in 0 .. outputPixels.Length - 1 do
             let mutable dot = 0.0f
             let mutable normSquared = 0.0f
             for c in 0 .. components - 1 do
-                let value = inputPixels[vectorFlatIndex i components c]
+                let inputPixels = span<float32> vector.Components[c]
+                let value = inputPixels[i]
                 dot <- dot + value * referenceValues[c]
                 normSquared <- normSquared + value * value
             let valueNorm = sqrt normSquared

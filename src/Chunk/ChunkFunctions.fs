@@ -3163,19 +3163,21 @@ module ChunkFunctions =
         convolveNativeZ<uint8> kernel window
 
     let private validateVectorSliceFloat32 name (vector: VectorChunk<float32>) =
-        if vector.Components = 0u then
+        let components = vectorComponentCount vector
+        if components = 0u then
             invalidArg name "Native vector-component convolution expects at least one vector component."
-        if vector.Components > uint32 Int32.MaxValue then
-            invalidArg name $"Native vector-component convolution component count must fit Int32, got {vector.Components}."
+        if components > uint32 Int32.MaxValue then
+            invalidArg name $"Native vector-component convolution component count must fit Int32, got {components}."
         let width, height, depth = vector.SpatialSize
         if depth <> 1UL then
             invalidArg name $"Native vector-component convolution expects 2D vector slices with depth 1, got {vector.SpatialSize}."
         if width > uint64 Int32.MaxValue || height > uint64 Int32.MaxValue then
             invalidArg name $"Native vector-component convolution dimensions must fit Int32, got {vector.SpatialSize}."
-        let expectedChunkSize = (width * uint64 vector.Components, height, 1UL)
-        if vector.Chunk.Size <> expectedChunkSize then
-            invalidArg name $"Native vector-component convolution expects interleaved storage size {expectedChunkSize}, got {vector.Chunk.Size}."
-        int width, int height, int vector.Components
+        vector.Components
+        |> Array.iteri (fun i chunk ->
+            if chunk.Size <> vector.SpatialSize then
+                invalidArg name $"Native vector-component convolution component {i} size {chunk.Size} does not match spatial size {vector.SpatialSize}.")
+        int width, int height, int components
 
     let private validateVectorWindowFloat32 name (window: VectorChunk<float32>[]) =
         if isNull window then
@@ -3185,12 +3187,12 @@ module ChunkFunctions =
 
         let width, height, components = validateVectorSliceFloat32 $"{name}[0]" window[0]
         let spatialSize = window[0].SpatialSize
-        let componentCount = window[0].Components
+        let componentCount = vectorComponentCount window[0]
         for i in 1 .. window.Length - 1 do
             let otherWidth, otherHeight, otherComponents = validateVectorSliceFloat32 $"{name}[{i}]" window[i]
             if otherWidth <> width || otherHeight <> height || otherComponents <> components ||
-               window[i].SpatialSize <> spatialSize || window[i].Components <> componentCount then
-                invalidArg name $"Native vector-component convolution expects matching vector slice sizes and component counts, got {window[i].SpatialSize} with {window[i].Components} components at index {i}."
+               window[i].SpatialSize <> spatialSize || vectorComponentCount window[i] <> componentCount then
+                invalidArg name $"Native vector-component convolution expects matching vector slice sizes and component counts, got {window[i].SpatialSize} with {vectorComponentCount window[i]} components at index {i}."
         width, height, components
 
     let private convolveVectorComponentsNativeAxisFloat32
@@ -3208,122 +3210,58 @@ module ChunkFunctions =
         if axis < 0 || axis > 2 then
             invalidArg "axis" $"Native vector-component convolution axis must be 0, 1, or 2, got {axis}."
 
-        let width, height, components = validateVectorWindowFloat32 "window" window
+        let _width, _height, components = validateVectorWindowFloat32 "window" window
         let spatialSize = window[0].SpatialSize
-        let componentCount = window[0].Components
-        LowLevelNative.ensureAvailable ()
-
-        let outputs =
-            Array.init outputCount (fun _ ->
-                let chunk = create<float32> (uint64 width * uint64 components, uint64 height, 1UL)
-                { SpatialSize = spatialSize
-                  Components = componentCount
-                  Chunk = chunk })
-
-        let inputHandles = Array.zeroCreate<GCHandle> window.Length
-        let outputHandles = Array.zeroCreate<GCHandle> outputs.Length
-        let mutable retainedInputHandles = 0
-        let mutable retainedOutputHandles = 0
-        let mutable inputPointerHandle = Unchecked.defaultof<GCHandle>
-        let mutable inputPointersPinned = false
-        let mutable outputPointerHandle = Unchecked.defaultof<GCHandle>
-        let mutable outputPointersPinned = false
-        let mutable kernelHandle = Unchecked.defaultof<GCHandle>
-        let mutable kernelPinned = false
+        let componentOutputs =
+            Array.init outputCount (fun _ -> Array.zeroCreate<Chunk<float32>> components)
 
         try
-            try
-                let inputPointers = Array.zeroCreate<nativeint> window.Length
-                for i in 0 .. window.Length - 1 do
-                    inputHandles[i] <- GCHandle.Alloc(window[i].Chunk.Bytes, GCHandleType.Pinned)
-                    retainedInputHandles <- retainedInputHandles + 1
-                    inputPointers[i] <- inputHandles[i].AddrOfPinnedObject()
-
-                let outputPointers = Array.zeroCreate<nativeint> outputs.Length
-                for i in 0 .. outputs.Length - 1 do
-                    outputHandles[i] <- GCHandle.Alloc(outputs[i].Chunk.Bytes, GCHandleType.Pinned)
-                    retainedOutputHandles <- retainedOutputHandles + 1
-                    outputPointers[i] <- outputHandles[i].AddrOfPinnedObject()
-
-                inputPointerHandle <- GCHandle.Alloc(inputPointers, GCHandleType.Pinned)
-                inputPointersPinned <- true
-                outputPointerHandle <- GCHandle.Alloc(outputPointers, GCHandleType.Pinned)
-                outputPointersPinned <- true
-                kernelHandle <- GCHandle.Alloc(kernel, GCHandleType.Pinned)
-                kernelPinned <- true
-
-                let status =
-                    match axis with
-                    | 0 ->
-                        LowLevelNative.convolveFloat32VectorComponentsXSlices(
-                            inputPointerHandle.AddrOfPinnedObject(),
-                            outputPointerHandle.AddrOfPinnedObject(),
-                            kernelHandle.AddrOfPinnedObject(),
-                            width,
-                            height,
-                            components,
-                            window.Length,
-                            kernel.Length,
-                            outputStart,
-                            outputCount)
-                    | 1 ->
-                        LowLevelNative.convolveFloat32VectorComponentsYSlices(
-                            inputPointerHandle.AddrOfPinnedObject(),
-                            outputPointerHandle.AddrOfPinnedObject(),
-                            kernelHandle.AddrOfPinnedObject(),
-                            width,
-                            height,
-                            components,
-                            window.Length,
-                            kernel.Length,
-                            outputStart,
-                            outputCount)
-                    | 2 ->
-                        LowLevelNative.convolveFloat32VectorComponentsZSlices(
-                            inputPointerHandle.AddrOfPinnedObject(),
-                            outputPointerHandle.AddrOfPinnedObject(),
-                            kernelHandle.AddrOfPinnedObject(),
-                            width,
-                            height,
-                            components,
-                            window.Length,
-                            kernel.Length,
-                            outputStart,
-                            outputCount)
-                    | _ ->
-                        invalidArg "axis" $"Native vector-component convolution axis must be 0, 1, or 2, got {axis}."
-
-                status |> NativeSp.checkStatus "sp_convolve_float32_vector_components_axis_slices"
-
-                outputs |> Array.toList
-            with
+            match axis with
+            | 0 ->
+                if window.Length <> 1 || outputStart <> 0 || outputCount <> 1 then
+                    invalidArg "window" "Vector component X convolution expects one input slice and one output slice."
+                for c in 0 .. components - 1 do
+                    componentOutputs[0][c] <- convolveNativeX<float32> kernel window[0].Components[c]
+            | 1 ->
+                if window.Length <> 1 || outputStart <> 0 || outputCount <> 1 then
+                    invalidArg "window" "Vector component Y convolution expects one input slice and one output slice."
+                for c in 0 .. components - 1 do
+                    componentOutputs[0][c] <- convolveNativeY<float32> kernel window[0].Components[c]
+            | 2 ->
+                for c in 0 .. components - 1 do
+                    let componentWindow = Array.init window.Length (fun i -> window[i].Components[c])
+                    let outputs = convolveNativeAxis<float32> NativeZ kernel outputStart outputCount componentWindow
+                    outputs |> List.iteri (fun i chunk -> componentOutputs[i][c] <- chunk)
             | _ ->
-                outputs |> Array.iter (fun vector -> decRef vector.Chunk)
-                reraise()
-        finally
-            if kernelPinned then
-                kernelHandle.Free()
-            if outputPointersPinned then
-                outputPointerHandle.Free()
-            if inputPointersPinned then
-                inputPointerHandle.Free()
-            for i in 0 .. retainedOutputHandles - 1 do
-                outputHandles[i].Free()
-            for i in 0 .. retainedInputHandles - 1 do
-                inputHandles[i].Free()
+                invalidArg "axis" $"Native vector-component convolution axis must be 0, 1, or 2, got {axis}."
+
+            componentOutputs
+            |> Array.map (fun chunks ->
+                { SpatialSize = spatialSize
+                  Components = chunks })
+            |> Array.toList
+        with
+        | _ ->
+            componentOutputs
+            |> Array.iter (fun chunks ->
+                chunks
+                |> Array.iter (fun chunk ->
+                    if not (isNull (box chunk)) then
+                        decRef chunk))
+            reraise()
 
     let convolveVectorComponentsNativeXFloat32 (kernel: float32[]) (vector: VectorChunk<float32>) =
         match convolveVectorComponentsNativeAxisFloat32 0 kernel 0 1 [| vector |] with
         | [ output ] -> output
         | outputs ->
-            outputs |> List.iter (fun vector -> decRef vector.Chunk)
+            outputs |> List.iter decRefVector
             invalidOp $"Native vector-component X convolution unexpectedly returned {outputs.Length} outputs."
 
     let convolveVectorComponentsNativeYFloat32 (kernel: float32[]) (vector: VectorChunk<float32>) =
         match convolveVectorComponentsNativeAxisFloat32 1 kernel 0 1 [| vector |] with
         | [ output ] -> output
         | outputs ->
-            outputs |> List.iter (fun vector -> decRef vector.Chunk)
+            outputs |> List.iter decRefVector
             invalidOp $"Native vector-component Y convolution unexpectedly returned {outputs.Length} outputs."
 
     let convolveVectorComponentsNativeZFloat32 (kernel: float32[]) (window: VectorChunk<float32>[]) =
@@ -3333,7 +3271,7 @@ module ChunkFunctions =
         match convolveVectorComponentsNativeAxisFloat32 2 kernel radius 1 window with
         | [ output ] -> output
         | outputs ->
-            outputs |> List.iter (fun vector -> decRef vector.Chunk)
+            outputs |> List.iter decRefVector
             invalidOp $"Native vector-component Z convolution unexpectedly returned {outputs.Length} outputs."
 
     let signedDistanceBandNativeUInt8 (bandRadius: uint) outputStart outputCount (window: Chunk<uint8>[]) =

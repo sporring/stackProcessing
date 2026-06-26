@@ -278,7 +278,7 @@ let releaseUnaryVectorChunk name f memoryNeed : Stage<VectorChunk<'T>, Chunk<'U>
         try
             f vector
         finally
-            Chunk.decRef vector.Chunk
+            Chunk.decRefVector vector
 
     Stage.map name mapper memoryNeed id
 
@@ -287,17 +287,43 @@ let releaseUnaryVectorToVectorChunk name f memoryNeed : Stage<VectorChunk<'T>, V
         try
             f vector
         finally
-            Chunk.decRef vector.Chunk
+            Chunk.decRefVector vector
 
     Stage.map name mapper memoryNeed id
+
+let releaseUnaryVectorToVectorChunkParallel name workers f memoryNeed : Stage<VectorChunk<'T>, VectorChunk<'U>> =
+    if workers < 1 then
+        invalidArg "workers" $"{name} expects at least one worker, got {workers}."
+
+    let mapper _debug (window: Window<VectorChunk<'T>>) =
+        match window.Items with
+        | [ vector ] ->
+            try
+                [ f vector ]
+            finally
+                Chunk.decRefVector vector
+        | items ->
+            items |> List.iter Chunk.decRefVector
+            invalidArg "window" $"{name} expects singleton windows, got {items.Length} items."
+
+    Stage.parallelCollect
+        $"{name}.parallelCollect.workers{workers}"
+        1
+        workers
+        1
+        0
+        (fun _ vector -> vector)
+        mapper
+        memoryNeed
+        id
 
 let releaseBinaryVectorChunk name f memoryNeed : Stage<VectorChunk<'T> * VectorChunk<'T>, Chunk<'U>> =
     let mapper _debug ((a, b): VectorChunk<'T> * VectorChunk<'T>) =
         try
             f a b
         finally
-            Chunk.decRef a.Chunk
-            Chunk.decRef b.Chunk
+            Chunk.decRefVector a
+            Chunk.decRefVector b
 
     Stage.map name mapper memoryNeed id
 
@@ -685,7 +711,7 @@ let appendVectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: s
         try
             Chunk.appendVectorElement vector element
         finally
-            Chunk.decRef vector.Chunk
+            Chunk.decRefVector vector
             Chunk.decRef element
 
     Stage.map $"chunkAppendVectorElement.{typeof<'T>.Name}" mapper (fun n -> 3UL * chunkMemoryNeed<'T> n) id
@@ -729,8 +755,8 @@ let vectorCross3D : Stage<VectorChunk<float> * VectorChunk<float>, VectorChunk<f
         try
             Chunk.vectorCross3D a b
         finally
-            Chunk.decRef a.Chunk
-            Chunk.decRef b.Chunk
+            Chunk.decRefVector a
+            Chunk.decRefVector b
 
     Stage.map "chunkVectorCross3D" mapper (fun n -> 3UL * chunkMemoryNeed<float> n) id
 
@@ -745,14 +771,16 @@ let PCA components : Stage<VectorChunk<float>, VectorChunk<float>> =
     let componentsI = int components
 
     let outputVector (values: float list) : VectorChunk<float> =
-        let chunk = Chunk.create<float> (uint64 values.Length, 1UL, 1UL)
-        let pixels = Chunk.span chunk
         let valuesArray = values |> List.toArray
-        for i in 0 .. valuesArray.Length - 1 do
-            pixels[i] <- valuesArray[i]
+        let chunks =
+            valuesArray
+            |> Array.map (fun value ->
+                let chunk = Chunk.create<float> (1UL, 1UL, 1UL)
+                let pixels = Chunk.span chunk
+                pixels[0] <- value
+                chunk)
         { SpatialSize = (1UL, 1UL, 1UL)
-          Components = uint32 values.Length
-          Chunk = chunk }
+          Components = chunks }
 
     let reducer (_debug: bool) (input: AsyncSeq<VectorChunk<float>>) =
         async {
@@ -762,20 +790,24 @@ let PCA components : Stage<VectorChunk<float>, VectorChunk<float>> =
                     (fun state vector ->
                         async {
                             try
-                                if vector.Components <> uint32 componentsI then
-                                    invalidArg "vector" $"Chunk PCA expected {componentsI}-component vector chunks, got {vector.Components} components."
+                                if Chunk.vectorComponentCount vector <> uint32 componentsI then
+                                    invalidArg "vector" $"Chunk PCA expected {componentsI}-component vector chunks, got {Chunk.vectorComponentCount vector} components."
 
-                                let pixels = (Chunk.vectorSpan vector).ToArray()
-                                let spatialCount = pixels.Length / componentsI
+                                let spatialCount =
+                                    let first = Chunk.span<float> vector.Components[0]
+                                    first.Length
                                 let mutable state = state
 
                                 for i in 0 .. spatialCount - 1 do
-                                    let values = [ for c in 0 .. componentsI - 1 -> pixels[i * componentsI + c] ]
+                                    let values =
+                                        [ for c in 0 .. componentsI - 1 ->
+                                            let pixels = Chunk.span<float> vector.Components[c]
+                                            pixels[i] ]
                                     state <- addPcaVector state values
 
                                 return state
                             finally
-                                Chunk.decRef vector.Chunk
+                                Chunk.decRefVector vector
                         })
                     (zeroPcaAccumulator componentsI)
 
@@ -805,7 +837,7 @@ let selectGroupedVectorOutput<'T when 'T: equality>
             if uint (index % int64 groupSize) = part then
                 [ vector ]
             else
-                Chunk.decRef vector.Chunk
+                Chunk.decRefVector vector
                 [])
         id
         (fun slices -> (slices + uint64 groupSize - 1UL) / uint64 groupSize)
@@ -840,14 +872,16 @@ let PCAFloat32 components : Stage<VectorChunk<float32>, VectorChunk<float32>> =
     let componentsI = int components
 
     let outputVector (values: float list) : VectorChunk<float32> =
-        let chunk = Chunk.create<float32> (uint64 values.Length, 1UL, 1UL)
-        let pixels = Chunk.span chunk
         let valuesArray = values |> List.toArray
-        for i in 0 .. valuesArray.Length - 1 do
-            pixels[i] <- float32 valuesArray[i]
+        let chunks =
+            valuesArray
+            |> Array.map (fun value ->
+                let chunk = Chunk.create<float32> (1UL, 1UL, 1UL)
+                let pixels = Chunk.span chunk
+                pixels[0] <- float32 value
+                chunk)
         { SpatialSize = (1UL, 1UL, 1UL)
-          Components = uint32 values.Length
-          Chunk = chunk }
+          Components = chunks }
 
     let reducer (_debug: bool) (input: AsyncSeq<VectorChunk<float32>>) =
         async {
@@ -857,20 +891,24 @@ let PCAFloat32 components : Stage<VectorChunk<float32>, VectorChunk<float32>> =
                     (fun state vector ->
                         async {
                             try
-                                if vector.Components <> uint32 componentsI then
-                                    invalidArg "vector" $"Chunk PCA expected {componentsI}-component vector chunks, got {vector.Components} components."
+                                if Chunk.vectorComponentCount vector <> uint32 componentsI then
+                                    invalidArg "vector" $"Chunk PCA expected {componentsI}-component vector chunks, got {Chunk.vectorComponentCount vector} components."
 
-                                let pixels = (Chunk.vectorSpan vector).ToArray()
-                                let spatialCount = pixels.Length / componentsI
+                                let spatialCount =
+                                    let first = Chunk.span<float32> vector.Components[0]
+                                    first.Length
                                 let mutable state = state
 
                                 for i in 0 .. spatialCount - 1 do
-                                    let values = [ for c in 0 .. componentsI - 1 -> float pixels[i * componentsI + c] ]
+                                    let values =
+                                        [ for c in 0 .. componentsI - 1 ->
+                                            let pixels = Chunk.span<float32> vector.Components[c]
+                                            float pixels[i] ]
                                     state <- addPcaVector state values
 
                                 return state
                             finally
-                                Chunk.decRef vector.Chunk
+                                Chunk.decRefVector vector
                         })
                     (zeroPcaAccumulator componentsI)
 
@@ -887,34 +925,53 @@ let PCAFloat32 components : Stage<VectorChunk<float32>, VectorChunk<float32>> =
 
 let private structureTensorOuterProductFloat32 : Stage<VectorChunk<float32>, VectorChunk<float32>> =
     let mapper (vector: VectorChunk<float32>) =
-        if vector.Components <> 3u then
-            invalidArg "vector" $"chunkStructureTensorOuterProductFloat32 expected a 3-component gradient, got {vector.Components}."
+        if Chunk.vectorComponentCount vector <> 3u then
+            invalidArg "vector" $"chunkStructureTensorOuterProductFloat32 expected a 3-component gradient, got {Chunk.vectorComponentCount vector}."
 
-        let width, height, depth = vector.SpatialSize
-        let output = Chunk.create<float32> (width * 6UL, height, depth)
+        let output = Array.init 6 (fun _ -> Chunk.create<float32> vector.SpatialSize)
         try
-            let inputPixels = Chunk.vectorSpan vector
             let outputVector: VectorChunk<float32> =
                 { SpatialSize = vector.SpatialSize
-                  Components = 6u
-                  Chunk = output }
-            let outputPixels = Chunk.vectorSpan outputVector
-            let spatialCount = inputPixels.Length / 3
-            for i in 0 .. spatialCount - 1 do
-                let gx = inputPixels[i * 3]
-                let gy = inputPixels[i * 3 + 1]
-                let gz = inputPixels[i * 3 + 2]
-                let o = i * 6
-                outputPixels[o] <- gx * gx
-                outputPixels[o + 1] <- gx * gy
-                outputPixels[o + 2] <- gx * gz
-                outputPixels[o + 3] <- gy * gy
-                outputPixels[o + 4] <- gy * gz
-                outputPixels[o + 5] <- gz * gz
+                  Components = output }
+            let gxPixels = Chunk.span<float32> vector.Components[0]
+            let gyPixels = Chunk.span<float32> vector.Components[1]
+            let gzPixels = Chunk.span<float32> vector.Components[2]
+            let xxPixels = Chunk.span<float32> output[0]
+            let xyPixels = Chunk.span<float32> output[1]
+            let xzPixels = Chunk.span<float32> output[2]
+            let yyPixels = Chunk.span<float32> output[3]
+            let yzPixels = Chunk.span<float32> output[4]
+            let zzPixels = Chunk.span<float32> output[5]
+            let spatialCount = gxPixels.Length
+            let width = Vector<float32>.Count
+            let vectorEnd = spatialCount - spatialCount % width
+            let mutable i = 0
+            while i < vectorEnd do
+                let gx = Vector<float32>(gxPixels.Slice(i, width))
+                let gy = Vector<float32>(gyPixels.Slice(i, width))
+                let gz = Vector<float32>(gzPixels.Slice(i, width))
+                (gx * gx).CopyTo(xxPixels.Slice(i, width))
+                (gx * gy).CopyTo(xyPixels.Slice(i, width))
+                (gx * gz).CopyTo(xzPixels.Slice(i, width))
+                (gy * gy).CopyTo(yyPixels.Slice(i, width))
+                (gy * gz).CopyTo(yzPixels.Slice(i, width))
+                (gz * gz).CopyTo(zzPixels.Slice(i, width))
+                i <- i + width
+            while i < spatialCount do
+                let gx = gxPixels[i]
+                let gy = gyPixels[i]
+                let gz = gzPixels[i]
+                xxPixels[i] <- gx * gx
+                xyPixels[i] <- gx * gy
+                xzPixels[i] <- gx * gz
+                yyPixels[i] <- gy * gy
+                yzPixels[i] <- gy * gz
+                zzPixels[i] <- gz * gz
+                i <- i + 1
             outputVector
         with
         | _ ->
-            Chunk.decRef output
+            output |> Array.iter Chunk.decRef
             reraise()
 
     releaseUnaryVectorToVectorChunk
@@ -927,13 +984,15 @@ let private zeroVectorFloat32Like (_index: int) (source: VectorChunk<float32>) :
     if depth <> 1UL then
         invalidArg "source" $"Chunk vector convolution stages expect 2D slice vector chunks with depth 1, got {source.SpatialSize}."
 
-    let chunk = Chunk.create<float32> (width * uint64 source.Components, height, 1UL)
-    chunk.Bytes.AsSpan(0, chunk.ByteLength).Clear()
-    let vector: VectorChunk<float32> =
-        { SpatialSize = source.SpatialSize
-          Components = source.Components
-          Chunk = chunk }
-    vector
+    let components =
+        Array.init
+            (int (Chunk.vectorComponentCount source))
+            (fun _ ->
+                let chunk = Chunk.create<float32> (width, height, 1UL)
+                chunk.Bytes.AsSpan(0, chunk.ByteLength).Clear()
+                chunk)
+    { SpatialSize = source.SpatialSize
+      Components = components }
 
 let private releaseConsumedVectorWindow (window: Window<VectorChunk<float32>>) =
     let _emitStart, emitCount = window.EmitRange
@@ -945,7 +1004,7 @@ let private releaseConsumedVectorWindow (window: Window<VectorChunk<float32>>) =
 
     window.Items
     |> List.truncate releaseCount
-    |> List.iter (fun vector -> Chunk.decRef vector.Chunk)
+    |> List.iter Chunk.decRefVector
 
 let private vectorComponentMemoryNeed componentBudget liveChunks n =
     uint64 liveChunks * n * uint64 (chunkElementBytes<float32> * componentBudget)
@@ -969,9 +1028,9 @@ let private convolveVectorComponentsSingleSliceFloat32
             try
                 [ convolve kernel vector ]
             finally
-                Chunk.decRef vector.Chunk
+                Chunk.decRefVector vector
         | items ->
-            items |> List.iter (fun vector -> Chunk.decRef vector.Chunk)
+            items |> List.iter Chunk.decRefVector
             invalidArg "window" $"chunkConvolveVectorComponents{axisName}Float32 expects singleton windows, got {items.Length}."
 
     Stage.parallelCollect
@@ -1041,64 +1100,304 @@ let convolveVectorComponentsFloat32NativeParallelCollect (xKernel: float32[]) (y
     --> convolveVectorComponentsZFloat32 zKernel workers
 
 let private gaussianSmoothVectorComponentsFloat32 (sigma: float) (radius: int) (workers: int) =
-    let radius =
-        if radius > 0 then
-            radius
-        else
-            StackConvolve.defaultGaussianRadius sigma
-    let kernel = StackConvolve.gaussianKernel sigma radius
-    convolveVectorComponentsFloat32NativeParallelCollect kernel kernel kernel workers
+    if sigma <= 0.0 then
+        Stage.map "chunkGaussianSmoothVectorComponentsFloat32.identity" (fun _ vector -> vector) id id
+    else
+        let radius =
+            if radius > 0 then
+                radius
+            else
+                StackConvolve.defaultGaussianRadius sigma
+        let kernel = StackConvolve.gaussianKernel sigma radius
+        convolveVectorComponentsFloat32NativeParallelCollect kernel kernel kernel workers
 
-let private tensorEigenMatrixValuesFloat32 xx xy xz yy yz zz =
-    let matrix =
-        { m00 = float xx; m01 = float xy; m02 = float xz
-          m10 = float xy; m11 = float yy; m12 = float yz
-          m20 = float xz; m21 = float yz; m22 = float zz }
-    let eigen = symmetricEigen matrix
-    let values = eigen |> List.map (fst >> float32)
-    let vectors =
-        eigen
-        |> List.collect (fun (_, v) -> [ float32 v.x; float32 v.y; float32 v.z ])
-    values @ vectors
+let private sortValuesDescending3 a b c =
+    let mutable x = a
+    let mutable y = b
+    let mutable z = c
+    if x < y then
+        let t = x
+        x <- y
+        y <- t
+    if y < z then
+        let t = y
+        y <- z
+        z <- t
+    if x < y then
+        let t = x
+        x <- y
+        y <- t
+    struct (x, y, z)
 
-let private structureTensorEigenMatrixFloat32 : Stage<VectorChunk<float32>, VectorChunk<float32>> =
+let inline private normalize3 x y z =
+    let n = sqrt (x * x + y * y + z * z)
+    if n <= 1e-18 then
+        struct (1.0, 0.0, 0.0)
+    else
+        let inv = 1.0 / n
+        let mutable x = x * inv
+        let mutable y = y * inv
+        let mutable z = z * inv
+        let ax = abs x
+        let ay = abs y
+        let az = abs z
+        let sign =
+            if ax >= ay && ax >= az then x
+            elif ay >= az then y
+            else z
+        if sign < 0.0 then
+            x <- -x
+            y <- -y
+            z <- -z
+        struct (x, y, z)
+
+let inline private cross3 ax ay az bx by bz =
+    struct (ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx)
+
+let inline private trySymmetricEigenvector3 xx xy xz yy yz zz lambda tolerance =
+    let r00 = xx - lambda
+    let r01 = xy
+    let r02 = xz
+    let r10 = xy
+    let r11 = yy - lambda
+    let r12 = yz
+    let r20 = xz
+    let r21 = yz
+    let r22 = zz - lambda
+    let struct (c01x, c01y, c01z) = cross3 r00 r01 r02 r10 r11 r12
+    let struct (c02x, c02y, c02z) = cross3 r00 r01 r02 r20 r21 r22
+    let struct (c12x, c12y, c12z) = cross3 r10 r11 r12 r20 r21 r22
+    let n01 = c01x * c01x + c01y * c01y + c01z * c01z
+    let n02 = c02x * c02x + c02y * c02y + c02z * c02z
+    let n12 = c12x * c12x + c12y * c12y + c12z * c12z
+    let struct (cx, cy, cz, n) =
+        if n01 >= n02 && n01 >= n12 then struct (c01x, c01y, c01z, n01)
+        elif n02 >= n12 then struct (c02x, c02y, c02z, n02)
+        else struct (c12x, c12y, c12z, n12)
+    if n <= tolerance * tolerance then
+        struct (false, 1.0, 0.0, 0.0)
+    else
+        let struct (x, y, z) = normalize3 cx cy cz
+        struct (true, x, y, z)
+
+let inline private orthonormalComplement3 ax ay az =
+    let aax = abs ax
+    let aay = abs ay
+    let aaz = abs az
+    let struct (rx, ry, rz) =
+        if aax <= aay && aax <= aaz then struct (1.0, 0.0, 0.0)
+        elif aay <= aaz then struct (0.0, 1.0, 0.0)
+        else struct (0.0, 0.0, 1.0)
+    let struct (u0, u1, u2) = cross3 ax ay az rx ry rz
+    let struct (u0, u1, u2) = normalize3 u0 u1 u2
+    let struct (v0, v1, v2) = cross3 ax ay az u0 u1 u2
+    let struct (v0, v1, v2) = normalize3 v0 v1 v2
+    struct (u0, u1, u2, v0, v1, v2)
+
+let inline private symmetricEigenvalues3Raw xx xy xz yy yz zz =
+    let p1 = xy * xy + xz * xz + yz * yz
+    if p1 = 0.0 then
+        sortValuesDescending3 xx yy zz
+    else
+        let q = (xx + yy + zz) / 3.0
+        let axx = xx - q
+        let ayy = yy - q
+        let azz = zz - q
+        let p2 = axx * axx + ayy * ayy + azz * azz + 2.0 * p1
+        let p = sqrt (p2 / 6.0)
+        let bxx = axx / p
+        let bxy = xy / p
+        let bxz = xz / p
+        let byy = ayy / p
+        let byz = yz / p
+        let bzz = azz / p
+        let detB =
+            bxx * (byy * bzz - byz * byz)
+            - bxy * (bxy * bzz - byz * bxz)
+            + bxz * (bxy * byz - byy * bxz)
+        let r = detB / 2.0
+        let phi =
+            if r <= -1.0 then Math.PI / 3.0
+            elif r >= 1.0 then 0.0
+            else Math.Acos(r) / 3.0
+        let e0 = q + 2.0 * p * Math.Cos(phi)
+        let e2 = q + 2.0 * p * Math.Cos(phi + 2.0 * Math.PI / 3.0)
+        let e1 = 3.0 * q - e0 - e2
+        sortValuesDescending3 e0 e1 e2
+
+let inline private symmetricEigenvectors3Raw xx xy xz yy yz zz e0 e1 e2 scale =
+    let gap = 1e-10 * scale
+    let vectorTol = 1e-12 * scale
+    let mutable x0 = 1.0
+    let mutable y0 = 0.0
+    let mutable z0 = 0.0
+    let mutable x1 = 0.0
+    let mutable y1 = 1.0
+    let mutable z1 = 0.0
+    let mutable x2 = 0.0
+    let mutable y2 = 0.0
+    let mutable z2 = 1.0
+    if abs (e0 - e1) <= gap && abs (e1 - e2) <= gap then
+        ()
+    elif abs (e0 - e1) <= gap then
+        let struct (ok, tx, ty, tz) = trySymmetricEigenvector3 xx xy xz yy yz zz e2 vectorTol
+        if ok then
+            x2 <- tx; y2 <- ty; z2 <- tz
+            let struct (u0, u1, u2, w0, w1, w2) = orthonormalComplement3 x2 y2 z2
+            x0 <- u0; y0 <- u1; z0 <- u2
+            x1 <- w0; y1 <- w1; z1 <- w2
+    elif abs (e1 - e2) <= gap then
+        let struct (ok, tx, ty, tz) = trySymmetricEigenvector3 xx xy xz yy yz zz e0 vectorTol
+        if ok then
+            x0 <- tx; y0 <- ty; z0 <- tz
+            let struct (u0, u1, u2, w0, w1, w2) = orthonormalComplement3 x0 y0 z0
+            x1 <- u0; y1 <- u1; z1 <- u2
+            x2 <- w0; y2 <- w1; z2 <- w2
+    else
+        let struct (ok0, tx0, ty0, tz0) = trySymmetricEigenvector3 xx xy xz yy yz zz e0 vectorTol
+        if ok0 then
+            x0 <- tx0; y0 <- ty0; z0 <- tz0
+        let struct (ok1, tx1, ty1, tz1) = trySymmetricEigenvector3 xx xy xz yy yz zz e1 vectorTol
+        if ok1 then
+            x1 <- tx1; y1 <- ty1; z1 <- tz1
+        let struct (ok2, tx2, ty2, tz2) = trySymmetricEigenvector3 xx xy xz yy yz zz e2 vectorTol
+        if ok2 then
+            x2 <- tx2; y2 <- ty2; z2 <- tz2
+    struct (x0, y0, z0, x1, y1, z1, x2, y2, z2)
+
+let private structureTensorEigenMatrixFloat32 workers : Stage<VectorChunk<float32>, VectorChunk<float32>> =
     let mapper (tensor: VectorChunk<float32>) =
-        if tensor.Components <> 6u then
-            invalidArg "tensor" $"chunkStructureTensorEigenMatrixFloat32 expected a 6-component tensor, got {tensor.Components}."
+        if Chunk.vectorComponentCount tensor <> 6u then
+            invalidArg "tensor" $"chunkStructureTensorEigenMatrixFloat32 expected a 6-component tensor, got {Chunk.vectorComponentCount tensor}."
 
-        let width, height, depth = tensor.SpatialSize
-        let output = Chunk.create<float32> (width * 12UL, height, depth)
+        let output = Array.init 12 (fun _ -> Chunk.create<float32> tensor.SpatialSize)
         try
-            let inputPixels = Chunk.vectorSpan tensor
             let outputVector: VectorChunk<float32> =
                 { SpatialSize = tensor.SpatialSize
-                  Components = 12u
-                  Chunk = output }
-            let outputPixels = Chunk.vectorSpan outputVector
-            let spatialCount = inputPixels.Length / 6
-            for i in 0 .. spatialCount - 1 do
-                let p = i * 6
-                let values =
-                    tensorEigenMatrixValuesFloat32
-                        inputPixels[p]
-                        inputPixels[p + 1]
-                        inputPixels[p + 2]
-                        inputPixels[p + 3]
-                        inputPixels[p + 4]
-                        inputPixels[p + 5]
-                let o = i * 12
-                for k in 0 .. 11 do
-                    outputPixels[o + k] <- values[k]
+                  Components = output }
+            let xxPixels = Chunk.span<float32> tensor.Components[0]
+            let xyPixels = Chunk.span<float32> tensor.Components[1]
+            let xzPixels = Chunk.span<float32> tensor.Components[2]
+            let yyPixels = Chunk.span<float32> tensor.Components[3]
+            let yzPixels = Chunk.span<float32> tensor.Components[4]
+            let zzPixels = Chunk.span<float32> tensor.Components[5]
+            let out0 = Chunk.span<float32> output[0]
+            let out1 = Chunk.span<float32> output[1]
+            let out2 = Chunk.span<float32> output[2]
+            let out3 = Chunk.span<float32> output[3]
+            let out4 = Chunk.span<float32> output[4]
+            let out5 = Chunk.span<float32> output[5]
+            let out6 = Chunk.span<float32> output[6]
+            let out7 = Chunk.span<float32> output[7]
+            let out8 = Chunk.span<float32> output[8]
+            let out9 = Chunk.span<float32> output[9]
+            let out10 = Chunk.span<float32> output[10]
+            let out11 = Chunk.span<float32> output[11]
+            let spatialCount = xxPixels.Length
+            let mutable i = 0
+            while i < spatialCount do
+                let xx = float xxPixels[i]
+                let xy = float xyPixels[i]
+                let xz = float xzPixels[i]
+                let yy = float yyPixels[i]
+                let yz = float yzPixels[i]
+                let zz = float zzPixels[i]
+                let scale =
+                    max 1.0
+                        (max (abs xx)
+                            (max (abs xy)
+                                (max (abs xz)
+                                    (max (abs yy)
+                                        (max (abs yz) (abs zz))))))
+                let struct (e0, e1, e2) = symmetricEigenvalues3Raw xx xy xz yy yz zz
+                let struct (x0, y0, z0, x1, y1, z1, x2, y2, z2) =
+                    symmetricEigenvectors3Raw xx xy xz yy yz zz e0 e1 e2 scale
+                out0[i] <- float32 e0
+                out1[i] <- float32 e1
+                out2[i] <- float32 e2
+                out3[i] <- float32 x0
+                out4[i] <- float32 y0
+                out5[i] <- float32 z0
+                out6[i] <- float32 x1
+                out7[i] <- float32 y1
+                out8[i] <- float32 z1
+                out9[i] <- float32 x2
+                out10[i] <- float32 y2
+                out11[i] <- float32 z2
+                i <- i + 1
             outputVector
         with
         | _ ->
-            Chunk.decRef output
+            output |> Array.iter Chunk.decRef
             reraise()
 
-    releaseUnaryVectorToVectorChunk
+    releaseUnaryVectorToVectorChunkParallel
         "chunkStructureTensorEigenMatrixFloat32"
+        workers
         mapper
-        (fun n -> n * uint64 (chunkElementBytes<float32> * (6 + 12)))
+        (fun n -> uint64 (6 + workers * 12) * chunkMemoryNeed<float32> n)
+
+let symmetricTensorEigenvectorFloat32 eigenIndex workers : Stage<VectorChunk<float32>, VectorChunk<float32>> =
+    if eigenIndex > 2u then
+        invalidArg "eigenIndex" $"chunkSymmetricTensorEigenvectorFloat32 expects eigenIndex 0, 1, or 2, got {eigenIndex}."
+
+    let mapper (tensor: VectorChunk<float32>) =
+        if Chunk.vectorComponentCount tensor <> 6u then
+            invalidArg "tensor" $"chunkSymmetricTensorEigenvectorFloat32 expected a 6-component tensor, got {Chunk.vectorComponentCount tensor}."
+
+        let output = Array.init 3 (fun _ -> Chunk.create<float32> tensor.SpatialSize)
+        try
+            let outputVector: VectorChunk<float32> =
+                { SpatialSize = tensor.SpatialSize
+                  Components = output }
+            let xxPixels = Chunk.span<float32> tensor.Components[0]
+            let xyPixels = Chunk.span<float32> tensor.Components[1]
+            let xzPixels = Chunk.span<float32> tensor.Components[2]
+            let yyPixels = Chunk.span<float32> tensor.Components[3]
+            let yzPixels = Chunk.span<float32> tensor.Components[4]
+            let zzPixels = Chunk.span<float32> tensor.Components[5]
+            let outX = Chunk.span<float32> output[0]
+            let outY = Chunk.span<float32> output[1]
+            let outZ = Chunk.span<float32> output[2]
+            let spatialCount = xxPixels.Length
+            let mutable i = 0
+            while i < spatialCount do
+                let xx = float xxPixels[i]
+                let xy = float xyPixels[i]
+                let xz = float xzPixels[i]
+                let yy = float yyPixels[i]
+                let yz = float yzPixels[i]
+                let zz = float zzPixels[i]
+                let scale =
+                    max 1.0
+                        (max (abs xx)
+                            (max (abs xy)
+                                (max (abs xz)
+                                    (max (abs yy)
+                                        (max (abs yz) (abs zz))))))
+                let struct (e0, e1, e2) = symmetricEigenvalues3Raw xx xy xz yy yz zz
+                let struct (x0, y0, z0, x1, y1, z1, x2, y2, z2) =
+                    symmetricEigenvectors3Raw xx xy xz yy yz zz e0 e1 e2 scale
+                let struct (x, y, z) =
+                    match eigenIndex with
+                    | 0u -> struct (x0, y0, z0)
+                    | 1u -> struct (x1, y1, z1)
+                    | _ -> struct (x2, y2, z2)
+                outX[i] <- float32 x
+                outY[i] <- float32 y
+                outZ[i] <- float32 z
+                i <- i + 1
+            outputVector
+        with
+        | _ ->
+            output |> Array.iter Chunk.decRef
+            reraise()
+
+    releaseUnaryVectorToVectorChunkParallel
+        $"chunkSymmetricTensorEigenvectorFloat32.{eigenIndex}"
+        workers
+        mapper
+        (fun n -> uint64 (6 + workers * 3) * chunkMemoryNeed<float32> n)
 
 let private zeroFloat32ChunkLike _index (source: Chunk<float32>) =
     let width, height, depth = source.Size
@@ -1170,7 +1469,13 @@ let private derivativeScalarFromSmoothedWindow name workers f : Stage<Chunk<floa
         id
 
 let private gaussianSmoothFloat32XYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers =
-    StackConvolve.gaussianFilterNativeParallelCollectXYZ<float32> sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers
+    if sigmaX <= 0.0 && sigmaY <= 0.0 && sigmaZ <= 0.0 then
+        Stage.map "chunkGaussianSmoothFloat32XYZ.identity" (fun _ chunk -> chunk) id id
+    else
+        let xKernel = if sigmaX <= 0.0 then [| 1.0f |] else StackConvolve.gaussianKernel sigmaX radiusX
+        let yKernel = if sigmaY <= 0.0 then [| 1.0f |] else StackConvolve.gaussianKernel sigmaY radiusY
+        let zKernel = if sigmaZ <= 0.0 then [| 1.0f |] else StackConvolve.gaussianKernel sigmaZ radiusZ
+        StackConvolve.separableConvolveNativeParallelCollect<float32> xKernel yKernel zKernel workers
 
 let gradientVectorNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers : Stage<Chunk<float32>, VectorChunk<float32>> =
     let smooth = gaussianSmoothFloat32XYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers
@@ -1197,12 +1502,11 @@ let structureTensorNativeParallelCollect sigma radius rho rhoRadius workers : St
         gradientVectorNativeParallelCollect sigma radius workers
         --> structureTensorOuterProductFloat32
 
-    if rho <= 0.0 then
-        outerProduct --> structureTensorEigenMatrixFloat32
-    else
-        outerProduct
-        --> gaussianSmoothVectorComponentsFloat32 rho rhoRadius workers
-        --> structureTensorEigenMatrixFloat32
+    outerProduct
+    --> gaussianSmoothVectorComponentsFloat32 rho rhoRadius workers
+
+let symmetricTensorEigensystemFloat32 workers : Stage<VectorChunk<float32>, VectorChunk<float32>> =
+    structureTensorEigenMatrixFloat32 workers
 
 let hessianUpperNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers : Stage<Chunk<float32>, VectorChunk<float32>> =
     let smooth = gaussianSmoothFloat32XYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers

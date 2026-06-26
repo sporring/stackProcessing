@@ -35,24 +35,6 @@
       ]
     },
     {
-      "id": "node-2",
-      "functionId": "VectorRange",
-      "x": 449.0639875426156,
-      "y": 120.95778168343043,
-      "parameters": [
-        {
-          "key": "firstComponent",
-          "value": "3",
-          "useInput": false
-        },
-        {
-          "key": "componentCount",
-          "value": "3",
-          "useInput": false
-        }
-      ]
-    },
-    {
       "id": "node-3",
       "functionId": "Vector3ToColor",
       "x": 604.2467498967433,
@@ -159,6 +141,19 @@
       ]
     },
     {
+      "id": "node-6",
+      "functionId": "SymmetricTensorEigenvector",
+      "x": 449.0639875426156,
+      "y": 120.95778168343043,
+      "parameters": [
+        {
+          "key": "eigenIndex",
+          "value": "0",
+          "useInput": false
+        }
+      ]
+    },
+    {
       "id": "node-5",
       "functionId": "Read",
       "x": 128.4957275390625,
@@ -192,12 +187,12 @@
       "fromNode": "node-1",
       "fromKind": "dataOutput",
       "fromPort": 0,
-      "toNode": "node-2",
+      "toNode": "node-6",
       "toKind": "dataInput",
       "toPort": 0
     },
     {
-      "fromNode": "node-2",
+      "fromNode": "node-6",
       "fromKind": "dataOutput",
       "fromPort": 0,
       "toNode": "node-3",

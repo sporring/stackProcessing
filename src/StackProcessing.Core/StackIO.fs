@@ -809,38 +809,57 @@ let private readColorChunkTiffSliceByPlan (plan: ColorTiffReadPlan) fileName : V
     let width = plan.Width
     let height = plan.Height
     let rowBytes = plan.RowBytes
-    let chunk = Chunk.create<uint8> (uint64 width * 3UL, uint64 height, 1UL)
-    let vector: VectorChunk<uint8> =
-        { SpatialSize = (uint64 width, uint64 height, 1UL)
-          Components = 3u
-          Chunk = chunk }
+    let packed = Chunk.create<uint8> (uint64 width * 3UL, uint64 height, 1UL)
     try
         match plan.Strategy with
         | RawFastPath ->
-            readBitMiracleRawTiffPageIntoOffsetNoMetadata fileName 0 (uint64 rowBytes * uint64 height) 0 chunk
+            readBitMiracleRawTiffPageIntoOffsetNoMetadata fileName 0 (uint64 rowBytes * uint64 height) 0 packed
         | GeneralBitMiraclePath ->
-            readBitMiracleDecodedTiffPageIntoOffsetNoMetadata fileName 0 (uint64 rowBytes * uint64 height) 0 chunk
-        vector
+            readBitMiracleDecodedTiffPageIntoOffsetNoMetadata fileName 0 (uint64 rowBytes * uint64 height) 0 packed
+
+        let spatialSize = (uint64 width, uint64 height, 1UL)
+        let components = Array.init 3 (fun _ -> Chunk.create<uint8> spatialSize)
+        try
+            let packedPixels = Chunk.span<uint8> packed
+            let redPixels = Chunk.span<uint8> components[0]
+            let greenPixels = Chunk.span<uint8> components[1]
+            let bluePixels = Chunk.span<uint8> components[2]
+            let pixelCount = int width * int height
+            for i in 0 .. pixelCount - 1 do
+                let source = i * 3
+                redPixels[i] <- packedPixels[source]
+                greenPixels[i] <- packedPixels[source + 1]
+                bluePixels[i] <- packedPixels[source + 2]
+
+            Chunk.decRef packed
+            { SpatialSize = spatialSize
+              Components = components }
+        with
+        | _ ->
+            components |> Array.iter Chunk.decRef
+            reraise()
     with
     | _ ->
-        Chunk.decRef chunk
+        Chunk.decRef packed
         reraise()
 
 let private writeColorChunkTiffSlice fileName (vector: VectorChunk<uint8>) =
-    if vector.Components <> 3u then
-        invalidArg "vector" $"writeColorChunkSlices expects 3-component RGB vectors, got {vector.Components} components."
+    if Chunk.vectorComponentCount vector <> 3u then
+        invalidArg "vector" $"writeColorChunkSlices expects 3-component RGB vectors, got {Chunk.vectorComponentCount vector} components."
     let width, height, depth = vector.SpatialSize
     if depth <> 1UL then
         invalidArg "vector" $"writeColorChunkSlices expects 2D color slice chunks with depth 1, got {vector.SpatialSize}."
-    if vector.Chunk.Size <> (width * 3UL, height, 1UL) then
-        invalidArg "vector" $"RGB vector chunk storage size {vector.Chunk.Size} does not match spatial size {vector.SpatialSize}."
 
     let rowBytes = int width * 3
-    if vector.Chunk.ByteLength < rowBytes * int height then
-        invalidArg "vector" $"RGB vector chunk byte length {vector.Chunk.ByteLength} is smaller than the TIFF page payload {rowBytes * int height}."
-
     let pageBytes = uint64 rowBytes * uint64 height
-    writeBitMiracleRawTiffPageFrom fileName width height 8us TiffSampleFormatUInt 3us pageBytes 0 vector.Chunk
+    let packed = Chunk.toChunk vector
+    try
+        if packed.ByteLength < rowBytes * int height then
+            invalidArg "vector" $"RGB vector chunk byte length {packed.ByteLength} is smaller than the TIFF page payload {rowBytes * int height}."
+
+        writeBitMiracleRawTiffPageFrom fileName width height 8us TiffSampleFormatUInt 3us pageBytes 0 packed
+    finally
+        Chunk.decRef packed
 
 let private runTask (task: Task<'T>) : 'T =
     task.GetAwaiter().GetResult()
@@ -1965,7 +1984,7 @@ let private readSelectedColorChunkSlices
         let vector = readColorChunkTiffSliceByPlan readPlan fileName
         let chunkWidth, chunkHeight, _ = vector.SpatialSize
         if chunkWidth <> uint64 width || chunkHeight <> uint64 height then
-            Chunk.decRef vector.Chunk
+            Chunk.decRefVector vector
             invalidOp $"Input RGB slice '{fileName}' has shape {chunkWidth}x{chunkHeight}, expected {width}x{height}."
         vector
 
@@ -3549,7 +3568,7 @@ let writeColorChunkSlices (outputDir: string) (suffix: string) : Stage<VectorChu
                 printfn $"[writeColorChunkSlices] Saved RGB chunk slice {idx} to {fileName}"
             writeColorChunkTiffSlice fileName vector
         finally
-            Chunk.decRef vector.Chunk
+            Chunk.decRefVector vector
 
     let memoryNeed = id
     let memoryModel = StageMemoryModel.fromSinglePeak Iter memoryNeed

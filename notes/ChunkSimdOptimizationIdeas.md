@@ -366,40 +366,167 @@ small fixed component count:
 - componentwise multiply/add
 - structure tensor per-pixel outer product before smoothing
 
-Two layouts should be compared:
+Two layouts were compared:
 
-- current interleaved component layout
-- component-plane layout, if we ever introduce one for selected operations
+- packed interleaved component layout, i.e. AoS
+- component-plane layout, i.e. SoA
 
 Interleaved layout is convenient for pixelwise operations. Component-plane
 layout is often better for long linear scans of one component at a time.
 
 Current status and caveat:
 
-- The current vector storage is interleaved component-fastest:
+- Normal 4D `Chunk<'T>` packing remains component-fastest/interleaved:
   `x0,y0,z0,x1,y1,z1,...`.
-- This is good for per-pixel scalar code and compact IO, but awkward for
-  `Vector<float32>` reductions such as dot and magnitude because SIMD lanes
-  naturally want many `x` values, then many `y` values, then many `z` values.
-- Component-plane layout would make dot/magnitude/angle and structure tensor
-  outer products easier to vectorize, but it would be a larger representation
-  decision.
+- `VectorChunk<'T>` has been refactored to a component-array representation:
+  a vector image is a small array of ordinary scalar `Chunk<'T>` components with
+  shared spatial size and component order carrying the implicit component index.
+- This gives the structure tensor path the SoA advantages without changing the
+  ordinary Chunk byte layout used for RGB, complex values, TIFF, FFT, or compact
+  4D images.
 
-Recommended next benchmark:
+Structure tensor layout experiment added:
 
 ```text
-run-chunk-vector-float32
+run-chunk-structure-tensor-layout
   --shape WxHxD
-  --components 3|6
-  --layout interleaved|component-plane
-  --variant dot|magnitude|angle|component-add|component-mul|structure-tensor
+  --variant aos-outer|soa-outer|soa-outer-vector|components-outer-vector|aos-smooth|soa-smooth-vector|components-smooth-vector|aos-eigenvalues|soa-eigenvalues|components-eigenvalues|components-eigenvalues-jacobi6|components-eigenvalues-jacobi8|components-eigensystem|components-eigensystem-chunk-algebra|components-eigensystem-jacobi-alloc|aos-pipeline|soa-pipeline-vector|components-pipeline-vector|components-pipeline-jacobi6|components-pipeline-jacobi8|components-pipeline-eigensystem|components-pipeline-eigensystem-chunk-algebra|components-pipeline-eigensystem-jacobi-alloc|aos-to-soa|soa-to-aos|all
   --iterations N
 ```
 
-The benchmark should include both a production-shaped interleaved path and a
-component-plane ceiling. Only introduce a production component-plane
-representation if the ceiling is large enough to justify the extra layout
-complexity.
+Current battery-powered smoke result, shape `256x256x64`, 5 iterations:
+
+| Variant | Time | Throughput | Interpretation |
+| --- | ---: | ---: | --- |
+| `aos-outer` | 0.064 s | 11.1 GiB/s | Current interleaved-style scalar outer product. |
+| `soa-outer-vector` | 0.043 s | 16.3 GiB/s | Packed component-plane SIMD outer product. |
+| `components-outer-vector` | 0.049 s | 14.3 GiB/s | Window/list of 3 scalar chunks, receiver interprets component order. |
+| `aos-smooth` | 0.321 s | 2.9 GiB/s | 3-tap smoothing over interleaved six-component tensors. |
+| `soa-smooth-vector` | 0.103 s | 9.1 GiB/s | Packed component-plane smoothing. |
+| `components-smooth-vector` | 0.096 s | 9.8 GiB/s | Window/list of 6 scalar chunks is slightly faster than packed SoA here. |
+| `aos-eigenvalues` | 1.323 s | 0.53 GiB/s | Per-voxel symmetric 3x3 eigenvalue kernel dominates. |
+| `soa-eigenvalues` | 1.247 s | 0.56 GiB/s | Packed SoA is only slightly faster. |
+| `components-eigenvalues` | 1.181 s | 0.60 GiB/s | Component chunks are slightly faster again. |
+| `aos-pipeline` | 1.527 s | 1.54 GiB/s | Outer product + 3-tap tensor smoothing + eigenvalues. |
+| `soa-pipeline-vector` | 1.288 s | 1.82 GiB/s | Packed SoA micro-pipeline. |
+| `components-pipeline-vector` | 1.250 s | 1.88 GiB/s | Component-window micro-pipeline is fastest in this smoke run. |
+| `aos-to-soa` | 0.073 s | 6.5 GiB/s | One-way conversion cost for 3-component gradients. |
+| `soa-to-aos` | 0.081 s | 11.6 GiB/s | Conversion cost for 6-component tensors. |
+
+The experiment now includes three representations:
+
+- AoS `VectorChunk`-style packed interleaving
+- packed SoA inside one Chunk, with component planes laid end-to-end
+- `Window<Chunk<float32>>` / list-of-component-chunks, where the receiver
+  interprets `[gx; gy; gz]` or `[xx; xy; xz; yy; yz; zz]`
+
+It includes the tensor outer product, a simple 3-tap smoothing proxy over the
+six matrix components, and symmetric 3x3 eigenvalue analysis. It still does not
+include the first image smoothing, finite-difference gradient stage, full
+Gaussian radii, or eigenvectors. It is therefore a layout experiment rather than
+a production structure-tensor benchmark.
+
+Lesson: SoA is a real compute win for the structure tensor stages. The
+matrix-component smoothing result is the strongest signal because it is exactly
+the kind of long component-plane scan that AoS makes awkward. However, the
+closed-form scalar eigenvalue kernel dominates the micro-pipeline and is almost
+layout-neutral. With eigenvalues included, the SoA micro-pipeline is about
+12--16% faster in these smoke runs, not the 2x suggested by the outer-product
+kernel alone.
+
+This made a global `Chunk<'T>` vector representation switch look too
+heavy-handed. The production direction is now to keep ordinary chunks packed and
+compact, while making `VectorChunk<'T>` a component-array wrapper over scalar
+chunks. That captures most of the SoA benefit for analytical receivers without
+changing RGB, complex, TIFF, FFT, or compact 4D image semantics.
+
+Follow-up plugged-in experiment, 2026-06-26:
+
+- Added benchmark-only Melax/Jacobi-style variants that repeatedly rotate the
+  largest off-diagonal entry of each symmetric 3x3 tensor:
+  `components-eigenvalues-jacobi6`, `components-eigenvalues-jacobi8`,
+  `components-pipeline-jacobi6`, and `components-pipeline-jacobi8`.
+- Shape `256x256x64`, 5 iterations:
+
+| Variant | Time | Interpretation |
+| --- | ---: | --- |
+| `components-eigenvalues` | 0.890 s | Current closed-form symmetric 3x3 eigenvalues. |
+| `components-eigenvalues-jacobi6` | 1.720 s | Fixed largest-offdiagonal rotations are about 1.9x slower. |
+| `components-eigenvalues-jacobi8` | 2.119 s | More rotations are slower again. |
+| `components-pipeline-vector` | 0.951 s | Current component-window micro-pipeline. |
+| `components-pipeline-jacobi6` | 2.097 s | Jacobi dominates the pipeline cost. |
+| `components-pipeline-jacobi8` | 2.845 s | Not promising for this workload. |
+
+Conclusion: a simple no-allocation largest-offdiagonal Jacobi/Melax-style
+eigenvalues-only kernel is not a win over the current closed-form 3x3
+eigenvalue formula. It remains worth investigating allocation-free eigenvectors
+for the production `structureTensor` output, because production currently uses
+`TinyLinAlg.symmetricEigen` to emit values plus vectors. However, the next
+candidate should probably keep the closed-form eigenvalue path or use a more
+specialized symmetric 3x3 eigensystem formula rather than replacing the
+eigenvalue kernel with fixed Jacobi rotations.
+
+Kopp-inspired follow-up, 2026-06-26:
+
+- `TinyLinAlg` now has a `symmetricEigen3` struct-returning API intended for
+  hot 3x3 symmetric eigensystems. It keeps the closed-form eigenvalue solve,
+  computes eigenvectors by row cross products of `A - lambda I`, and uses a
+  scalar Jacobi fallback without `Array2D` allocation.
+- The old list-returning `symmetricEigen` remains for compatibility, but hot
+  paths should prefer `symmetricEigen3` or a future buffer-writing API.
+- `structureTensorEigenMatrixFloat32` now writes the 12 eigensystem components
+  from `symmetricEigen3` directly into component Chunk buffers instead of
+  building per-voxel value/vector lists.
+- Benchmark-only variants compare the new Kopp-style path with a local copy of
+  the old allocating Jacobi path.
+
+Shape `256x256x64`, 5 iterations:
+
+| Variant | Time | Allocated bytes | Interpretation |
+| --- | ---: | ---: | --- |
+| `components-eigensystem` | 5.91 s | 3.02 GB | New Kopp-style values+vectors path. |
+| `components-eigensystem-jacobi-alloc` | 10.19 s | 16.11 GB | Old array/list Jacobi baseline. |
+| `components-pipeline-eigensystem` | 5.42 s | 3.02 GB | Outer + smooth + new eigensystem. |
+| `components-pipeline-eigensystem-jacobi-alloc` | 12.15 s | 16.11 GB | Outer + smooth + old Jacobi baseline. |
+
+This was a strong speed improvement over the old allocating Jacobi path, but the
+remaining ~144 bytes per matrix showed that even a struct-returning eigensolver
+API was too expensive for the hottest structure-tensor path. The lesson is that
+the production path should write directly into caller-owned component spans, not
+return value/vector objects per voxel.
+
+Chunk-algebra production follow-up, 2026-06-26:
+
+- `structureTensorOuterProductFloat32` now uses `Vector<float32>` over the
+  `VectorChunk` component chunks.
+- `structureTensorEigenMatrixFloat32` now keeps the closed-form eigenvalue path
+  but writes eigenvalues and eigenvectors directly into the 12 output component
+  chunks. It avoids `TinyLinAlg.symmetricEigen3` in the hot loop.
+- `structureTensorEigenMatrixFloat32` is now a worker-parallel singleton-window
+  stage. The existing Studio/DSL `workers` parameter therefore applies to the
+  final slice-wise eigensystem stage as well as the gradient and tensor
+  smoothing stages.
+- The benchmark keeps both versions for comparison:
+  `components-eigensystem` is the struct-returning TinyLinAlg path, while
+  `components-eigensystem-chunk-algebra` is the direct component-span writer.
+
+Shape `256x256x64`, 5 iterations:
+
+| Variant | Time | Allocated bytes | Interpretation |
+| --- | ---: | ---: | --- |
+| `components-outer-vector` | 0.029 s | 40 B | SIMD component outer product, about 24.0 GiB/s in this run. |
+| `components-smooth-vector` | 0.073 s | 40 B | Component-wise matrix-entry smoothing, about 12.8 GiB/s. |
+| `components-eigensystem` | 5.74 s | 3.02 GB | Struct-returning TinyLinAlg path still allocates heavily. |
+| `components-eigensystem-chunk-algebra` | 2.24 s | 40 B | Direct span writer, same checksum, no per-voxel allocation. |
+| `components-pipeline-eigensystem` | 5.74 s | 3.02 GB | Outer + smoothing + TinyLinAlg eigensystem. |
+| `components-pipeline-eigensystem-chunk-algebra` | 2.45 s | 40 B | Outer + smoothing + direct span eigensystem. |
+
+Conclusion: this is the right production shape. Use the new `VectorChunk`
+component-array representation and SIMD/vector kernels for long component
+scans, but use fused scalar chunk-span kernels for algebra with transcendental
+or branch-heavy inner loops such as the symmetric 3x3 eigensystem. Returning
+arrays or per-voxel objects from TinyLinAlg remains useful for general-purpose
+linear algebra, but not for LMIP hot paths.
 
 ### Complex64 Interleaved Helpers
 
