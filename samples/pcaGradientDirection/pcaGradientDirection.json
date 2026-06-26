@@ -11,16 +11,20 @@
     { "id": "gradient", "functionId": "Gradient", "x": 300.0, "y": 120.0,
       "parameters": [
         { "key": "sigma", "value": "1.0", "useInput": false },
-        { "key": "radius", "value": "7", "useInput": false },
-        { "key": "workers", "value": "4", "useInput": false } ] },
+        { "key": "radius", "value": "7", "useInput": false } ] },
     { "id": "pca", "functionId": "PCA", "x": 520.0, "y": 120.0,
       "parameters": [
         { "key": "components", "value": "3", "useInput": false } ] },
-    { "id": "color", "functionId": "Vector3ToColor", "x": 760.0, "y": 120.0,
+    { "id": "stretch", "functionId": "IntensityStretch", "x": 740.0, "y": 120.0,
       "parameters": [
         { "key": "inputMinimum", "value": "-1.0", "useInput": false },
-        { "key": "inputMaximum", "value": "1.0", "useInput": false } ] },
-    { "id": "write", "functionId": "Write", "x": 980.0, "y": 120.0,
+        { "key": "inputMaximum", "value": "1.0", "useInput": false },
+        { "key": "outputMinimum", "value": "0.0", "useInput": false },
+        { "key": "outputMaximum", "value": "255.0", "useInput": false } ] },
+    { "id": "color", "functionId": "VectorCast", "x": 960.0, "y": 120.0,
+      "parameters": [
+        { "key": "targetType", "value": "UInt8", "useInput": false } ] },
+    { "id": "write", "functionId": "Write", "x": 1180.0, "y": 120.0,
       "parameters": [
         { "key": "format", "value": "Image stack", "useInput": false },
         { "key": "output", "value": "../tmp/pcaGradientDirection", "useInput": false },
@@ -29,7 +33,8 @@
   "edges": [
     { "fromNode": "read", "fromKind": "dataOutput", "fromPort": 0, "toNode": "gradient", "toKind": "dataInput", "toPort": 0 },
     { "fromNode": "gradient", "fromKind": "dataOutput", "fromPort": 0, "toNode": "pca", "toKind": "dataInput", "toPort": 0 },
-    { "fromNode": "pca", "fromKind": "dataOutput", "fromPort": 1, "toNode": "color", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "pca", "fromKind": "dataOutput", "fromPort": 1, "toNode": "stretch", "toKind": "dataInput", "toPort": 0 },
+    { "fromNode": "stretch", "fromKind": "dataOutput", "fromPort": 0, "toNode": "color", "toKind": "dataInput", "toPort": 0 },
     { "fromNode": "color", "fromKind": "dataOutput", "fromPort": 0, "toNode": "write", "toKind": "dataInput", "toPort": 0 }
   ]
 }

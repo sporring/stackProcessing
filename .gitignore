@@ -47,3 +47,5 @@ slow
 tests/**/coverage.info
 *.info
 benchmarks/results/raw.before-sp-copy-native-tiff-20260619.csv
+samples/structureTensor/tmp2.txt
+samples/structureTensor/tmp.txt

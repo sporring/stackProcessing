@@ -1508,7 +1508,7 @@ let generatorSuite =
                       edge "signed" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> chunkSignedDistanceBandNativeParallelCollect 9u 5u 1" "signedDistanceBand should lower with band radius and stride."
+            Expect.stringContains code ">=> signedDistanceBand 9u 5u" "signedDistanceBand should lower with band radius and stride."
 
         testCase "convolve lowers to StackProcessing stage" <| fun _ ->
             let readImage =
@@ -1862,28 +1862,44 @@ let generatorSuite =
             let colorCode =
                 graph
                     [ read "source" "source"
-                      node "tensor" "StructureTensor" [ p "sigma" "1.0" false; p "radius" "7" false; p "rho" "2.0" false; p "rhoRadius" "7" false; p "workers" "4" false ]
-                      node "eigenvector" "SymmetricTensorEigenvector" [ p "eigenIndex" "0u" false ]
-                      node "color" "Vector3ToColor" [ p "inputMinimum" "-1.0" false; p "inputMaximum" "1.0" false ]
+                      node "tensor" "StructureTensor" [ p "sigma" "1.0" false; p "radius" "7" false; p "rho" "2.0" false; p "rhoRadius" "7" false ]
+                      node "eigenvector" "SymmetricMatrixEigenvector" [ p "eigenIndex" "0u" false ]
+                      node "stretch" "IntensityStretch" [ p "inputMinimum" "-1.0" false; p "inputMaximum" "1.0" false; p "outputMinimum" "0.0" false; p "outputMaximum" "255.0" false ]
+                      node "color" "VectorCast" [ p "targetType" "UInt8" false ]
                       node "vector" "ColorToVector3" [ p "outputMinimum" "-1.0" false; p "outputMaximum" "1.0" false ]
                       write ]
                     [ edge "source" "output" 0 "tensor" "input" 0
                       edge "tensor" "output" 0 "eigenvector" "input" 0
-                      edge "eigenvector" "output" 0 "color" "input" 0
+                      edge "eigenvector" "output" 0 "stretch" "input" 0
+                      edge "stretch" "output" 0 "color" "input" 0
                       edge "color" "output" 0 "vector" "input" 0
                       edge "vector" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains colorCode ">=> structureTensor 1.0 7 2.0 7 4" "StructureTensor should lower to the six-component tensor stage."
-            Expect.stringContains colorCode ">=> symmetricTensorEigenvector 0u" "SymmetricTensorEigenvector should lower as an explicit single-eigenvector stage."
+            Expect.stringContains colorCode ">=> structureTensor 1.0 7 2.0 7" "StructureTensor should lower to the six-component tensor stage."
+            Expect.stringContains colorCode ">=> symmetricMatrixEigenvector 0u" "SymmetricMatrixEigenvector should lower as an explicit single-eigenvector stage."
             Expect.isFalse (colorCode.Contains("vectorRange<float32> 3u 3u")) "The single-eigenvector path should not materialize the full eigensystem and then slice it."
-            Expect.stringContains colorCode ">=> vector3ToColorFloat32 (float32 (-1.0)) (float32 (1.0))" "Vector3ToColor should lower with its input range and the inferred Float32 vector type."
+            Expect.stringContains colorCode ">=> intensityStretch -1.0 1.0 0.0 255.0" "IntensityStretch should lower with input and output ranges."
+            Expect.stringContains colorCode ">=> vectorCast<_, uint8>" "VectorCast should lower as a component-wise vector cast with the inferred source vector type."
             Expect.stringContains colorCode ">=> colorToVector3 -1.0 1.0" "ColorToVector3 should lower with its output range."
+
+            let eigenvaluesCode =
+                graph
+                    [ read "source" "source"
+                      node "tensor" "StructureTensor" [ p "sigma" "1.0" false; p "radius" "7" false; p "rho" "2.0" false; p "rhoRadius" "7" false ]
+                      node "eigenvalues" "SymmetricMatrixEigenvalues" []
+                      write ]
+                    [ edge "source" "output" 0 "tensor" "input" 0
+                      edge "tensor" "output" 0 "eigenvalues" "input" 0
+                      edge "eigenvalues" "output" 0 "write" "input" 0 ]
+                |> PipelineCodeGenerator.generateSavedGraph
+
+            Expect.stringContains eigenvaluesCode ">=> symmetricMatrixEigenvalues" "SymmetricMatrixEigenvalues should lower to the eigenvalues-only matrix stage."
 
             let gradientCode =
                 graph
                     [ read "source" "source"
-                      node "gradient" "Gradient" [ p "sigma" "1.0" false; p "radius" "7" false; p "workers" "4" false ]
+                      node "gradient" "Gradient" [ p "sigma" "1.0" false; p "radius" "7" false ]
                       node "element" "VectorElement" [ p "component" "0" false ]
                       write ]
                     [ edge "source" "output" 0 "gradient" "input" 0
@@ -1891,7 +1907,7 @@ let generatorSuite =
                       edge "element" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains gradientCode ">=> gradientVector 1.0 7 4" "Gradient should lower with sigma, radius, and workers."
+            Expect.stringContains gradientCode ">=> gradientVector 1.0 7" "Gradient should lower with sigma and radius."
 
             let angleCode =
                 graph
@@ -1910,14 +1926,14 @@ let generatorSuite =
             let structureTensorCode =
                 graph
                     [ read "source" "source"
-                      node "tensor" "StructureTensor" [ p "sigma" "1.0" false; p "radius" "7" false; p "rho" "2.0" false; p "rhoRadius" "7" false; p "workers" "4" false ]
+                      node "tensor" "StructureTensor" [ p "sigma" "1.0" false; p "radius" "7" false; p "rho" "2.0" false; p "rhoRadius" "7" false ]
                       write ]
                     [ edge "source" "output" 0 "tensor" "input" 0
                       edge "tensor" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains structureTensorCode ">=> structureTensor 1.0 7 2.0 7 4" "StructureTensor should lower to the six-component tensor stage."
-            Expect.isFalse (structureTensorCode.Contains("symmetricTensorEigensystem")) "StructureTensor should not implicitly perform eigensystem decomposition."
+            Expect.stringContains structureTensorCode ">=> structureTensor 1.0 7 2.0 7" "StructureTensor should lower to the six-component tensor stage."
+            Expect.isFalse (structureTensorCode.Contains("symmetricMatrixEigensystem")) "StructureTensor should not implicitly perform eigensystem decomposition."
 
             let pcaCode =
                 graph
@@ -2190,8 +2206,8 @@ let generatorSuite =
                       edge "connected" "output" 0 "cast" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> connectedComponentsUInt32Windowed 15 System.Environment.ProcessorCount" "Connected components should produce compact Chunk label slices directly."
-            Expect.stringContains code ">=> cast<uint32,uint8>" "Label slices should feed regular image stages."
+            Expect.stringContains code ">=> connectedComponentsUInt32Windowed 15" "Connected components should produce compact Chunk label slices directly."
+            Expect.stringContains code ">=> cast<_, uint8>" "Label slices should feed regular image stages."
             Expect.isFalse (code.Contains "writeSlabSlices") "Connected components should not need slab temp writes."
             Expect.isFalse (code.Contains "makeConnectedComponentTranslationTable") "Connected components should not need a second translation-table reducer."
 
@@ -2473,7 +2489,7 @@ let generatorSuite =
                     [ edge "read" "output" 0 "stretch" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> intensityStretch<float> 10.0 20.0 0.0 1.0" "Intensity stretch should lower with typed linear range parameters."
+            Expect.stringContains code ">=> intensityStretch 10.0 20.0 0.0 1.0" "Intensity stretch should lower with typed linear range parameters."
 
         testCase "numeric parameters normalize user-friendly decimal text before F# emission" <| fun _ ->
             let read =
@@ -2504,7 +2520,7 @@ let generatorSuite =
                       edge "stretch" "output" 0 "subtract" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> intensityStretch<uint8> 0.0 255.0 0.0 1.0" "Float parameters should never emit trailing-dot literals."
+            Expect.stringContains code ">=> intensityStretch 0.0 255.0 0.0 1.0" "Float parameters should never emit trailing-dot literals."
             Expect.stringContains code ">=> scalarSubImage 1uy" "Integer typed scalar parameters should accept decimal-looking whole numbers."
 
         testCase "finiteDiff lowers direction and derivative order parameters" <| fun _ ->

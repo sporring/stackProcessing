@@ -14,10 +14,11 @@ let main args =
 
     src
     |> read<float32> input ".tiff"
-    >=> gradientVector 1.0 7 4
+    >=> gradientVector 1.0 7
     >=> pcaFloat32 3u
     >=> selectGroupedVectorOutput 4u 1u
-    >=> vector3ToColorFloat32 -1.0f 1.0f
+    >=> intensityStretch -1.0 1.0 0.0 255.0
+    >=> vectorCast<_, uint8>
     >=> writeColor output ".tiff"
     |> sink
 

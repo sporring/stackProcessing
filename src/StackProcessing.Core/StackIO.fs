@@ -861,6 +861,21 @@ let private writeColorChunkTiffSlice fileName (vector: VectorChunk<uint8>) =
     finally
         Chunk.decRef packed
 
+let private writePackedColorChunkTiffSlice fileName (chunk: Chunk<uint8>) =
+    let packedWidth, height, depth = chunk.Size
+    if depth <> 1UL then
+        invalidArg "chunk" $"writeColorChunkSlices expects 2D packed color slice chunks with depth 1, got {chunk.Size}."
+    if packedWidth % 3UL <> 0UL then
+        invalidArg "chunk" $"writeColorChunkSlices expects packed RGB chunks with width divisible by 3, got {chunk.Size}."
+
+    let width = packedWidth / 3UL
+    let rowBytes = int packedWidth
+    let pageBytes = uint64 rowBytes * uint64 height
+    if chunk.ByteLength < rowBytes * int height then
+        invalidArg "chunk" $"Packed RGB chunk byte length {chunk.ByteLength} is smaller than the TIFF page payload {rowBytes * int height}."
+
+    writeBitMiracleRawTiffPageFrom fileName width height 8us TiffSampleFormatUInt 3us pageBytes 0 chunk
+
 let private runTask (task: Task<'T>) : 'T =
     task.GetAwaiter().GetResult()
 
@@ -3554,7 +3569,7 @@ let writeComplex128ChunkThick (outputDir: string) (suffix: string) : Stage<Chunk
     Stage.mapi $"writeComplex128Thick \"{outputDir}/*{suffix}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
 
-let writeColorChunkSlices (outputDir: string) (suffix: string) : Stage<VectorChunk<uint8>, unit> =
+let private writeVectorColorChunkSlices (outputDir: string) (suffix: string) : Stage<VectorChunk<uint8>, unit> =
     if not (isTiffStackSuffix suffix) then
         invalidArg "suffix" $"writeColorChunkSlices currently supports TIFF stack output only; got suffix '{suffix}'."
     Directory.CreateDirectory(outputDir) |> ignore
@@ -3582,6 +3597,43 @@ let writeColorChunkSlices (outputDir: string) (suffix: string) : Stage<VectorChu
 
     Stage.mapi $"writeColorChunkSlices \"{outputDir}/*{suffix}\"" mapper memoryNeed id
     |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+
+let private writePackedColorChunkSlices (outputDir: string) (suffix: string) : Stage<Chunk<uint8>, unit> =
+    if not (isTiffStackSuffix suffix) then
+        invalidArg "suffix" $"writeColorChunkSlices currently supports TIFF stack output only; got suffix '{suffix}'."
+    Directory.CreateDirectory(outputDir) |> ignore
+    let cleaned = lazy (cleanImageSeriesFiles outputDir suffix)
+
+    let mapper (debug: bool) (idx: int64) (chunk: Chunk<uint8>) =
+        cleaned.Force()
+        let fileName = Path.Combine(outputDir, sprintf "image_%03d%s" idx suffix)
+        try
+            if debug then
+                printfn $"[writeColorChunkSlices] Saved packed RGB chunk slice {idx} to {fileName}"
+            writePackedColorChunkTiffSlice fileName chunk
+        finally
+            Chunk.decRef chunk
+
+    let memoryNeed = id
+    let memoryModel = StageMemoryModel.fromSinglePeak Iter memoryNeed
+    let timeCostModel =
+        imageIoCost<uint8>
+            "write"
+            Iter
+            $"writeColorChunkSlices.{suffixCostLabel suffix}.PackedColor"
+            (fun input -> inputValue input)
+            (fun _ -> 1UL)
+
+    Stage.mapi $"writeColorChunkSlices.packed \"{outputDir}/*{suffix}\"" mapper memoryNeed id
+    |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+
+let writeColorChunkSlices<'Color> (outputDir: string) (suffix: string) : Stage<'Color, unit> =
+    if typeof<'Color> = typeof<VectorChunk<uint8>> then
+        unbox (box (writeVectorColorChunkSlices outputDir suffix))
+    elif typeof<'Color> = typeof<Chunk<uint8>> then
+        unbox (box (writePackedColorChunkSlices outputDir suffix))
+    else
+        invalidArg "Color" $"writeColor supports VectorChunk<uint8> and packed Chunk<uint8> RGB images, got {typeof<'Color>.Name}."
 
 
 let writeZarrChunkSlicesWithCompression<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>

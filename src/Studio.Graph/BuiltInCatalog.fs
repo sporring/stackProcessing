@@ -18,6 +18,7 @@ module BuiltInCatalog =
   let vectorImageFloat32 = PortType.Custom "VectorImageFloat32"
   let vectorImageFloat64 = PortType.Custom "VectorImageFloat64"
   let colorImage = PortType.Custom "ColorImage"
+  let numericOrVectorImage = PortType.Custom "NumericOrVectorImage"
   let translationTable = PortType.Custom "TranslationTable"
   let connectedComponentLabels = PortType.Tuple(imageUInt64, PortType.Scalar(BasicType.Numeric UInt64))
   let mesh = PortType.Custom "Mesh"
@@ -1410,7 +1411,7 @@ module BuiltInCatalog =
           DisplayName = "vectorRange"
           Category = "Vector Images"
           Summary = "Extract a contiguous range of components from a vector image."
-          Description = "Extracts componentCount consecutive components starting at firstComponent from every vector-valued pixel. Component indices are zero-based. For symmetricTensorEigensystem, the output is a 12-component 3x4 matrix laid out as [eigenvalue0; eigenvalue1; eigenvalue2; eigenvector0.x; eigenvector0.y; eigenvector0.z; eigenvector1.x; eigenvector1.y; eigenvector1.z; eigenvector2.x; eigenvector2.y; eigenvector2.z]. Thus firstComponent=3 and componentCount=3 extracts eigenvector 0, firstComponent=6 extracts eigenvector 1, and firstComponent=9 extracts eigenvector 2."
+          Description = "Extracts componentCount consecutive components starting at firstComponent from every vector-valued pixel. Component indices are zero-based. For symmetricMatrixEigensystem, the output is a 12-component 3x4 matrix laid out as [eigenvalue0; eigenvalue1; eigenvalue2; eigenvector0.x; eigenvector0.y; eigenvector0.z; eigenvector1.x; eigenvector1.y; eigenvector1.z; eigenvector2.x; eigenvector2.y; eigenvector2.z]. Thus firstComponent=3 and componentCount=3 extracts eigenvector 0, firstComponent=6 extracts eigenvector 1, and firstComponent=9 extracts eigenvector 2."
           Aliases = [ "vector"; "range"; "slice"; "component"; "eigenvector"; "structure"; "tensor" ]
           Inputs = [ makePort "Vector Float64" vectorImageFloat64 ]
           Outputs = [ makePort "Vector Float64" vectorImageFloat64 ]
@@ -1418,23 +1419,21 @@ module BuiltInCatalog =
             [ makeParameter "firstComponent" "First component" "0" (BasicType.Numeric UInt32)
               makeParameter "componentCount" "Component count" "3" (BasicType.Numeric UInt32) ] }
 
-        { Id = "Vector3ToColor"
-          DisplayName = "vector3ToColor"
+        { Id = "VectorCast"
+          DisplayName = "vectorCast"
           Category = "Vector Images"
-          Summary = "Map a three-component Float64 vector image to RGB UInt8 color."
-          Description = "Converts three-component Float64 vector pixels to RGB color pixels by linearly mapping inputMinimum..inputMaximum to 0..255 and clamping outside that range. The defaults are useful for signed direction fields such as structure-tensor eigenvectors."
-          Aliases = [ "vector"; "color"; "rgb"; "direction"; "eigenvector" ]
+          Summary = "Cast every component chunk in a vector image."
+          Description = "Applies the scalar cast operation independently to every component image. The UInt8 target is useful before writeColor when a vector direction field has already been mapped into display range."
+          Aliases = [ "vector"; "cast"; "color"; "rgb"; "direction"; "eigenvector" ]
           Inputs = [ makePort "Vector Float64" vectorImageFloat64 ]
           Outputs = [ makePort "Color" colorImage ]
-          Parameters =
-            [ makeParameter "inputMinimum" "Input minimum" "-1.0" (BasicType.Numeric Float64)
-              makeParameter "inputMaximum" "Input maximum" "1.0" (BasicType.Numeric Float64) ] }
+          Parameters = [ makeParameter "targetType" "Target type" "UInt8" BasicType.String ] }
 
         { Id = "ColorToVector3"
           DisplayName = "colorToVector3"
           Category = "Vector Images"
           Summary = "Map RGB UInt8 color to a three-component Float64 vector image."
-          Description = "Converts RGB color pixels to three-component Float64 vector pixels by linearly mapping 0..255 to outputMinimum..outputMaximum. The defaults invert vector3ToColor for signed direction fields."
+          Description = "Converts RGB color pixels to three-component Float64 vector pixels by linearly mapping 0..255 to outputMinimum..outputMaximum. The defaults invert intensityStretch followed by vectorCast to UInt8 for signed direction fields."
           Aliases = [ "color"; "rgb"; "vector"; "direction" ]
           Inputs = [ makePort "Color" colorImage ]
           Outputs = [ makePort "Vector Float64" vectorImageFloat64 ]
@@ -1505,14 +1504,13 @@ module BuiltInCatalog =
           Outputs = [ makePort "Vector Float32" vectorImageFloat32 ]
           Parameters =
             [ makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
-              makeParameter "radius" "Radius" "7" (BasicType.Numeric Int32)
-              makeParameter "workers" "Workers" "4" (BasicType.Numeric Int32) ] }
+              makeParameter "radius" "Radius" "7" (BasicType.Numeric Int32) ] }
 
         { Id = "StructureTensor"
           DisplayName = "structureTensor"
           Category = "Vector Images"
           Summary = "Compute the six-component smoothed structure tensor."
-          Description = "Pre-smooths Float32 scalar chunks with sigma, computes the finite-difference gradient, forms the six unique components of the symmetric exterior product, smooths those tensor components with rho, and emits six Float32 components ordered as xx, xy, xz, yy, yz, zz. Feed this into symmetricTensorEigensystem when eigenvalues or eigenvectors are needed."
+          Description = "Pre-smooths Float32 scalar chunks with sigma, computes the finite-difference gradient, forms the six unique components of the symmetric exterior product, smooths those tensor components with rho, and emits six Float32 components ordered as xx, xy, xz, yy, yz, zz. Feed this into symmetricMatrixEigenvalues, symmetricMatrixEigenvector, or symmetricMatrixEigensystem when spectral information is needed."
           Aliases = [ "structure"; "tensor"; "orientation"; "gradient"; "matrix"; "outer" ]
           Inputs = [ makePort "Float32" imageFloat32 ]
           Outputs = [ makePort "Tensor 3x3 Float32" vectorImageFloat32 ]
@@ -1520,24 +1518,33 @@ module BuiltInCatalog =
             [ makeParameter "sigma" "Sigma" "1.0" (BasicType.Numeric Float64)
               makeParameter "radius" "Sigma radius" "7" (BasicType.Numeric Int32)
               makeParameter "rho" "Rho" "2.0" (BasicType.Numeric Float64)
-              makeParameter "rhoRadius" "Rho radius" "7" (BasicType.Numeric Int32)
-              makeParameter "workers" "Workers" "4" (BasicType.Numeric Int32) ] }
+              makeParameter "rhoRadius" "Rho radius" "7" (BasicType.Numeric Int32) ] }
 
-        { Id = "SymmetricTensorEigensystem"
-          DisplayName = "symmetricTensorEigensystem"
+        { Id = "SymmetricMatrixEigensystem"
+          DisplayName = "symmetricMatrixEigensystem"
           Category = "Vector Images"
-          Summary = "Compute eigenvalues and eigenvectors of a six-component structure tensor."
-          Description = "Consumes six-component Float32 tensor chunks ordered as xx, xy, xz, yy, yz, zz and emits one 12-component Float32 vector chunk per slice. The components encode a 3x4 eigensystem matrix: components 0..2 are the sorted eigenvalues; components 3..5 are eigenvector 0; components 6..8 are eigenvector 1; components 9..11 are eigenvector 2. Use vectorRange to extract a 3-component eigenvector stream before colorizing or writing a scalar component."
+          Summary = "Compute eigenvalues and eigenvectors of a six-component symmetric matrix."
+          Description = "Consumes six-component Float32 symmetric matrix chunks ordered as xx, xy, xz, yy, yz, zz and emits one 12-component Float32 vector chunk per slice. The components encode a 3x4 eigensystem matrix: components 0..2 are the sorted eigenvalues; components 3..5 are eigenvector 0; components 6..8 are eigenvector 1; components 9..11 are eigenvector 2. Use vectorRange to extract a 3-component eigenvector stream before colorizing or writing a scalar component."
           Aliases = [ "structure"; "tensor"; "eigen"; "eigensystem"; "orientation"; "matrix" ]
           Inputs = [ makePort "Tensor 3x3 Float32" vectorImageFloat32 ]
           Outputs = [ makePort "Eigensystem 3x4 Float32" vectorImageFloat32 ]
           Parameters = [] }
 
-        { Id = "SymmetricTensorEigenvector"
-          DisplayName = "symmetricTensorEigenvector"
+        { Id = "SymmetricMatrixEigenvalues"
+          DisplayName = "symmetricMatrixEigenvalues"
           Category = "Vector Images"
-          Summary = "Compute one eigenvector of a six-component symmetric tensor."
-          Description = "Consumes six-component Float32 tensor chunks ordered as xx, xy, xz, yy, yz, zz, computes the sorted eigenvalues internally, and emits only the selected three-component eigenvector. This avoids materializing the full 12-component eigensystem when only one direction field is needed."
+          Summary = "Compute eigenvalues of a six-component symmetric matrix."
+          Description = "Consumes six-component Float32 symmetric matrix chunks ordered as xx, xy, xz, yy, yz, zz and emits a three-component Float32 vector chunk containing the sorted eigenvalues."
+          Aliases = [ "structure"; "tensor"; "eigen"; "eigenvalues"; "spectrum"; "matrix" ]
+          Inputs = [ makePort "Tensor 3x3 Float32" vectorImageFloat32 ]
+          Outputs = [ makePort "Eigenvalues Float32" vectorImageFloat32 ]
+          Parameters = [] }
+
+        { Id = "SymmetricMatrixEigenvector"
+          DisplayName = "symmetricMatrixEigenvector"
+          Category = "Vector Images"
+          Summary = "Compute one eigenvector of a six-component symmetric matrix."
+          Description = "Consumes six-component Float32 symmetric matrix chunks ordered as xx, xy, xz, yy, yz, zz, computes the sorted eigenvalues internally, and emits only the selected three-component eigenvector. This avoids materializing the full 12-component eigensystem when only one direction field is needed."
           Aliases = [ "structure"; "tensor"; "eigen"; "eigenvector"; "orientation"; "direction" ]
           Inputs = [ makePort "Tensor 3x3 Float32" vectorImageFloat32 ]
           Outputs = [ makePort "Eigenvector Float32" vectorImageFloat32 ]
@@ -1634,8 +1641,8 @@ module BuiltInCatalog =
           Summary = "Linearly map one intensity range to another."
           Description = intensityStretchDescription
           Aliases = [ "intensity"; "stretch"; "contrast"; "linear"; "range"; "scale" ]
-          Inputs = [ makePort "Number" imageAny ]
-          Outputs = [ makePort "Number" imageAny ]
+          Inputs = [ makePort "Number" numericOrVectorImage ]
+          Outputs = [ makePort "Number" numericOrVectorImage ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "inputMinimum" "Input minimum" "0.0" (BasicType.Numeric Float64)

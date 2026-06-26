@@ -694,27 +694,71 @@ let mapVectorElements (f: float -> float) (vector: VectorChunk<float>) =
         decRefVector output
         reraise()
 
-let vector3ToColor inputMinimum inputMaximum (vector: VectorChunk<float>) =
+let private intensityStretchVectorFloat64
+    inputMinimum
+    inputMaximum
+    outputMinimum
+    outputMaximum
+    (vector: VectorChunk<float>) =
     validateVectorStorage "vector" vector
     if inputMaximum <= inputMinimum then
-        invalidArg "inputMaximum" "vector3ToColor input maximum must be greater than input minimum."
-    if vectorComponentCount vector <> 3u then
-        invalidArg "vector" $"vector3ToColor expects 3 components, got {vectorComponentCount vector}."
+        invalidArg "inputMaximum" "intensityStretch input maximum must be greater than input minimum."
 
-    let output = createVectorChunk<uint8> vector.SpatialSize 3u
+    let output = createVectorChunk<float> vector.SpatialSize (vectorComponentCount vector)
     try
-        let scale = 255.0 / (inputMaximum - inputMinimum)
-        for c in 0 .. 2 do
+        let scale = (outputMaximum - outputMinimum) / (inputMaximum - inputMinimum)
+        for c in 0 .. vector.Components.Length - 1 do
             let inputPixels = span<float> vector.Components[c]
-            let outputPixels = span<uint8> output.Components[c]
+            let outputPixels = span<float> output.Components[c]
             for i in 0 .. inputPixels.Length - 1 do
-                let value = (inputPixels[i] - inputMinimum) * scale
-                outputPixels[i] <- byte (max 0.0 (min 255.0 (Math.Round value)))
+                outputPixels[i] <- outputMinimum + (inputPixels[i] - inputMinimum) * scale
         output
     with
     | _ ->
         decRefVector output
         reraise()
+
+let private intensityStretchVectorFloat32
+    inputMinimum
+    inputMaximum
+    outputMinimum
+    outputMaximum
+    (vector: VectorChunk<float32>) =
+    validateVectorStorage "vector" vector
+    if inputMaximum <= inputMinimum then
+        invalidArg "inputMaximum" "intensityStretch input maximum must be greater than input minimum."
+
+    let output = createVectorChunk<float32> vector.SpatialSize (vectorComponentCount vector)
+    try
+        let scale = (outputMaximum - outputMinimum) / (inputMaximum - inputMinimum)
+        for c in 0 .. vector.Components.Length - 1 do
+            let inputPixels = span<float32> vector.Components[c]
+            let outputPixels = span<float32> output.Components[c]
+            for i in 0 .. inputPixels.Length - 1 do
+                outputPixels[i] <- outputMinimum + (inputPixels[i] - inputMinimum) * scale
+        output
+    with
+    | _ ->
+        decRefVector output
+        reraise()
+
+let intensityStretchVector<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> inputMinimum inputMaximum outputMinimum outputMaximum (vector: VectorChunk<'T>) =
+    if typeof<'T> = typeof<float> then
+        let inputMinimum = Convert.ToDouble(box inputMinimum)
+        let inputMaximum = Convert.ToDouble(box inputMaximum)
+        let outputMinimum = Convert.ToDouble(box outputMinimum)
+        let outputMaximum = Convert.ToDouble(box outputMaximum)
+        let vector = unbox<VectorChunk<float>> (box vector)
+        unbox<VectorChunk<'T>> (box (intensityStretchVectorFloat64 inputMinimum inputMaximum outputMinimum outputMaximum vector))
+    elif typeof<'T> = typeof<float32> then
+        let inputMinimum = Convert.ToSingle(box inputMinimum)
+        let inputMaximum = Convert.ToSingle(box inputMaximum)
+        let outputMinimum = Convert.ToSingle(box outputMinimum)
+        let outputMaximum = Convert.ToSingle(box outputMaximum)
+        let vector = unbox<VectorChunk<float32>> (box vector)
+        unbox<VectorChunk<'T>> (box (intensityStretchVectorFloat32 inputMinimum inputMaximum outputMinimum outputMaximum vector))
+    else
+        invalidArg "T" $"intensityStretch supports float and float32 vector chunks, got {typeof<'T>.Name}."
 
 let colorToVector3 outputMinimum outputMaximum (vector: VectorChunk<uint8>) =
     validateVectorStorage "vector" vector
@@ -911,28 +955,6 @@ let vectorMagnitudeFloat32 (vector: VectorChunk<float32>) =
     with
     | _ ->
         decRef output
-        reraise()
-
-let vector3ToColorFloat32 inputMinimum inputMaximum (vector: VectorChunk<float32>) =
-    validateVectorStorage "vector" vector
-    if inputMaximum <= inputMinimum then
-        invalidArg "inputMaximum" "vector3ToColorFloat32 input maximum must be greater than input minimum."
-    if vectorComponentCount vector <> 3u then
-        invalidArg "vector" $"vector3ToColorFloat32 expects 3 components, got {vectorComponentCount vector}."
-
-    let output = createVectorChunk<uint8> vector.SpatialSize 3u
-    try
-        let scale = 255.0f / (inputMaximum - inputMinimum)
-        for c in 0 .. 2 do
-            let inputPixels = span<float32> vector.Components[c]
-            let outputPixels = span<uint8> output.Components[c]
-            for i in 0 .. inputPixels.Length - 1 do
-                let value = (inputPixels[i] - inputMinimum) * scale
-                outputPixels[i] <- byte (max 0.0f (min 255.0f (MathF.Round value)))
-        output
-    with
-    | _ ->
-        decRefVector output
         reraise()
 
 let vectorAngleToFloat32 (reference: float32 list) (vector: VectorChunk<float32>) =

@@ -824,13 +824,18 @@ module PipelineCodeGenerator =
                         match sourceNode.FunctionId, edge.FromPort with
                         | "Gradient", 0 -> Some "float32"
                         | "StructureTensor", 0 -> Some "float32"
-                        | "SymmetricTensorEigensystem", 0 -> Some "float32"
-                        | "SymmetricTensorEigenvector", 0 -> Some "float32"
+                        | "SymmetricMatrixEigensystem", 0 -> Some "float32"
+                        | "SymmetricMatrixEigenvalues", 0 -> Some "float32"
+                        | "SymmetricMatrixEigenvector", 0 -> Some "float32"
                         | "PCA", port when port >= 0 && port <= 8 -> Some "float32"
                         | "VectorRange", 0
                         | "AppendVectorElement", 0
                         | "VectorMapElements", 0 ->
                             inferredVectorPixelType visited sourceNode 0
+                        | "IntensityStretch", 0 ->
+                            inferredVectorPixelType visited sourceNode 0
+                        | "VectorCast", 0 ->
+                            Some(pixelTypeNameFromParameter "targetType" "UInt8" sourceNode)
                         | "ToVectorImage", 0
                         | "ColorToVector3", 0
                         | "VectorCross3D", 0 -> Some "float"
@@ -1145,7 +1150,7 @@ module PipelineCodeGenerator =
                   $"let {transformName} = euler2DTransformPath {width} {height} {depth} {quote transform}"
                   $"debug 1u (optimizerEnabled ()) {uint64Literal availableMemory}"
                   $"|> repeat {maskName} 1u"
-                  $">=> cast<uint8,{pixelType}>"
+                  $">=> cast<_, {pixelType}>"
                   $">=> createByEuler2DTransform {depth} {transformName}" ]
         | "ReadRandom" ->
             let availableMemory = parameterValue "availableMemory"
@@ -1465,12 +1470,9 @@ module PipelineCodeGenerator =
             let componentCount = parameterValue "componentCount"
             let pixelType = pipelineVectorPixelType "float"
             $">=> vectorRange<{pixelType}> {firstComponent} {componentCount}"
-        | "Vector3ToColor" ->
-            let inputMinimum = parameterValue "inputMinimum"
-            let inputMaximum = parameterValue "inputMaximum"
-            match pipelineVectorPixelType "float" with
-            | "float32" -> $">=> vector3ToColorFloat32 (float32 ({inputMinimum})) (float32 ({inputMaximum}))"
-            | _ -> $">=> vector3ToColor {inputMinimum} {inputMaximum}"
+        | "VectorCast" ->
+            let targetType = pixelTypeNameFromParameter "targetType" "UInt8" node
+            $">=> vectorCast<_, {targetType}>"
         | "ColorToVector3" ->
             let outputMinimum = parameterValue "outputMinimum"
             let outputMaximum = parameterValue "outputMaximum"
@@ -1486,20 +1488,20 @@ module PipelineCodeGenerator =
         | "Gradient" ->
             let sigma = parameterValueOrDefault "sigma" "1.0"
             let radius = parameterValueOrDefault "radius" "7"
-            let workers = parameterValueOrDefault "workers" "4"
-            $">=> gradientVector {sigma} {radius} {workers}"
+            $">=> gradientVector {sigma} {radius}"
         | "StructureTensor" ->
             let sigma = parameterValueOrDefault "sigma" "1.0"
             let radius = parameterValueOrDefault "radius" "7"
             let rho = parameterValueOrDefault "rho" "2.0"
             let rhoRadius = parameterValueOrDefault "rhoRadius" "7"
-            let workers = parameterValueOrDefault "workers" "4"
-            $">=> structureTensor {sigma} {radius} {rho} {rhoRadius} {workers}"
-        | "SymmetricTensorEigensystem" ->
-            ">=> symmetricTensorEigensystem"
-        | "SymmetricTensorEigenvector" ->
+            $">=> structureTensor {sigma} {radius} {rho} {rhoRadius}"
+        | "SymmetricMatrixEigensystem" ->
+            ">=> symmetricMatrixEigensystem"
+        | "SymmetricMatrixEigenvalues" ->
+            ">=> symmetricMatrixEigenvalues"
+        | "SymmetricMatrixEigenvector" ->
             let eigenIndex = parameterValueOrDefault "eigenIndex" "0"
-            $">=> symmetricTensorEigenvector {eigenIndex}"
+            $">=> symmetricMatrixEigenvector {eigenIndex}"
         | "PCA" ->
             let components = parameterValue "components"
             $">=> pcaFloat32 {components}"
@@ -1515,24 +1517,20 @@ module PipelineCodeGenerator =
                 match parameterValue "windowSize" |> optionUInt with
                 | "None" -> $"(int (System.Math.Ceiling(3.0 * ({sigma}))))"
                 | someWindow -> $"(int ((Option.get {someWindow} - 1u) / 2u))"
-            $">=> gaussianFilter<{pixelType}> {sigma} {radius} 1"
+            $">=> gaussianFilter<{pixelType}> {sigma} {radius}"
         | "Convolve" ->
             let kernel = parameterValue "kernel"
             let pixelType = pipelinePixelType "Float32"
-            let workers =
-                match parameterValue "windowSize" |> optionUInt with
-                | "None" -> "4"
-                | someWindow -> $"int (Option.get {someWindow})"
-            $">=> convolveFixedKernel<{pixelType}> ({kernel}) {workers}"
+            $">=> convolveFixedKernel<{pixelType}> ({kernel})"
         | "FiniteDiff" ->
             let direction = parameterValue "direction"
             let order = parameterValue "order"
             let pixelType = pipelinePixelType "Float32"
             match direction.Trim().TrimEnd('u', 'U').ToLowerInvariant() with
-            | "0" | "x" -> $">=> finiteDiffX<{pixelType}> {order} 1"
-            | "1" | "y" -> $">=> finiteDiffY<{pixelType}> {order} 1"
-            | "2" | "z" -> $">=> finiteDiffZ<{pixelType}> {order} 1"
-            | _ -> $">=> finiteDiffX<{pixelType}> {order} 1"
+            | "0" | "x" -> $">=> finiteDiffX<{pixelType}> {order}"
+            | "1" | "y" -> $">=> finiteDiffY<{pixelType}> {order}"
+            | "2" | "z" -> $">=> finiteDiffZ<{pixelType}> {order}"
+            | _ -> $">=> finiteDiffX<{pixelType}> {order}"
         | "Clamp" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let lower = parameterValue "lower"
@@ -1544,12 +1542,16 @@ module PipelineCodeGenerator =
             let scale = parameterValue "scale"
             $">=> shiftScale<{pixelType}> {shift} {scale}"
         | "IntensityStretch" ->
-            let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let inputMinimum = parameterValue "inputMinimum"
             let inputMaximum = parameterValue "inputMaximum"
             let outputMinimum = parameterValue "outputMinimum"
             let outputMaximum = parameterValue "outputMaximum"
-            $">=> intensityWindow<{pixelType}> {inputMinimum} {inputMaximum} {outputMinimum} {outputMaximum}"
+            match inputSourcePortType 0 with
+            | Some(PortType.Custom "VectorImageFloat32")
+            | Some(PortType.Custom "VectorImageFloat64") ->
+                $">=> intensityStretch {inputMinimum} {inputMaximum} {outputMinimum} {outputMaximum}"
+            | _ ->
+                $">=> intensityStretch {inputMinimum} {inputMaximum} {outputMinimum} {outputMaximum}"
         | "HistogramEqualization" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let histogram = parameterValue "histogram"
@@ -1576,16 +1578,12 @@ module PipelineCodeGenerator =
         | "SmoothWMedian" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let radius = parameterValue "radius"
-            let workers =
-                match parameterValue "windowSize" |> optionUInt with
-                | "None" -> "4"
-                | someWindow -> $"int (Option.get {someWindow})"
             let radius = $"(int ({radius}))"
             match pixelType with
-            | "uint8" -> $">=> medianUInt8 {radius} {workers}"
-            | "uint16" -> $">=> medianUInt16 {radius} {workers}"
-            | "int" | "int32" -> $">=> medianInt32 {radius} {workers}"
-            | _ -> $">=> medianFloat32 {radius} {workers}"
+            | "uint8" -> $">=> medianUInt8 {radius}"
+            | "uint16" -> $">=> medianUInt16 {radius}"
+            | "int" | "int32" -> $">=> medianInt32 {radius}"
+            | _ -> $">=> medianFloat32 {radius}"
         | "SmoothWBilateral" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let domainSigma = parameterValue "domainSigma"
@@ -1594,12 +1592,12 @@ module PipelineCodeGenerator =
             $">=> smoothWBilateral<{pixelType}> {domainSigma} {rangeSigma} {windowSize}"
         | "GradientMagnitude" ->
             let sigma = "1.0"
-            $">=> gradientMagnitude {sigma} 3 1"
+            $">=> gradientMagnitude {sigma} 3"
         | "SobelEdge" ->
-            $">=> sobelMagnitude 1"
+            $">=> sobelMagnitude ()"
         | "Laplacian" ->
             let sigma = "1.0"
-            $">=> laplacian {sigma} 3 1"
+            $">=> laplacian {sigma} 3"
         | "GrayscaleErode" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let radius = parameterValue "radius"
@@ -1661,11 +1659,7 @@ module PipelineCodeGenerator =
                 $">=> binaryContourWindowed {fullyConnected} {windowSize}"
         | "BinaryMedian" ->
             let radius = parameterValue "radius"
-            let workers =
-                match parameterValue "windowSize" |> optionUInt with
-                | "None" -> "4"
-                | someWindow -> $"int (Option.get {someWindow})"
-            $">=> medianUInt8 (int ({radius})) {workers}"
+            $">=> medianUInt8 (int ({radius}))"
         | "RemoveSmallObjects" ->
             let maximumVolume = parameterValue "maximumVolume"
             let connectivity = parameterValue "connectivity"
@@ -1801,7 +1795,7 @@ module PipelineCodeGenerator =
                 ">=> connectedComponentsUInt32 ()"
             else
                 let windowSize = numericLiteral Int32 windowSize
-                $">=> connectedComponentsUInt32Windowed {windowSize} System.Environment.ProcessorCount"
+                $">=> connectedComponentsUInt32Windowed {windowSize}"
         | "MarchingCubes" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let surfaceValue = parameterValue "surfaceValue"
@@ -1874,7 +1868,7 @@ module PipelineCodeGenerator =
         | "SignedDistanceBand" ->
             let bandRadius = parameterValue "bandRadius"
             let stride = parameterValue "stride"
-            $">=> signedDistanceBand {bandRadius} {stride} 1"
+            $">=> signedDistanceBand {bandRadius} {stride}"
         | "PermuteAxes" ->
             let axes = parameterValue "axes" |> intArray3Literal
             $">=> permuteAxes {axes}"
@@ -1886,9 +1880,8 @@ module PipelineCodeGenerator =
             let background = parameterValue "background"
             $">=> resampleAffine {lerp} {inputGeometry} {outputGeometry} {affine} {background}"
         | "Cast" ->
-            let sourceType = pixelTypeNameFromParameter "sourceType" "Float32" node
             let targetType = pixelTypeNameFromParameter "targetType" "Float32" node
-            $">=> cast<{sourceType},{targetType}>"
+            $">=> cast<_, {targetType}>"
         | _ ->
             $"// Unsupported element: {node.FunctionId}"
 

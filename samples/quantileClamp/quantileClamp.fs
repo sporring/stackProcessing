@@ -22,9 +22,9 @@ let main args =
 
     src
     |> read<float32> input ".tiff"
-    >=> intensityWindow<float32> limits[0] limits[1] 0.0 255.0
+    >=> intensityStretch limits[0] limits[1] 0.0 255.0
     >=> clamp<float32> 0.0 255.0
-    >=> cast<float32, uint8>
+    >=> cast<_, uint8>
     >=> write output ".tiff"
     |> sink
 

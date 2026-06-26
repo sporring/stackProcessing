@@ -14,7 +14,7 @@ let main args =
 
     src
     |> read<uint8> input ".tiff"
-    >=> signedDistanceBand 8u 4u 4
+    >=> signedDistanceBand 8u 4u
     >=> write output ".tiff"
     |> sink
 

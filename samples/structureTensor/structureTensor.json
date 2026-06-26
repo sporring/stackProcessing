@@ -26,17 +26,25 @@
           "key": "rhoRadius",
           "value": "7",
           "useInput": false
-        },
-        {
-          "key": "workers",
-          "value": "4",
-          "useInput": false
         }
       ]
     },
     {
       "id": "node-3",
-      "functionId": "Vector3ToColor",
+      "functionId": "VectorCast",
+      "x": 759.2467498967433,
+      "y": 120.67817992251786,
+      "parameters": [
+        {
+          "key": "targetType",
+          "value": "UInt8",
+          "useInput": false
+        }
+      ]
+    },
+    {
+      "id": "node-7",
+      "functionId": "IntensityStretch",
       "x": 604.2467498967433,
       "y": 120.67817992251786,
       "parameters": [
@@ -49,13 +57,23 @@
           "key": "inputMaximum",
           "value": "1.0",
           "useInput": false
+        },
+        {
+          "key": "outputMinimum",
+          "value": "0.0",
+          "useInput": false
+        },
+        {
+          "key": "outputMaximum",
+          "value": "255.0",
+          "useInput": false
         }
       ]
     },
     {
       "id": "node-4",
       "functionId": "Write",
-      "x": 759.5152785187611,
+      "x": 914.5152785187611,
       "y": 120.95778168343043,
       "parameters": [
         {
@@ -142,7 +160,7 @@
     },
     {
       "id": "node-6",
-      "functionId": "SymmetricTensorEigenvector",
+      "functionId": "SymmetricMatrixEigenvector",
       "x": 449.0639875426156,
       "y": 120.95778168343043,
       "parameters": [
@@ -193,6 +211,14 @@
     },
     {
       "fromNode": "node-6",
+      "fromKind": "dataOutput",
+      "fromPort": 0,
+      "toNode": "node-7",
+      "toKind": "dataInput",
+      "toPort": 0
+    },
+    {
+      "fromNode": "node-7",
       "fromKind": "dataOutput",
       "fromPort": 0,
       "toNode": "node-3",

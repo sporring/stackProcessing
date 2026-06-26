@@ -10,8 +10,8 @@ let main args =
         src
         |> zero<float32> 64u 64u 64u
         >=> addNormalNoise<float32> 0.0 50.0
-        >=> gaussianFilter<float32> 3.0 9 4
-        >=> cast<float32, uint8>
+        >=> gaussianFilter<float32> 3.0 9
+        >=> cast<_, uint8>
         >=> imageHistogramFixedBins<uint8> 0.0 255.0 256u
         >=> histogramCounts
         |> drain

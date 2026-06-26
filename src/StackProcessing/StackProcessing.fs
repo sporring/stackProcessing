@@ -54,6 +54,15 @@ let tapIt<'T> (toString: 'T -> string) : Stage<'T, 'T> = SlimPipeline.Stage.tapI
 let print<'T> () : Stage<'T, unit> =
     SlimPipeline.Stage.consumeWith "print" (fun _debug _index value -> printfn "%A" value) (fun _ -> 0UL)
 
+let mutable private stackProcessingWorkers = 3
+
+let getWorkers () = stackProcessingWorkers
+
+let setWorkers workers =
+    if workers < 1 then
+        invalidArg "workers" $"StackProcessing worker count must be at least 1, got {workers}."
+    stackProcessingWorkers <- workers
+
 let showChartData = StackCharts.showChartData
 let showChartDataWithLabels = StackCharts.showChartDataWithLabels
 let showChart = StackCharts.showChart
@@ -218,16 +227,20 @@ let permuteAxes<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct an
 let resize<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.chunkResize<'T>
 let resample<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.chunkResample<'T>
 let show<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.show<'T>
-let signedDistanceBand = ChunkFunctions.signedDistanceBandNativeParallelCollect
+let signedDistanceBand bandRadius stride =
+    ChunkFunctions.signedDistanceBandNativeParallelCollect stackProcessingWorkers bandRadius stride
 let connectedComponents = ChunkFunctions.connectedComponentsSauf3DUInt8
 let connectedComponentsUInt32 () = ChunkFunctions.connectedComponentsSauf3DUInt8UInt32 ()
-let connectedComponentsUInt32Windowed = ChunkFunctions.connectedComponentsSauf3DUInt8UInt32ParallelCollect
+let connectedComponentsUInt32Windowed windowSize =
+    ChunkFunctions.connectedComponentsSauf3DUInt8UInt32ParallelCollect stackProcessingWorkers windowSize
 let toVectorImage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.toVectorImage<'T>
 let vectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.vectorElement<'T>
 let vectorRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.vectorRange<'T>
 let appendVectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.appendVectorElement<'T>
 let vectorMapElements = ChunkFunctions.vectorMapElements
-let vector3ToColor = ChunkFunctions.vector3ToColor
+let vectorCast<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct and 'S :> ValueType
+                         and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    ChunkFunctions.vectorCast<'S, 'T>
 let colorToVector3 = ChunkFunctions.colorToVector3
 let vectorDot = ChunkFunctions.vectorDot
 let vectorMagnitude = ChunkFunctions.vectorMagnitude
@@ -235,13 +248,17 @@ let vectorCross3D = ChunkFunctions.vectorCross3D
 let vectorAngleTo = ChunkFunctions.vectorAngleTo
 let vectorDotFloat32 = ChunkFunctions.vectorDotFloat32
 let vectorMagnitudeFloat32 = ChunkFunctions.vectorMagnitudeFloat32
-let vector3ToColorFloat32 = ChunkFunctions.vector3ToColorFloat32
 let vectorAngleToFloat32 = ChunkFunctions.vectorAngleToFloat32
 let pca = ChunkFunctions.PCA
 let pcaFloat32 = ChunkFunctions.PCAFloat32
-let structureTensor = ChunkFunctions.structureTensorNativeParallelCollect
-let symmetricTensorEigensystem = ChunkFunctions.symmetricTensorEigensystemFloat32 4
-let symmetricTensorEigenvector eigenIndex = ChunkFunctions.symmetricTensorEigenvectorFloat32 eigenIndex 4
+let structureTensor sigma radius rho rhoRadius =
+    ChunkFunctions.structureTensorNativeParallelCollect stackProcessingWorkers sigma radius rho rhoRadius
+let symmetricMatrixEigensystem () =
+    ChunkFunctions.symmetricMatrixEigensystemFloat32 stackProcessingWorkers
+let symmetricMatrixEigenvalues () =
+    ChunkFunctions.symmetricMatrixEigenvaluesFloat32 stackProcessingWorkers
+let symmetricMatrixEigenvector eigenIndex =
+    ChunkFunctions.symmetricMatrixEigenvectorFloat32 stackProcessingWorkers eigenIndex
 let selectGroupedVectorOutput = ChunkFunctions.selectGroupedVectorOutput
 let toComplex64 = ChunkFunctions.toComplex64
 let polarToComplex64 = ChunkFunctions.polarToComplex64
@@ -398,19 +415,10 @@ let absFloat32 = ChunkFunctions.absFloat32
 let squareFloat32 = ChunkFunctions.squareFloat32
 let clamp<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.clamp<'T>
 let shiftScale<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.shiftScale<'T>
-let intensityWindow<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.intensityWindow<'T>
+let intensityStretch = ChunkFunctions.intensityStretch
 let cast<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct and 'S :> ValueType
                      and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<'S>, Chunk<'T>> =
-    if typeof<'S> = typeof<'T> then
-        unbox (box (StackCore.identityStage "cast.identity"))
-    elif typeof<'T> = typeof<float32> then
-        unbox (box (ChunkFunctions.castToFloat32<'S>))
-    elif typeof<'T> = typeof<uint8> then
-        unbox (box (ChunkFunctions.castToUInt8<'S>))
-    elif typeof<'S> = typeof<float32> then
-        unbox (box (ChunkFunctions.castFromFloat32<'T>))
-    else
-        ChunkFunctions.castToFloat32<'S> --> ChunkFunctions.castFromFloat32<'T>
+    ChunkFunctions.castChunk<'S, 'T>
 let inline addScalar value = ChunkFunctions.addScalar value
 let inline subScalar value = ChunkFunctions.subScalar value
 let inline mulScalar value = ChunkFunctions.mulScalar value
@@ -435,35 +443,62 @@ let maskAnd = ChunkFunctions.maskAnd
 let maskOr = ChunkFunctions.maskOr
 let maskXor = ChunkFunctions.maskXor
 let maskNot = ChunkFunctions.maskNot
-let convolveFixedKernel<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> kernel workers =
-    ChunkFunctions.convolveFixedKernelNativeParallel<'T> kernel workers
-let convolveX<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.convolveNativeXParallelCollect<'T>
-let convolveY<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.convolveNativeYParallelCollect<'T>
-let convolveZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.convolveNativeZParallelCollect<'T>
-let finiteDiffX<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.finiteDiffNativeXParallelCollect<'T>
-let finiteDiffY<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.finiteDiffNativeYParallelCollect<'T>
-let finiteDiffZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.finiteDiffNativeZParallelCollect<'T>
-let separableConvolve<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.separableConvolveNativeParallelCollect<'T>
-let boxFilter<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.boxFilterNativeParallelCollect<'T>
-let boxFilterXYZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.boxFilterNativeParallelCollectXYZ<'T>
-let gaussianFilter<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.gaussianFilterNativeParallelCollect<'T>
-let gaussianFilterXYZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.gaussianFilterNativeParallelCollectXYZ<'T>
-let gradientVector = ChunkFunctions.gradientVectorNativeParallelCollect
-let gradientVectorXYZ = ChunkFunctions.gradientVectorNativeParallelCollectXYZ
-let gradientMagnitude = ChunkFunctions.gradientMagnitudeNativeParallelCollect
-let gradientMagnitudeXYZ = ChunkFunctions.gradientMagnitudeNativeParallelCollectXYZ
-let hessianUpper = ChunkFunctions.hessianUpperNativeParallelCollect
-let hessianUpperXYZ = ChunkFunctions.hessianUpperNativeParallelCollectXYZ
-let laplacian = ChunkFunctions.laplacianNativeParallelCollect
-let laplacianXYZ = ChunkFunctions.laplacianNativeParallelCollectXYZ
-let sobelMagnitude = ChunkFunctions.sobelMagnitudeNativeParallelCollect
-let sobelX<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.sobelXNativeParallelCollect<'T>
-let sobelY<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.sobelYNativeParallelCollect<'T>
-let sobelZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.sobelZNativeParallelCollect<'T>
-let medianUInt8 = ChunkFunctions.medianNativeNthElementUInt8ParallelCollect
-let medianUInt16 = ChunkFunctions.medianNativeNthElementUInt16ParallelCollect
-let medianInt32 = ChunkFunctions.medianNativeNthElementInt32ParallelCollect
-let medianFloat32 = ChunkFunctions.medianNativeNthElementFloat32ParallelCollect
+let convolveFixedKernel<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> kernel =
+    ChunkFunctions.convolveFixedKernelNativeParallel<'T> kernel stackProcessingWorkers
+let convolveX<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> kernel =
+    ChunkFunctions.convolveNativeXParallelCollect<'T> kernel stackProcessingWorkers
+let convolveY<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> kernel =
+    ChunkFunctions.convolveNativeYParallelCollect<'T> kernel stackProcessingWorkers
+let convolveZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> kernel =
+    ChunkFunctions.convolveNativeZParallelCollect<'T> kernel stackProcessingWorkers
+let finiteDiffX<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> order =
+    ChunkFunctions.finiteDiffNativeXParallelCollect<'T> order stackProcessingWorkers
+let finiteDiffY<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> order =
+    ChunkFunctions.finiteDiffNativeYParallelCollect<'T> order stackProcessingWorkers
+let finiteDiffZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> order =
+    ChunkFunctions.finiteDiffNativeZParallelCollect<'T> order stackProcessingWorkers
+let separableConvolve<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> xKernel yKernel zKernel =
+    ChunkFunctions.separableConvolveNativeParallelCollect<'T> xKernel yKernel zKernel stackProcessingWorkers
+let boxFilter<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> radius =
+    ChunkFunctions.boxFilterNativeParallelCollect<'T> radius stackProcessingWorkers
+let boxFilterXYZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> radiusX radiusY radiusZ =
+    ChunkFunctions.boxFilterNativeParallelCollectXYZ<'T> radiusX radiusY radiusZ stackProcessingWorkers
+let gaussianFilter<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> sigma radius =
+    ChunkFunctions.gaussianFilterNativeParallelCollect<'T> sigma radius stackProcessingWorkers
+let gaussianFilterXYZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> sigmaX radiusX sigmaY radiusY sigmaZ radiusZ =
+    ChunkFunctions.gaussianFilterNativeParallelCollectXYZ<'T> sigmaX radiusX sigmaY radiusY sigmaZ radiusZ stackProcessingWorkers
+let gradientVector sigma radius =
+    ChunkFunctions.gradientVectorNativeParallelCollect stackProcessingWorkers sigma radius
+let gradientVectorXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ =
+    ChunkFunctions.gradientVectorNativeParallelCollectXYZ stackProcessingWorkers sigmaX radiusX sigmaY radiusY sigmaZ radiusZ
+let gradientMagnitude sigma radius =
+    ChunkFunctions.gradientMagnitudeNativeParallelCollect sigma radius stackProcessingWorkers
+let gradientMagnitudeXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ =
+    ChunkFunctions.gradientMagnitudeNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ stackProcessingWorkers
+let hessianUpper sigma radius =
+    ChunkFunctions.hessianUpperNativeParallelCollect sigma radius stackProcessingWorkers
+let hessianUpperXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ =
+    ChunkFunctions.hessianUpperNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ stackProcessingWorkers
+let laplacian sigma radius =
+    ChunkFunctions.laplacianNativeParallelCollect sigma radius stackProcessingWorkers
+let laplacianXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ =
+    ChunkFunctions.laplacianNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ stackProcessingWorkers
+let sobelMagnitude () =
+    ChunkFunctions.sobelMagnitudeNativeParallelCollect stackProcessingWorkers
+let sobelX<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> () =
+    ChunkFunctions.sobelXNativeParallelCollect<'T> stackProcessingWorkers
+let sobelY<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> () =
+    ChunkFunctions.sobelYNativeParallelCollect<'T> stackProcessingWorkers
+let sobelZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> () =
+    ChunkFunctions.sobelZNativeParallelCollect<'T> stackProcessingWorkers
+let medianUInt8 radius =
+    ChunkFunctions.medianNativeNthElementUInt8ParallelCollect radius stackProcessingWorkers
+let medianUInt16 radius =
+    ChunkFunctions.medianNativeNthElementUInt16ParallelCollect radius stackProcessingWorkers
+let medianInt32 radius =
+    ChunkFunctions.medianNativeNthElementInt32ParallelCollect radius stackProcessingWorkers
+let medianFloat32 radius =
+    ChunkFunctions.medianNativeNthElementFloat32ParallelCollect radius stackProcessingWorkers
 let addNormalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.addNormalNoise<'T>
 let addSaltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.addSaltAndPepperNoise<'T>
 let addShotNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.addShotNoise<'T>

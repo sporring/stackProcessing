@@ -125,7 +125,7 @@ let private write<'T when 'T: equality> =
 
 let private cast<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct and 'S :> ValueType
                           and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    StackProcessing.cast<'S, 'T>
+    ChunkFunctions.castChunk<'S, 'T>
 
 let private addNormalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
     StackProcessing.addNormalNoise<'T>
@@ -145,8 +145,8 @@ let private imageAddScalar value =
 let private imageMulScalar value =
     mulScalar value
 
-let private intensityStretch<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    intensityWindow<'T>
+let private intensityStretch =
+    StackProcessing.intensityStretch
 
 let private computeStats<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
     StackProcessing.computeStats<'T>
@@ -159,18 +159,18 @@ let private smoothWGauss<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: 
         windowSize
         |> Option.map (fun w -> int ((w - 1u) / 2u))
         |> Option.defaultValue (int (Math.Ceiling(3.0 * sigma)))
-    gaussianFilter<'T> sigma radius 1
+    gaussianFilter<'T> sigma radius
 
 let private gradientMagnitude<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> windowSize =
     let radius = windowSize |> Option.map (fun w -> int ((w - 1u) / 2u)) |> Option.defaultValue 3
-    cast<'T, float32> --> StackProcessing.gradientMagnitude 1.0 radius 1
+    cast<'T, float32> --> StackProcessing.gradientMagnitude 1.0 radius
 
 let private sobelEdge<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> _windowSize =
-    cast<'T, float32> --> StackProcessing.sobelMagnitude 1
+    cast<'T, float32> --> StackProcessing.sobelMagnitude ()
 
 let private laplacian<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> windowSize =
     let radius = windowSize |> Option.map (fun w -> int ((w - 1u) / 2u)) |> Option.defaultValue 3
-    cast<'T, float32> --> StackProcessing.laplacian 1.0 radius 1
+    cast<'T, float32> --> StackProcessing.laplacian 1.0 radius
 
 let private sqrt<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
     if typeof<'T> = typeof<float32> then
@@ -2065,20 +2065,20 @@ let private bottomUpGraphTemplates config =
                "Float32 read structure tensor eigensystem consumed."
                [ readFloat
                  "tensor", "StructureTensor", [ "sigma", "1.0"; "rho", "2.0" ]
-                 "eigensystem", "SymmetricTensorEigensystem", [] ]
+                 "eigensystem", "SymmetricMatrixEigensystem", [] ]
            ignoreTemplate
                $"bottomup-80-structureTensor-vectorElement-ignore-{sizeSuffix}"
                "Float32 read structure tensor first component consumed."
                [ readFloat
                  "tensor", "StructureTensor", [ "sigma", "1.0"; "rho", "2.0" ]
-                 "eigensystem", "SymmetricTensorEigensystem", []
+                 "eigensystem", "SymmetricMatrixEigensystem", []
                  "component", "VectorElement", [ "component", "0" ] ]
            writeUInt8Template
                $"bottomup-81-structureTensor-vectorElement-write-{sizeSuffix}"
                "Float32 read structure tensor first component cast and written."
                [ readFloat
                  "tensor", "StructureTensor", [ "sigma", "1.0"; "rho", "2.0" ]
-                 "eigensystem", "SymmetricTensorEigensystem", []
+                 "eigensystem", "SymmetricMatrixEigensystem", []
                  "component", "VectorElement", [ "component", "0" ] ]
                "Float32" |]
 
@@ -3013,8 +3013,8 @@ let main args =
                                      source availableMemory
                                      |> read<float32> inputDir ".tiff"
                                      >=> gradientMagnitude<float32> (Some 7u)
-                                     >=> intensityStretch<float32> 0.0 255.0 0.0 255.0
-                                     >=> cast<float32, uint8>
+                                     >=> intensityStretch 0.0 255.0 0.0 255.0
+                                     >=> castTo<uint8>
                                      >=> write (outputDir size "bio-edge-filter-float-write") ".tiff")
 
                        yield runSinkProbe
@@ -3037,8 +3037,8 @@ let main args =
                                      source availableMemory
                                      |> read<float32> inputDir ".tiff"
                                      >=> smoothWGauss canonicalSigma None None None
-                                     >=> intensityStretch<float32> 0.0 255.0 0.0 255.0
-                                     >=> cast<float32, uint8>
+                                     >=> intensityStretch 0.0 255.0 0.0 255.0
+                                     >=> castTo<uint8>
                                      >=> threshold<uint8> 128.0 infinity
                                      >=> write (outputDir size "bio-background-mask-float-write") ".tiff")
 
@@ -3061,8 +3061,8 @@ let main args =
                                      source availableMemory
                                      |> read<uint8> inputDir ".tiff"
                                      >=> sumProjection<uint8> "Identity"
-                                     >=> intensityStretch<float32> 0.0 255.0 0.0 255.0
-                                     >=> cast<float32, uint8>
+                                     >=> intensityStretch 0.0 255.0 0.0 255.0
+                                     >=> castTo<uint8>
                                      >=> write (outputDir size "bio-projection-inspection-uint8-write") ".tiff")
 
                        if includeNonBoilerplate then
@@ -3126,7 +3126,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> shotNoise<float32> size.Width size.Height size.Depth 2.0
-                                         >=> cast<float32, uint8>
+                                         >=> castTo<uint8>
                                          >=> write (outputDir size "shot-noise-float-write") ".tiff")
 
                            yield runSinkProbe
@@ -3249,8 +3249,8 @@ let main args =
                                          >=> gradientMagnitude<float32> (Some 7u)
                                          >=> sobelEdge<float32> (Some 7u)
                                          >=> laplacian<float32> (Some 7u)
-                                         >=> intensityStretch<float32> 0.0 255.0 0.0 255.0
-                                         >=> cast<float32, uint8>
+                                         >=> intensityStretch 0.0 255.0 0.0 255.0
+                                         >=> castTo<uint8>
                                          >=> write (outputDir size "filters-float-write") ".tiff")
 
                            let readUInt8Feature =
@@ -3327,7 +3327,7 @@ let main args =
                                          source availableMemory
                                          |> normalNoise<float32> size.Width size.Height size.Depth 128.0 25.0
                                          |> resample<float32> 1.5 1.5 1.5 "Linear"
-                                         >=> cast<float32, uint8>
+                                         >=> castTo<uint8>
                                          >=> write (outputDir size "resample-float32-write") ".tiff")
 
                if
@@ -3401,7 +3401,7 @@ let main args =
                                      |> zero<float32> size.Width size.Height size.Depth
                                      >=> imageAddScalar 4.0f
                                      >=> sqrt<float32>
-                                     >=> cast<float32, uint8>
+                                     >=> castTo<uint8>
                                      >=> write (outputDir size "sqrt-float-write") ".tiff")
 
                        for windowSize in unaryWindowSizes do
@@ -3431,7 +3431,7 @@ let main args =
                                          |> zero<float32> size.Width size.Height size.Depth
                                          >=> imageAddScalar 4.0f
                                          >=> sqrtWindowed<float32> windowSize
-                                         >=> cast<float32, uint8>
+                                         >=> castTo<uint8>
                                          >=> write (outputDir size $"sqrt-windowed-float-write-win-{windowSize}") ".tiff")
 
                        if not options.SqrtOnly then
@@ -3449,7 +3449,7 @@ let main args =
                                          source availableMemory
                                          |> read<float32> inputDir ".tiff"
                                              >=> smoothWGauss canonicalSigma None None (Some windowSize)
-                                             >=> cast<float32, uint8>
+                                             >=> castTo<uint8>
                                             >=> write (outputDir size $"smoothWGauss-read-float32-cast-write-win-{windowSize}") ".tiff")
 
                () |]

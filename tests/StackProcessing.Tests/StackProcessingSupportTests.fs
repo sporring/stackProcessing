@@ -3096,12 +3096,13 @@ let stackProcessingSupportSuite =
 
             let color =
                 imagePlan [ vector ]
-                >=> StackProcessing.vector3ToColor -1.0 1.0
+                >=> StackProcessing.intensityStretch -1.0 1.0 0.0 255.0
+                >=> StackProcessing.vectorCast<_, uint8>
                 |> drain
 
             try
-                Expect.equal (color.GetNumberOfComponentsPerPixel()) 3u "vector3ToColor should emit 3-component color pixels."
-                Expect.equal color.[0, 0] [ 0uy; 128uy; 255uy ] "vector3ToColor should map the configured range to byte color channels."
+                Expect.equal (color.GetNumberOfComponentsPerPixel()) 3u "vectorCast should emit 3-component color pixels."
+                Expect.equal color.[0, 0] [ 0uy; 128uy; 255uy ] "vectorCast should map the configured range to byte color channels."
 
                 let roundTrip =
                     imagePlan [ color ]
@@ -3356,7 +3357,7 @@ let stackProcessingSupportSuite =
             try
                 let clampStage : Stage<Image<float32>, Image<float32>> = StackProcessing.clamp<float32> 0.0 120.0
                 let shiftScaleStage : Stage<Image<float32>, Image<float32>> = StackProcessing.shiftScale<float32> 1.0 2.0
-                let stretchStage : Stage<Image<float32>, Image<float32>> = StackProcessing.intensityStretch<float32> 0.0 200.0 0.0 1.0
+                let stretchStage : Stage<Image<float32>, Image<float32>> = StackProcessing.intensityStretch 0.0 200.0 0.0 1.0
                 let medianStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.smoothWMedian<uint8> 1u (Some 3u)
                 let gradientStage : Stage<Image<float32>, Image<float32>> = StackProcessing.gradientMagnitude<float32> (Some 3u)
                 let sobelStage : Stage<Image<float32>, Image<float32>> = StackProcessing.sobelEdge<float32> (Some 3u)

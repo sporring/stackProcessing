@@ -1,6 +1,5 @@
 ﻿// To run, remember to:
 // export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net10.0
-open System
 open StackProcessing
 
 [<EntryPoint>]
@@ -17,12 +16,11 @@ let main arg =
     let suffix = ".tiff"
 
     let windowSize = max 1 (int (depth / 8u))
-    let workers = max 1 (min Environment.ProcessorCount windowSize)
 
     src
     |> read<uint8> input suffix
-    >=> connectedComponentsUInt32Windowed windowSize workers
-    >=> cast<uint32,uint8>
+    >=> connectedComponentsUInt32Windowed windowSize
+    >=> cast<_, uint8>
     >=> write output suffix
     |> sink
 

@@ -1,6 +1,7 @@
 module Tests.ChunkTests
 
 open System
+open System.IO
 open System.Runtime.InteropServices
 open Expecto
 open FSharp.Control
@@ -9,6 +10,15 @@ open StackCore
 open TinyLinAlg
 
 module ChunkKernel = ChunkCore.ChunkFunctions
+
+let private tempDirectory name =
+    let path = Path.Combine(Path.GetTempPath(), $"stackprocessing-{name}-{Guid.NewGuid():N}")
+    Directory.CreateDirectory(path) |> ignore
+    path
+
+let private deleteDirectory path =
+    if Directory.Exists path then
+        Directory.Delete(path, true)
 
 let private manualChunk<'T when 'T: equality> size bytes byteLength release : Chunk<'T> =
     { Size = size
@@ -393,7 +403,7 @@ let chunkSuite =
                     else
                         chunkFromPixels 5 1 [| 0uy; 0uy; 0uy; 0uy; 0uy |] ]
 
-            let outputs = runStageList (ChunkFunctions.signedDistanceBandNativeParallelCollect 2u 1u 2) inputs
+            let outputs = runStageList (ChunkFunctions.signedDistanceBandNativeParallelCollect 2 2u 1u) inputs
             try
                 Expect.equal outputs.Length 5 "Signed distance band stage should preserve slice count."
                 let values = (Chunk.span<float32> outputs[2]).ToArray()
@@ -879,9 +889,9 @@ let chunkSuite =
                 shifted |> List.iter Chunk.decRef
 
             let windowInput = chunkFromFloat32Pixels 4 1 [| -10.0f; 0.0f; 5.0f; 10.0f |]
-            let windowed = runStageList (ChunkFunctions.intensityWindowFloat32 (0.0: double) (10.0: double) (0.0: double) (1.0: double)) [ windowInput ]
+            let windowed = runStageList (ChunkFunctions.intensityStretchFloat32 (0.0: double) (10.0: double) (0.0: double) (1.0: double)) [ windowInput ]
             try
-                Expect.sequenceEqual ((Chunk.span<float32> windowed[0]).ToArray()) [| 0.0f; 0.0f; 0.5f; 1.0f |] "intensityWindowFloat32 should clamp and scale the configured window."
+                Expect.sequenceEqual ((Chunk.span<float32> windowed[0]).ToArray()) [| 0.0f; 0.0f; 0.5f; 1.0f |] "intensityStretchFloat32 should clamp and scale the configured window."
             finally
                 windowed |> List.iter Chunk.decRef
 
@@ -1495,7 +1505,7 @@ let chunkSuite =
 
             let gradient =
                 runStageList
-                    (ChunkFunctions.gradientVectorNativeParallelCollect 1.0 0 2)
+                    (ChunkFunctions.gradientVectorNativeParallelCollect 2 1.0 0)
                     stageSlices
 
             let hessian =
@@ -1590,16 +1600,17 @@ let chunkSuite =
 
             let inputs = [ for z in 0 .. depth - 1 -> makeSlice z ]
             let stage =
-                ChunkFunctions.structureTensorNativeParallelCollect 1.0 1 1.0 1 2
-                --> ChunkFunctions.vectorRange<float32> 3u 3u
-                --> ChunkFunctions.vector3ToColorFloat32 -1.0f 1.0f
+                ChunkFunctions.structureTensorNativeParallelCollect 2 1.0 1 1.0 1
+                --> ChunkFunctions.symmetricMatrixEigenvectorFloat32 2 0u
+                --> ChunkFunctions.intensityStretch -1.0 1.0 0.0 255.0
+                --> ChunkFunctions.vectorCast<_, uint8>
 
             let outputs = runStageList stage inputs
             try
                 Expect.equal outputs.Length depth "structureTensor pipeline should preserve slice count."
                 outputs
                 |> List.iter (fun vector ->
-                    Expect.equal (Chunk.vectorComponentCount vector) 3u "vector3ToColor should produce RGB component vectors.")
+                    Expect.equal (Chunk.vectorComponentCount vector) 3u "vectorCast should preserve the three RGB component vectors.")
             finally
                 outputs |> List.iter Chunk.decRefVector
 
@@ -2137,6 +2148,33 @@ let chunkSuite =
             Expect.equal results[0].Counts (Map.ofList [ 0.0, 2UL; 10.0, 2UL; 20.0, 2UL ]) "Left-edge chunk histogram reducer should add compatible ordinate arrays."
             Expect.equal results[0].Binning (Some(FixedEdges(0.0, 20.0, 3u))) "Left-edge reducer should preserve bin metadata."
             Expect.equal releaseCount.Value 2 "Left-edge histogram reducer should decRef every consumed chunk."
+
+        testCase "writeColor accepts packed RGB chunks" <| fun _ ->
+            let outputDir = tempDirectory "packed-color-output"
+            let suffix = ".tiff"
+            let packed = Chunk.create<uint8> (6UL, 1UL, 1UL)
+            let pixels = Chunk.span<uint8> packed
+            [| 1uy; 2uy; 3uy; 4uy; 5uy; 6uy |].CopyTo(pixels)
+            let mutable reread: VectorChunk<uint8> list = []
+
+            try
+                let written = runStageList (StackIO.writeColorChunkSlices<Chunk<uint8>> outputDir suffix) [ packed ]
+                Expect.hasLength written 1 "writeColor should accept a packed RGB chunk and emit one completion."
+
+                reread <-
+                    source (2UL * 1024UL * 1024UL * 1024UL)
+                    |> StackIO.readColorChunkSlices outputDir suffix
+                    |> Plan.drainList "packed-color-reread"
+
+                Expect.hasLength reread 1 "Packed RGB chunk output should be readable as a color image."
+                let color = reread[0]
+                Expect.equal (Chunk.vectorComponentCount color) 3u "Packed RGB output should read back as three components."
+                Expect.equal ((Chunk.span<uint8> color.Components[0]).ToArray()) [| 1uy; 4uy |] "Red channel should preserve interleaved packed values."
+                Expect.equal ((Chunk.span<uint8> color.Components[1]).ToArray()) [| 2uy; 5uy |] "Green channel should preserve interleaved packed values."
+                Expect.equal ((Chunk.span<uint8> color.Components[2]).ToArray()) [| 3uy; 6uy |] "Blue channel should preserve interleaved packed values."
+            finally
+                reread |> List.iter Chunk.decRefVector
+                deleteDirectory outputDir
 
         testCase "toIndex and ofIndex are inverse for row-major xyz indexing" <| fun _ ->
             let width = 5

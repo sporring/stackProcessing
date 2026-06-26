@@ -21,11 +21,11 @@ let main arg =
 
     readMaker 
     >=> tap "For >=>>"
-    >=>> (addScalar 1.0f, gaussianFilter<float32> 3.0 3 4)
+    >=>> (addScalar 1.0f, gaussianFilter<float32> 3.0 3)
     >=> tap "For >>=>"
     >=> mulPair<float32>
     >=> tap "For cast"
-    >=> cast<float32,int8>
+    >=> cast<_, int8>
     >=> tap "For write"
     >=> write output ".tiff"
     //>>=> ignorePairs ()

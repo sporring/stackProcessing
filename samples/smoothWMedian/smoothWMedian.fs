@@ -14,8 +14,8 @@ let main args =
 
     src
     |> read<float32> input ".tiff"
-    >=> medianFloat32 1 4
-    >=> cast<float32, uint8>
+    >=> medianFloat32 1
+    >=> cast<_, uint8>
     >=> write output ".tiff"
     |> sink
 

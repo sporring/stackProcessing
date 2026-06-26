@@ -250,6 +250,12 @@ module PortType =
         | Any, _
         | _, Any -> true
         | outputType, Custom "Record" when isRecordType outputType -> true
+        | Image _, Custom "NumericOrVectorImage" -> true
+        | Custom "VectorImageFloat32", Custom "NumericOrVectorImage" -> true
+        | Custom "VectorImageFloat64", Custom "NumericOrVectorImage" -> true
+        | Custom "NumericOrVectorImage", Image _ -> true
+        | Custom "NumericOrVectorImage", Custom "VectorImageFloat32" -> true
+        | Custom "NumericOrVectorImage", Custom "VectorImageFloat64" -> true
         | Custom "ColorImage", Image Number -> true
         | Custom "VectorImageFloat32", Custom "VectorImageFloat64" -> true
         | Custom "VectorImageFloat64", Custom "VectorImageFloat32" -> true

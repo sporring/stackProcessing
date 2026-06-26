@@ -622,7 +622,7 @@ let private releaseConsumedUInt8Window (window: Window<Chunk<uint8>>) =
         |> List.truncate (int window.ReleaseCount)
         |> List.iter Chunk.decRef
 
-let signedDistanceBandNativeParallelCollect bandRadius stride workers : Stage<Chunk<uint8>, Chunk<float32>> =
+let signedDistanceBandNativeParallelCollect workers bandRadius stride : Stage<Chunk<uint8>, Chunk<float32>> =
     if bandRadius = 0u then
         invalidArg "bandRadius" "Chunk signed distance band requires a positive band radius."
     if stride = 0u then
@@ -657,7 +657,7 @@ let signedDistanceBandNativeParallelCollect bandRadius stride workers : Stage<Ch
 
 let connectedComponentsSauf3DUInt8UInt32ArrayUf () = StackConnectedComponents.connectedComponentsSauf3DUInt8UInt32ArrayUf ()
 let connectedComponentsSauf3DUInt8UInt32 () = StackConnectedComponents.connectedComponentsSauf3DUInt8UInt32 ()
-let connectedComponentsSauf3DUInt8UInt32ParallelCollect windowSize workers = StackConnectedComponents.connectedComponentsSauf3DUInt8UInt32ParallelCollect windowSize workers
+let connectedComponentsSauf3DUInt8UInt32ParallelCollect workers windowSize = StackConnectedComponents.connectedComponentsSauf3DUInt8UInt32ParallelCollect windowSize workers
 let connectedComponentsSauf3DUInt8 () = StackConnectedComponents.connectedComponentsSauf3DUInt8 ()
 
 let fftXYFloat32ToComplex64Interleaved = StackFFT.fftXYFloat32ToComplex64Interleaved
@@ -732,8 +732,16 @@ let vectorMapElements functionName : Stage<VectorChunk<float>, VectorChunk<float
         (Chunk.mapVectorElements f)
         (fun n -> 2UL * chunkMemoryNeed<float> n)
 
-let vector3ToColor inputMinimum inputMaximum : Stage<VectorChunk<float>, VectorChunk<uint8>> =
-    releaseUnaryVectorToVectorChunk "chunkVector3ToColor" (Chunk.vector3ToColor inputMinimum inputMaximum) (fun n -> n * uint64 (chunkElementBytes<float> + chunkElementBytes<uint8>))
+let intensityStretchVector<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    inputMinimum
+    inputMaximum
+    outputMinimum
+    outputMaximum
+    : Stage<VectorChunk<'T>, VectorChunk<'T>> =
+    releaseUnaryVectorToVectorChunk
+        $"chunkIntensityStretchVector.{typeof<'T>.Name}.{inputMinimum}.{inputMaximum}.{outputMinimum}.{outputMaximum}"
+        (Chunk.intensityStretchVector<'T> inputMinimum inputMaximum outputMinimum outputMaximum)
+        (fun n -> 2UL * chunkMemoryNeed<'T> n)
 
 let colorToVector3 outputMinimum outputMaximum : Stage<VectorChunk<uint8>, VectorChunk<float>> =
     releaseUnaryVectorToVectorChunk "chunkColorToVector3" (Chunk.colorToVector3 outputMinimum outputMaximum) (fun n -> n * uint64 (chunkElementBytes<uint8> + chunkElementBytes<float>))
@@ -854,12 +862,6 @@ let vectorMagnitudeFloat32 : Stage<VectorChunk<float32>, Chunk<float32>> =
         "chunkVectorMagnitudeFloat32"
         Chunk.vectorMagnitudeFloat32
         (fun n -> 2UL * chunkMemoryNeed<float32> n)
-
-let vector3ToColorFloat32 inputMinimum inputMaximum : Stage<VectorChunk<float32>, VectorChunk<uint8>> =
-    releaseUnaryVectorToVectorChunk
-        "chunkVector3ToColorFloat32"
-        (Chunk.vector3ToColorFloat32 inputMinimum inputMaximum)
-        (fun n -> n * uint64 (chunkElementBytes<float32> + chunkElementBytes<uint8>))
 
 let vectorAngleToFloat32 reference : Stage<VectorChunk<float32>, Chunk<float32>> =
     releaseUnaryVectorChunk
@@ -1265,10 +1267,10 @@ let inline private symmetricEigenvectors3Raw xx xy xz yy yz zz e0 e1 e2 scale =
             x2 <- tx2; y2 <- ty2; z2 <- tz2
     struct (x0, y0, z0, x1, y1, z1, x2, y2, z2)
 
-let private structureTensorEigenMatrixFloat32 workers : Stage<VectorChunk<float32>, VectorChunk<float32>> =
+let private symmetricMatrixEigensystemFloat32Stage workers : Stage<VectorChunk<float32>, VectorChunk<float32>> =
     let mapper (tensor: VectorChunk<float32>) =
         if Chunk.vectorComponentCount tensor <> 6u then
-            invalidArg "tensor" $"chunkStructureTensorEigenMatrixFloat32 expected a 6-component tensor, got {Chunk.vectorComponentCount tensor}."
+            invalidArg "matrix" $"chunkSymmetricMatrixEigensystemFloat32 expected a 6-component symmetric matrix, got {Chunk.vectorComponentCount tensor}."
 
         let output = Array.init 12 (fun _ -> Chunk.create<float32> tensor.SpatialSize)
         try
@@ -1332,18 +1334,64 @@ let private structureTensorEigenMatrixFloat32 workers : Stage<VectorChunk<float3
             reraise()
 
     releaseUnaryVectorToVectorChunkParallel
-        "chunkStructureTensorEigenMatrixFloat32"
+        "chunkSymmetricMatrixEigensystemFloat32"
         workers
         mapper
         (fun n -> uint64 (6 + workers * 12) * chunkMemoryNeed<float32> n)
 
-let symmetricTensorEigenvectorFloat32 eigenIndex workers : Stage<VectorChunk<float32>, VectorChunk<float32>> =
+let symmetricMatrixEigenvaluesFloat32 workers : Stage<VectorChunk<float32>, VectorChunk<float32>> =
+    let mapper (matrix: VectorChunk<float32>) =
+        if Chunk.vectorComponentCount matrix <> 6u then
+            invalidArg "matrix" $"chunkSymmetricMatrixEigenvaluesFloat32 expected a 6-component symmetric matrix, got {Chunk.vectorComponentCount matrix}."
+
+        let output = Array.init 3 (fun _ -> Chunk.create<float32> matrix.SpatialSize)
+        try
+            let outputVector: VectorChunk<float32> =
+                { SpatialSize = matrix.SpatialSize
+                  Components = output }
+            let xxPixels = Chunk.span<float32> matrix.Components[0]
+            let xyPixels = Chunk.span<float32> matrix.Components[1]
+            let xzPixels = Chunk.span<float32> matrix.Components[2]
+            let yyPixels = Chunk.span<float32> matrix.Components[3]
+            let yzPixels = Chunk.span<float32> matrix.Components[4]
+            let zzPixels = Chunk.span<float32> matrix.Components[5]
+            let out0 = Chunk.span<float32> output[0]
+            let out1 = Chunk.span<float32> output[1]
+            let out2 = Chunk.span<float32> output[2]
+            let spatialCount = xxPixels.Length
+            let mutable i = 0
+            while i < spatialCount do
+                let struct (e0, e1, e2) =
+                    symmetricEigenvalues3Raw
+                        (float xxPixels[i])
+                        (float xyPixels[i])
+                        (float xzPixels[i])
+                        (float yyPixels[i])
+                        (float yzPixels[i])
+                        (float zzPixels[i])
+                out0[i] <- float32 e0
+                out1[i] <- float32 e1
+                out2[i] <- float32 e2
+                i <- i + 1
+            outputVector
+        with
+        | _ ->
+            output |> Array.iter Chunk.decRef
+            reraise()
+
+    releaseUnaryVectorToVectorChunkParallel
+        "chunkSymmetricMatrixEigenvaluesFloat32"
+        workers
+        mapper
+        (fun n -> uint64 (6 + workers * 3) * chunkMemoryNeed<float32> n)
+
+let symmetricMatrixEigenvectorFloat32 workers eigenIndex : Stage<VectorChunk<float32>, VectorChunk<float32>> =
     if eigenIndex > 2u then
-        invalidArg "eigenIndex" $"chunkSymmetricTensorEigenvectorFloat32 expects eigenIndex 0, 1, or 2, got {eigenIndex}."
+        invalidArg "eigenIndex" $"chunkSymmetricMatrixEigenvectorFloat32 expects eigenIndex 0, 1, or 2, got {eigenIndex}."
 
     let mapper (tensor: VectorChunk<float32>) =
         if Chunk.vectorComponentCount tensor <> 6u then
-            invalidArg "tensor" $"chunkSymmetricTensorEigenvectorFloat32 expected a 6-component tensor, got {Chunk.vectorComponentCount tensor}."
+            invalidArg "matrix" $"chunkSymmetricMatrixEigenvectorFloat32 expected a 6-component symmetric matrix, got {Chunk.vectorComponentCount tensor}."
 
         let output = Array.init 3 (fun _ -> Chunk.create<float32> tensor.SpatialSize)
         try
@@ -1394,7 +1442,7 @@ let symmetricTensorEigenvectorFloat32 eigenIndex workers : Stage<VectorChunk<flo
             reraise()
 
     releaseUnaryVectorToVectorChunkParallel
-        $"chunkSymmetricTensorEigenvectorFloat32.{eigenIndex}"
+        $"chunkSymmetricMatrixEigenvectorFloat32.{eigenIndex}"
         workers
         mapper
         (fun n -> uint64 (6 + workers * 3) * chunkMemoryNeed<float32> n)
@@ -1477,7 +1525,7 @@ let private gaussianSmoothFloat32XYZ sigmaX radiusX sigmaY radiusY sigmaZ radius
         let zKernel = if sigmaZ <= 0.0 then [| 1.0f |] else StackConvolve.gaussianKernel sigmaZ radiusZ
         StackConvolve.separableConvolveNativeParallelCollect<float32> xKernel yKernel zKernel workers
 
-let gradientVectorNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers : Stage<Chunk<float32>, VectorChunk<float32>> =
+let gradientVectorNativeParallelCollectXYZ workers sigmaX radiusX sigmaY radiusY sigmaZ radiusZ : Stage<Chunk<float32>, VectorChunk<float32>> =
     let smooth = gaussianSmoothFloat32XYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers
     let derivatives =
         derivativeVectorFromSmoothedWindow
@@ -1487,26 +1535,26 @@ let gradientVectorNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ 
             ChunkKernel.gradientVectorFromSmoothedNative
     smooth --> derivatives
 
-let gradientVectorNativeParallelCollect sigma radius workers : Stage<Chunk<float32>, VectorChunk<float32>> =
-    gradientVectorNativeParallelCollectXYZ sigma radius sigma radius sigma radius workers
+let gradientVectorNativeParallelCollect workers sigma radius : Stage<Chunk<float32>, VectorChunk<float32>> =
+    gradientVectorNativeParallelCollectXYZ workers sigma radius sigma radius sigma radius
 
 let gradientMagnitudeNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers : Stage<Chunk<float32>, Chunk<float32>> =
-    gradientVectorNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers
+    gradientVectorNativeParallelCollectXYZ workers sigmaX radiusX sigmaY radiusY sigmaZ radiusZ
     --> vectorMagnitudeFloat32
 
 let gradientMagnitudeNativeParallelCollect sigma radius workers : Stage<Chunk<float32>, Chunk<float32>> =
     gradientMagnitudeNativeParallelCollectXYZ sigma radius sigma radius sigma radius workers
 
-let structureTensorNativeParallelCollect sigma radius rho rhoRadius workers : Stage<Chunk<float32>, VectorChunk<float32>> =
+let structureTensorNativeParallelCollect workers sigma radius rho rhoRadius : Stage<Chunk<float32>, VectorChunk<float32>> =
     let outerProduct =
-        gradientVectorNativeParallelCollect sigma radius workers
+        gradientVectorNativeParallelCollect workers sigma radius
         --> structureTensorOuterProductFloat32
 
     outerProduct
     --> gaussianSmoothVectorComponentsFloat32 rho rhoRadius workers
 
-let symmetricTensorEigensystemFloat32 workers : Stage<VectorChunk<float32>, VectorChunk<float32>> =
-    structureTensorEigenMatrixFloat32 workers
+let symmetricMatrixEigensystemFloat32 workers : Stage<VectorChunk<float32>, VectorChunk<float32>> =
+    symmetricMatrixEigensystemFloat32Stage workers
 
 let hessianUpperNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers : Stage<Chunk<float32>, VectorChunk<float32>> =
     let smooth = gaussianSmoothFloat32XYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers
@@ -1863,9 +1911,9 @@ let clampFloat32 (lower: double) (upper: double) : Stage<Chunk<float32>, Chunk<f
     let upperV = Vector<float32>(upperF)
     float32UnaryStage $"chunkClampFloat32.{lower}.{upper}" (fun x -> min upperF (max lowerF x)) (fun (v: Vector<float32>) -> Vector.Min(upperV, Vector.Max(lowerV, v)))
 
-let intensityWindowFloat32 (windowMinimum: double) (windowMaximum: double) (outputMinimum: double) (outputMaximum: double) : Stage<Chunk<float32>, Chunk<float32>> =
+let intensityStretchFloat32 (windowMinimum: double) (windowMaximum: double) (outputMinimum: double) (outputMaximum: double) : Stage<Chunk<float32>, Chunk<float32>> =
     if windowMaximum = windowMinimum then
-        invalidArg "windowMaximum" "ChunkFunctions.intensityWindowFloat32 requires a non-zero input window width."
+        invalidArg "windowMaximum" "ChunkFunctions.intensityStretchFloat32 requires a non-zero input window width."
     let scale = (outputMaximum - outputMinimum) / (windowMaximum - windowMinimum)
     let scalar x =
         if x <= float32 windowMinimum then float32 outputMinimum
@@ -1880,7 +1928,7 @@ let intensityWindowFloat32 (windowMinimum: double) (windowMaximum: double) (outp
     let vector (v: Vector<float32>) =
         Vector.Min(outMaxV, Vector.Max(outMinV, outMinV + (v - minV) * scaleV))
 
-    float32UnaryStage $"chunkIntensityWindowFloat32.{windowMinimum}.{windowMaximum}.{outputMinimum}.{outputMaximum}" scalar vector
+    float32UnaryStage $"chunkIntensityStretchFloat32.{windowMinimum}.{windowMaximum}.{outputMinimum}.{outputMaximum}" scalar vector
 
 let invertIntensityFloat32 (maximum: double) : Stage<Chunk<float32>, Chunk<float32>> =
     let maximumV = Vector<float32>(float32 maximum)
@@ -1999,6 +2047,40 @@ let castChunk<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct 
 
     Stage.map $"chunkCast.{typeof<'S>.Name}.{typeof<'T>.Name}" mapper id id
 
+let vectorCast<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct and 'S :> ValueType
+                         and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    : Stage<VectorChunk<'S>, VectorChunk<'T>> =
+    let mapper _debug (vector: VectorChunk<'S>) =
+        let components = Array.zeroCreate<Chunk<'T>> vector.Components.Length
+        let mutable initialized = 0
+        try
+            try
+                for c in 0 .. vector.Components.Length - 1 do
+                    if vector.Components[c].Size <> vector.SpatialSize then
+                        invalidArg "vector" $"vectorCast component {c} size {vector.Components[c].Size} does not match spatial size {vector.SpatialSize}."
+                    components[c] <- ChunkKernel.castChunk<'S, 'T> vector.Components[c]
+                    initialized <- initialized + 1
+
+                let output: VectorChunk<'T> =
+                    { SpatialSize = vector.SpatialSize
+                      Components = components }
+                output
+            with
+            | _ ->
+                for c in 0 .. initialized - 1 do
+                    Chunk.decRef components[c]
+                reraise()
+        finally
+            Chunk.decRefVector vector
+
+    Stage.map
+        $"chunkVectorCast.{typeof<'S>.Name}.{typeof<'T>.Name}"
+        mapper
+        (fun n -> n * uint64 (chunkElementBytes<'S> + chunkElementBytes<'T>))
+        id
+
+let vectorCastTo<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = vectorCast<_, 'T>
+
 let thresholdRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (lower: double)
     (upper: double)
@@ -2025,16 +2107,44 @@ let clamp<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :
     else
         Stage.compose (castToFloat32<'T>) (Stage.compose (clampFloat32 lower upper) (castFromFloat32<'T>))
 
-let intensityWindow<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+let private intensityStretchScalar<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     windowMinimum
     windowMaximum
     outputMinimum
     outputMaximum
     : Stage<Chunk<'T>, Chunk<'T>> =
     if typeof<'T> = typeof<float32> then
-        unbox (box (intensityWindowFloat32 windowMinimum windowMaximum outputMinimum outputMaximum))
+        unbox (box (intensityStretchFloat32 windowMinimum windowMaximum outputMinimum outputMaximum))
     else
-        Stage.compose (castToFloat32<'T>) (Stage.compose (intensityWindowFloat32 windowMinimum windowMaximum outputMinimum outputMaximum) (castFromFloat32<'T>))
+        Stage.compose (castToFloat32<'T>) (Stage.compose (intensityStretchFloat32 windowMinimum windowMaximum outputMinimum outputMaximum) (castFromFloat32<'T>))
+
+let intensityStretch windowMinimum windowMaximum outputMinimum outputMaximum : Stage<'Image, 'Image> =
+    if typeof<'Image> = typeof<Chunk<uint8>> then
+        unbox (box (intensityStretchScalar<uint8> windowMinimum windowMaximum outputMinimum outputMaximum))
+    elif typeof<'Image> = typeof<Chunk<int8>> then
+        unbox (box (intensityStretchScalar<int8> windowMinimum windowMaximum outputMinimum outputMaximum))
+    elif typeof<'Image> = typeof<Chunk<uint16>> then
+        unbox (box (intensityStretchScalar<uint16> windowMinimum windowMaximum outputMinimum outputMaximum))
+    elif typeof<'Image> = typeof<Chunk<int16>> then
+        unbox (box (intensityStretchScalar<int16> windowMinimum windowMaximum outputMinimum outputMaximum))
+    elif typeof<'Image> = typeof<Chunk<uint32>> then
+        unbox (box (intensityStretchScalar<uint32> windowMinimum windowMaximum outputMinimum outputMaximum))
+    elif typeof<'Image> = typeof<Chunk<int32>> then
+        unbox (box (intensityStretchScalar<int32> windowMinimum windowMaximum outputMinimum outputMaximum))
+    elif typeof<'Image> = typeof<Chunk<uint64>> then
+        unbox (box (intensityStretchScalar<uint64> windowMinimum windowMaximum outputMinimum outputMaximum))
+    elif typeof<'Image> = typeof<Chunk<int64>> then
+        unbox (box (intensityStretchScalar<int64> windowMinimum windowMaximum outputMinimum outputMaximum))
+    elif typeof<'Image> = typeof<Chunk<float32>> then
+        unbox (box (intensityStretchScalar<float32> windowMinimum windowMaximum outputMinimum outputMaximum))
+    elif typeof<'Image> = typeof<Chunk<float>> then
+        unbox (box (intensityStretchScalar<float> windowMinimum windowMaximum outputMinimum outputMaximum))
+    elif typeof<'Image> = typeof<VectorChunk<float32>> then
+        unbox (box (intensityStretchVector<float32> windowMinimum windowMaximum outputMinimum outputMaximum))
+    elif typeof<'Image> = typeof<VectorChunk<float>> then
+        unbox (box (intensityStretchVector<float> windowMinimum windowMaximum outputMinimum outputMaximum))
+    else
+        invalidArg "Image" $"intensityStretch supports real scalar chunks and float32/float vector chunks, got {typeof<'Image>.Name}."
 
 let invertIntensity<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> maximum : Stage<Chunk<'T>, Chunk<'T>> =
     if typeof<'T> = typeof<float32> then

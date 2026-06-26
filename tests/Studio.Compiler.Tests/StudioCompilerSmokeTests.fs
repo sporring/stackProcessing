@@ -122,10 +122,19 @@ let rec private sourceFor caseId portType =
           Port = 0 }
     | PortType.Custom "ColorImage" ->
         let vector = sourceFor $"{caseId}_vector" (PortType.Custom "VectorImageFloat64")
-        let color = node $"source_{caseId}_color" "Vector3ToColor" [ p "inputMinimum" "-1.0" false; p "inputMaximum" "1.0" false ]
+        let stretch =
+            node $"source_{caseId}_stretch" "IntensityStretch"
+                [ p "inputMinimum" "-1.0" false
+                  p "inputMaximum" "1.0" false
+                  p "outputMinimum" "0.0" false
+                  p "outputMaximum" "255.0" false ]
+        let color = node $"source_{caseId}_color" "VectorCast" [ p "targetType" "UInt8" false ]
 
-        { Nodes = vector.Nodes @ [ color ]
-          Edges = vector.Edges @ [ edge vector.NodeId vector.Kind vector.Port color.Id "input" 0 ]
+        { Nodes = vector.Nodes @ [ stretch; color ]
+          Edges =
+              vector.Edges
+              @ [ edge vector.NodeId vector.Kind vector.Port stretch.Id "input" 0
+                  edge stretch.Id "output" 0 color.Id "input" 0 ]
           NodeId = color.Id
           Kind = "output"
           Port = 0 }

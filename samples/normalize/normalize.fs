@@ -26,7 +26,7 @@ let main arg =
     |> read<float32> input ".tiff"
     >=> subScalar (float32 ImageStats0.Min)
     >=> mulScalar (float32 Float642)
-    >=> cast<float32,uint8>
+    >=> cast<_, uint8>
     >=> write output ".tiff"
     |> sink
 

@@ -26,8 +26,8 @@ errors or shelved capabilities.
 - reducers: `sum`, `prod`, `minMax`, `getMinMax`
 - Float32 SIMD intensity helpers: `absFloat32`, `sqrtFloat32`,
   `squareFloat32`, `shiftScaleFloat32`, `clampFloat32`,
-  `intensityWindowFloat32`, and `invertIntensityFloat32`
-- same-type intensity wrappers: `shiftScale`, `clamp`, `intensityWindow`, and
+  `intensityStretchFloat32`, and `invertIntensityFloat32`
+- same-type intensity wrappers: `shiftScale`, `clamp`, `intensityStretch`, and
   `invertIntensity`
 - normal, salt-and-pepper, and shot noise
 - padding, crop, squeeze, concatenate along an axis, and axis permutation

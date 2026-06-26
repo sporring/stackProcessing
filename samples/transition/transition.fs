@@ -17,10 +17,10 @@ let main arg =
     src
     |> read<float32> input ".tiff"
     >=> sqrtFloat32
-    >=> gaussianFilter<float32> sigma 3 4
+    >=> gaussianFilter<float32> sigma 3
     >=> sqrtFloat32
-    >=> gaussianFilter<float32> sigma 3 4
-    >=> cast<float32,uint8>
+    >=> gaussianFilter<float32> sigma 3
+    >=> cast<_, uint8>
     >=> write output ".tiff"
     |> sink
 

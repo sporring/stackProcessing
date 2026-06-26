@@ -1420,7 +1420,7 @@ let private runChunkConnectedComponents input output thresholdValue windowSize w
 
     let labelStage =
         match windowSize with
-        | Some size -> ChunkFunctions.connectedComponentsSauf3DUInt8UInt32ParallelCollect size workers
+        | Some size -> ChunkFunctions.connectedComponentsSauf3DUInt8UInt32ParallelCollect workers size
         | None -> ChunkFunctions.connectedComponentsSauf3DUInt8UInt32 ()
 
     let src = benchmarkSource availableMemory

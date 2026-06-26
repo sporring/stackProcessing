@@ -879,8 +879,8 @@ let stackProcessingCorrectnessSuite =
                     suffix
                     0.5
                     volume
-                    (cast<float32, uint8>)
-                    (fun input -> input.castTo<uint8>())
+                    (cast<_, uint8>)
+                    (fun input -> input.cast<_, uint8>())
             finally
                 volume.decRefCount()
 
