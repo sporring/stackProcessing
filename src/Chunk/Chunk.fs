@@ -138,7 +138,7 @@ type LocatedChunk<'T when 'T: equality> =
 type EncodedLocatedChunk =
     { Index: ChunkIndex
       Layout: ChunkLayout
-      Payload: byte[] option }
+      Payload: ReadOnlyMemory<byte> option }
 
 type VectorChunk<'T when 'T: equality> =
     { SpatialSize: uint64 * uint64 * uint64

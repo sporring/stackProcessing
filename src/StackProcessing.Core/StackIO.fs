@@ -3,6 +3,7 @@ module StackIO
 open SlimPipeline // Core processing model
 open System
 open System.Buffers
+open System.Collections.Generic
 open System.IO
 open System.Reflection
 open System.Runtime.InteropServices
@@ -21,6 +22,8 @@ open ZarrNET.Core.Nodes
 open ZarrNET.Core.OmeZarr.Coordinates
 open ZarrNET.Core.Zarr
 open ZarrNET.Core.Zarr.Store
+
+module ChunkKernel = ChunkCore.ChunkFunctions
 
 type FileInfo =
     { dimensions: uint
@@ -639,8 +642,7 @@ let private readBitMiracleUInt8TiffPageAsFloat32IntoOffset fileName pageIndex ex
 
         let outputBytes = chunk.Bytes.AsSpan(sliceOffsetBytes, targetBytes)
         let output = MemoryMarshal.Cast<byte, float32>(outputBytes)
-        for i in 0 .. sourceBytes - 1 do
-            output[i] <- float32 scratch[i]
+        ChunkKernel.castUInt8SpanToFloat32 (ReadOnlySpan<byte>(scratch, 0, sourceBytes)) output
     finally
         ArrayPool<byte>.Shared.Return(scratch)
 
@@ -994,38 +996,6 @@ let private nullableParallelChunks maxParallelChunks =
         Nullable<int>(maxParallelChunks)
     else
         Nullable<int>()
-
-let private blockCopyZarrBytes<'T> elementCount expectedBytes (bytes: byte[]) =
-    if bytes.Length < expectedBytes then
-        invalidArg "bytes" $"Zarr byte payload is too short for {elementCount} {typeof<'T>.Name} values: expected {expectedBytes}, got {bytes.Length}."
-
-    let pixels = Array.zeroCreate<'T> elementCount
-    Buffer.BlockCopy(bytes, 0, pixels, 0, expectedBytes)
-    pixels
-
-let private flatArrayOfZarrBytes<'T> (width: int) (height: int) (depth: int) (bytes: byte[]) =
-    let elementCount = width * height * depth
-
-    if typeof<'T> = typeof<uint8> then
-        blockCopyZarrBytes<uint8> elementCount elementCount bytes
-        |> box
-        |> unbox<'T[]>
-    elif typeof<'T> = typeof<uint16> then
-        blockCopyZarrBytes<uint16> elementCount (elementCount * 2) bytes
-        |> box
-        |> unbox<'T[]>
-    elif typeof<'T> = typeof<float32> then
-        blockCopyZarrBytes<float32> elementCount (elementCount * 4) bytes
-        |> box
-        |> unbox<'T[]>
-    elif typeof<'T> = typeof<float> then
-        blockCopyZarrBytes<float> elementCount (elementCount * 8) bytes
-        |> box
-        |> unbox<'T[]>
-    else
-        zarrDataType<'T> () |> ignore
-        failwith "unreachable"
-
 
 let private openZarrResolutionLevel (path: string) multiscaleIndex datasetIndex : ResolutionLevelNode =
     suppressZarrNetDebugLogging ()
@@ -2860,7 +2830,7 @@ let readZarrEncodedChunks
     let chunkBytes = uint64 chunkX * uint64 chunkY * uint64 chunkZ * elementBytes
     let maxParallelReads = max 1 (min Environment.ProcessorCount 16)
     let mutable cachedBatchStart = -1
-    let mutable cachedBatchResults: ZarrEncodedChunk[] = Array.empty
+    let mutable cachedBatchResults: IReadOnlyList<ZarrEncodedChunk> = Array.Empty<ZarrEncodedChunk>() :> IReadOnlyList<ZarrEncodedChunk>
     let sourcePeek =
         SourcePeek.create
             name
@@ -2880,11 +2850,10 @@ let readZarrEncodedChunks
     let loadBatch outputIndex =
         let batchStart = (outputIndex / maxParallelReads) * maxParallelReads
         let batchStop = min chunks.Length (batchStart + maxParallelReads)
-        let batchChunks = chunks[batchStart .. batchStop - 1]
+        let batchChunks = ArraySegment<ZarrChunkRef>(chunks, batchStart, batchStop - batchStart)
         let batchResults =
             array.ReadChunksEncodedAsync(batchChunks, maxParallelReads, CancellationToken.None)
             |> runTask
-            |> Seq.toArray
         deleteZarrNetDebugLogs ()
         cachedBatchStart <- batchStart
         cachedBatchResults <- batchResults
@@ -2892,7 +2861,7 @@ let readZarrEncodedChunks
     let mapper (outputIndex: int) : EncodedLocatedChunk =
         if cachedBatchStart < 0
            || outputIndex < cachedBatchStart
-           || outputIndex >= cachedBatchStart + cachedBatchResults.Length then
+           || outputIndex >= cachedBatchStart + cachedBatchResults.Count then
             loadBatch outputIndex
 
         let chunkRef = chunks[outputIndex]
@@ -2902,7 +2871,7 @@ let readZarrEncodedChunks
         let payload =
             let encoded = cachedBatchResults[outputIndex - cachedBatchStart]
             if encoded.IsPresent then
-                encoded.EncodedBytes.ToArray() |> Some
+                encoded.EncodedBytes |> Some
             else
                 None
 
@@ -3017,7 +2986,7 @@ let writeZarrEncodedChunksWithCompression
 
     let flushPending (array: ZarrArray) =
         if pendingEncoded.Count > 0 then
-            array.WriteChunksEncodedAsync(pendingEncoded.ToArray(), writeParallelism, false, CancellationToken.None)
+            array.WriteChunksEncodedAsync(pendingEncoded, writeParallelism, false, CancellationToken.None)
             |> runUnitTask
             pendingEncoded.Clear()
 
@@ -3044,7 +3013,7 @@ let writeZarrEncodedChunksWithCompression
                     | None -> failwith $"writeZarrEncodedChunks could not find output chunk for coordinate {key}."
                 if debug then
                     printfn $"[writeZarrEncodedChunks] Saved encoded chunk index {located.Index} to {outputPath}"
-                pendingEncoded.Add(ZarrEncodedChunk.Present(outputChunk, ReadOnlyMemory<byte>(payload)))
+                pendingEncoded.Add(ZarrEncodedChunk.Present(outputChunk, payload))
                 if pendingEncoded.Count >= writeParallelism then
                     flushPending array
             | None ->
@@ -3678,13 +3647,10 @@ let writeZarrChunkSlicesWithCompression<'T when 'T: equality and 'T: (new: unit 
             if chunk.ByteLength <> expectedBytes then
                 failwith $"writeZarrChunkSlices expected {expectedBytes} bytes, got {chunk.ByteLength}."
 
-            let planeBytes = Array.zeroCreate<byte> expectedBytes
-            Buffer.BlockCopy(chunk.Bytes, 0, planeBytes, 0, expectedBytes)
-
             if debug then
                 printfn $"[writeZarrChunkSlices] Saved plane {idx} to {outputPath} as {dataType}"
 
-            zarrWriter.WritePlaneAsync(int idx, planeBytes, CancellationToken.None)
+            zarrWriter.WritePlaneAsync(int idx, ReadOnlyMemory<byte>(chunk.Bytes, 0, expectedBytes), CancellationToken.None)
             |> runUnitTask
             deleteZarrNetDebugLogs ()
 
@@ -3786,7 +3752,7 @@ let writeZarrChunkThickWithCompression<'T when 'T: equality and 'T: (new: unit -
     let flushPending (array: ZarrArray) =
         if pendingDecoded.Count > 0 then
             try
-                array.WriteChunksDecodedAsync(pendingDecoded.ToArray(), writeParallelism, true, CancellationToken.None)
+                array.WriteChunksDecodedAsync(pendingDecoded, writeParallelism, true, CancellationToken.None)
                 |> runUnitTask
             finally
                 for buffer in pendingBuffers do
@@ -4473,13 +4439,10 @@ let private writeZarrComplex64InterleavedFloat32PlanesWithCompression
             if chunk.ByteLength <> expectedBytes then
                 failwith $"writeZarrComplex64InterleavedFloat32 expected {expectedBytes} bytes, got {chunk.ByteLength}."
 
-            let planeBytes = Array.zeroCreate<byte> expectedBytes
-            Buffer.BlockCopy(chunk.Bytes, 0, planeBytes, 0, expectedBytes)
-
             if debug then
                 printfn "[writeZarrComplex64InterleavedFloat32] Saved plane %d to %s as complex64" idx outputPath
 
-            zarrWriter.WritePlaneAsync(int idx, planeBytes, CancellationToken.None)
+            zarrWriter.WritePlaneAsync(int idx, ReadOnlyMemory<byte>(chunk.Bytes, 0, expectedBytes), CancellationToken.None)
             |> runUnitTask
             deleteZarrNetDebugLogs ()
 

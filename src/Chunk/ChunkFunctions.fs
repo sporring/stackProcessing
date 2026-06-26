@@ -2056,6 +2056,28 @@ module ChunkFunctions =
             outputPixels[i] <- if inputPixels[i] >= threshold then 1.0f else 0.0f
             i <- i + 1
 
+    let castUInt8SpanToFloat32 (inputPixels: ReadOnlySpan<byte>) (outputPixels: Span<float32>) =
+        if outputPixels.Length < inputPixels.Length then
+            invalidArg "outputPixels" $"Output span length {outputPixels.Length} is too small for {inputPixels.Length} widened UInt8 values."
+
+        let byteVectorWidth = Vector<byte>.Count
+        let floatVectorWidth = Vector<float32>.Count
+        let vectorEnd = inputPixels.Length - (inputPixels.Length % byteVectorWidth)
+        let mutable i = 0
+
+        while i < vectorEnd do
+            let inputSlice = inputPixels.Slice(i, byteVectorWidth)
+            let a, b, c, d = byteVectorToSingleVectors inputSlice
+            a.CopyTo(outputPixels.Slice(i, floatVectorWidth))
+            b.CopyTo(outputPixels.Slice(i + floatVectorWidth, floatVectorWidth))
+            c.CopyTo(outputPixels.Slice(i + 2 * floatVectorWidth, floatVectorWidth))
+            d.CopyTo(outputPixels.Slice(i + 3 * floatVectorWidth, floatVectorWidth))
+            i <- i + byteVectorWidth
+
+        while i < inputPixels.Length do
+            outputPixels[i] <- float32 inputPixels[i]
+            i <- i + 1
+
     let private clampRoundFloat32ToUInt32Vector (maximum: float32) (values: Vector<float32>) =
         let zero = Vector<float32>.Zero
         let maximumV = Vector<float32>(maximum)
@@ -2231,23 +2253,8 @@ module ChunkFunctions =
                 let inputPixels = MemoryMarshal.Cast<byte, float32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
                 inputPixels.CopyTo(outputPixels)
             elif t = typeof<uint8> then
-                let inputPixels = chunk.Bytes.AsSpan(0, chunk.ByteLength)
-                let byteVectorWidth = Vector<byte>.Count
-                let floatVectorWidth = Vector<float32>.Count
-                let vectorEnd = inputPixels.Length - (inputPixels.Length % byteVectorWidth)
-                let mutable i = 0
-                while i < vectorEnd do
-                    let mutable inputPart = inputPixels.Slice(i, byteVectorWidth)
-                    let inputSlice = MemoryMarshal.CreateReadOnlySpan(&MemoryMarshal.GetReference(inputPart), byteVectorWidth)
-                    let a, b, c, d = byteVectorToSingleVectors inputSlice
-                    a.CopyTo(outputPixels.Slice(i, floatVectorWidth))
-                    b.CopyTo(outputPixels.Slice(i + floatVectorWidth, floatVectorWidth))
-                    c.CopyTo(outputPixels.Slice(i + 2 * floatVectorWidth, floatVectorWidth))
-                    d.CopyTo(outputPixels.Slice(i + 3 * floatVectorWidth, floatVectorWidth))
-                    i <- i + byteVectorWidth
-                while i < inputPixels.Length do
-                    outputPixels[i] <- float32 inputPixels[i]
-                    i <- i + 1
+                let inputPixels = ReadOnlySpan<byte>(chunk.Bytes, 0, chunk.ByteLength)
+                castUInt8SpanToFloat32 inputPixels outputPixels
             elif t = typeof<int8> then
                 let inputPixels = MemoryMarshal.Cast<byte, sbyte>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
                 let int8VectorWidth = Vector<sbyte>.Count

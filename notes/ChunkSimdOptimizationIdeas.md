@@ -93,6 +93,33 @@ Before proposing SIMD for an IO-adjacent benchmark, first ask:
 - Is the batch size large enough to amortize store overhead without excessive
   memory pressure?
 
+Follow-up experiment, 2026-06-26:
+
+- StackProcessing now avoids a few local batch materializations by passing
+  `IReadOnlyList` batches to Zarr.NET instead of creating extra arrays.
+- A Zarr.NET branch experiment added a local decoded-chunk writer so
+  `ZarrArray.WriteChunksDecodedAsync` can hand borrowed decoded payloads to
+  `LocalFileSystemStore` without first materializing a `ZarrStoreWrite[]`.
+- This is cleaner for ownership and keeps StackProcessing in charge of pooled
+  payload lifetimes, but the focused `1024^3` UInt8 chunk-64 `tiffToZarr`
+  repeats stayed around `7.4-7.7 s` internal time. Therefore the decoded
+  `ZarrStoreWrite[]` adapter was not the main remaining gap.
+- Current suspicion should move back to local-store file planning/open/write
+  behavior, filesystem state/noise, and whole-pipeline batching rather than
+  SIMD or one small batch adapter allocation.
+- Follow-up cleanup removed more staging paths: encoded Zarr payloads now stay
+  as `ReadOnlyMemory<byte>` through `EncodedLocatedChunk`, simple Zarr plane
+  writes can pass `Chunk.Bytes` through Zarr.NET `ReadOnlyMemory<byte>`
+  overloads, and the unused Zarr byte-to-typed-array helper was deleted. The
+  special `uint8` TIFF to `float32` read-cast now reuses the SIMD
+  `uint8 -> float32` span widening kernel instead of a scalar loop. It still
+  decodes to a scratch byte buffer before widening into the destination chunk,
+  because the TIFF decoder needs a UInt8 destination for the on-disk payload.
+  A battery-powered paired smoke test on `1024^3`, chunk 64, showed a modest
+  improvement: before median `3.009 s` internal over 3 repeats; after median
+  `2.749 s` internal over 5 repeats. Treat this as directional until repeated
+  on power.
+
 ### Plan Once, Then Run A Small Hot Loop
 
 The raw/general TIFF split and the Zarr writer changes share the same shape:
@@ -552,6 +579,9 @@ Add small focused benchmarks before changing user-facing stages:
    - direct raw TIFF copy versus production TIFF read/write
    - no-store TIFF read plus Zarr-shaped split
    - direct local Zarr write versus production `Zarr.NET` batch write
+   - decoded Zarr.NET local writer without the `ZarrStoreWrite[]` adapter
+     remains useful as an ownership cleanup, but did not explain the
+     `tiffToZarr` gap in focused tests
    - not a SIMD benchmark, but essential context for deciding whether SIMD is
      the next bottleneck
 
