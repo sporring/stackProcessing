@@ -13,14 +13,17 @@ let main args =
         | [| input |] -> input, input, "../tmp/biasCorrection"
         | _ -> "../data/rotatingBoxes", "../data/rotatingBoxes", "../tmp/biasCorrection"
 
+    // Generate random indices from the input image.
     let sampledZ = src |> sliceIndicesRandom 10u input ".tiff"
 
+    // read the sampled slices and fit a 2nd degree polynomial bias model to them.
     let model =
         sampledZ
         >=> readAtIndices<float32> input ".tiff"
         >=> fitBiasModel<float32> 2
         |> drain
 
+    // Apply the bias model to the full image and write the result.
     src
     |> readRange<float32> 0u 1 255u input ".tiff"
     >=> correctBias<float32> model
@@ -28,12 +31,14 @@ let main args =
     >=> write (outputRoot + "/unmasked") ".tiff"
     |> sink
 
+    // read the sample slices together with a mask image and fit a polyomial model to the image.
     let maskedModel =
         sampledZ
         >=>> (readAtIndices<float32> input ".tiff", readAtIndices<uint8> mask ".tiff")
         >>=> fitBiasModelMasked<float32> 2
         |> drain
 
+    // Apply the bias model to the masked pixel values of the entire image.
     let fullImage =
         src |> read<float32> input ".tiff"
     let fullMask =

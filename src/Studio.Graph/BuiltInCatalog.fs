@@ -2047,7 +2047,7 @@ module BuiltInCatalog =
           Aliases = [ "components"; "labels"; "segmentation" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt32 labels" (PortType.Image UInt32) ]
-          Parameters = [ makeParameter "windowSize" "Window size" "None" BasicType.String ] }
+          Parameters = [ makeParameter "windowSize" "Window size" "8" (BasicType.Numeric Int32) ] }
 
         { Id = "StreamConnectedObjects"
           DisplayName = "streamConnectedObjects"

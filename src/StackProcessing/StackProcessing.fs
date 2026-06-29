@@ -226,8 +226,16 @@ let coordinateX<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct an
 let coordinateY<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.chunkCoordinateY<'T>
 let coordinateZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.chunkCoordinateZ<'T>
 let polygonMask = ChunkFunctions.chunkPolygonMask
-let euler2DTransformPath = ChunkFunctions.euler2DTransformPath
-let createByEuler2DTransform<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.createByEuler2DTransformFromChunk<'T>
+let euler2DTransform<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    rotation
+    translation
+    chunk =
+    ChunkCore.ChunkFunctions.euler2DTransformNativeChunk<'T> rotation translation chunk
+let mapi<'T, 'U when 'T: equality and 'U: equality
+                  and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType
+                  and 'U: (new: unit -> 'U) and 'U: struct and 'U :> ValueType>
+    f =
+    ChunkFunctions.mapi<'T, 'U> f
 let repeat<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.chunkRepeat<'T>
 let repeatStage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.chunkRepeatStage<'T>
 let pad<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.pad<'T>
@@ -240,9 +248,7 @@ let resample<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and '
 let show<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.show<'T>
 let signedDistanceBand bandRadius stride =
     ChunkFunctions.signedDistanceBandNativeParallelCollect stackProcessingWorkers bandRadius stride
-let connectedComponents = ChunkFunctions.connectedComponentsSauf3DUInt8
-let connectedComponentsUInt32 () = ChunkFunctions.connectedComponentsSauf3DUInt8UInt32 ()
-let connectedComponentsUInt32Windowed windowSize =
+let connectedComponents windowSize =
     ChunkFunctions.connectedComponentsSauf3DUInt8UInt32ParallelCollect stackProcessingWorkers windowSize
 let toVectorImage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.toVectorImage<'T>
 let vectorElement<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.vectorElement<'T>
@@ -474,9 +480,7 @@ let finiteDiffZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct an
     ChunkFunctions.finiteDiffNativeZParallelCollect<'T> order stackProcessingWorkers
 let separableConvolve<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> xKernel yKernel zKernel =
     ChunkFunctions.separableConvolveNativeParallelCollect<'T> xKernel yKernel zKernel stackProcessingWorkers
-let boxFilter<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> radius =
-    ChunkFunctions.boxFilterNativeParallelCollect<'T> radius stackProcessingWorkers
-let boxFilterXYZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> radiusX radiusY radiusZ =
+let boxFilter<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> radiusX radiusY radiusZ =
     ChunkFunctions.boxFilterNativeParallelCollectXYZ<'T> radiusX radiusY radiusZ stackProcessingWorkers
 let gaussianFilter<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> sigma radius =
     ChunkFunctions.gaussianFilterNativeParallelCollect<'T> sigma radius stackProcessingWorkers

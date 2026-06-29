@@ -12,9 +12,11 @@ let main args =
         | [| input |] -> input, "../tmp/binaryContour"
         | _ -> "../data/rotatingBoxes", "../tmp/binaryContour"
 
+    // Read an image and apply the binary contour algorithm to it.
     src
     |> read<uint8> input ".tiff"
     >=> binaryContour false
+    >=> intensityStretch 0.0 1.0 0.0 255.0
     >=> write output ".tiff"
     |> sink
 

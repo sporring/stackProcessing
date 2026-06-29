@@ -17,10 +17,12 @@ let main arg =
 
     let windowSize = max 1 (int (depth / 8u))
 
+    // Read a binary image and compute connected components in windowSize thick slices on it.
     src
     |> read<uint8> input suffix
-    >=> connectedComponentsUInt32Windowed windowSize
+    >=> connectedComponents windowSize
     >=> cast<_, uint8>
+    >=> intensityStretch 0.0 3.0 0.0 255.0
     >=> write output suffix
     |> sink
 

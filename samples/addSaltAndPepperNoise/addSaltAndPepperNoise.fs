@@ -11,6 +11,7 @@ let main args =
         | [| output |] -> output
         | _ -> "../tmp/addSaltAndPepperNoise"
 
+    // generate an image of zeros and add salt and peper noise to it.
     src
     |> zero<uint8> 64u 64u 64u
     >=> addSaltAndPepperNoise<uint8> 0.02

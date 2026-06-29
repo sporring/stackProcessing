@@ -13,6 +13,7 @@ let main arg =
         else
             "../data/volume", "../tmp/copy"
 
+    // Demonstrating the basic scaffold of a pipeline: copy an image.
     src
     |> read<uint8> input ".tiff"
     >=> write output ".tiff"

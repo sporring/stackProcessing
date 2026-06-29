@@ -185,8 +185,17 @@ let window windowSize pad stride =
 
 let flatten () = Stage.flattenWindow "flatten"
 
+let chunkResourceOps<'T when 'T: equality> : ResourceOps<Chunk<'T>> =
+    { Retain = fun chunk -> Chunk.incRef chunk |> ignore
+      Release = Chunk.decRef
+      MemoryOf = fun chunk -> Some(uint64 chunk.ByteLength) }
+
 let fork (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Stage<'S, 'U * 'V> =
     Stage.fork (stage1, stage2)
+
+let forkChunk<'T, 'U, 'V when 'T: equality> (stage1: Stage<Chunk<'T>, 'U>, stage2: Stage<Chunk<'T>, 'V>) : Stage<Chunk<'T>, 'U * 'V> =
+    Stage.retainWith "forkChunk.retain" chunkResourceOps<'T>
+    --> Stage.fork (stage1, stage2)
 
 let (-->>) (stage: Stage<'S, 'T>) (stage1: Stage<'T, 'U>, stage2: Stage<'T, 'V>) : Stage<'S, 'U * 'V> =
     stage --> fork (stage1, stage2)

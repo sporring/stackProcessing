@@ -22,7 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="chunk.fs" />
+    <Compile Include="sliceZarr.fs" />
   </ItemGroup>
 
 </Project>

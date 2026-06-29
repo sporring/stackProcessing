@@ -12,10 +12,10 @@ let main args =
         | [| input |] -> input, "../tmp/convolve"
         | _ -> "../data/volume", "../tmp/convolve"
 
+    // Runs a separable uniform filter on an input image
     src
     |> read<float32> input ".tiff"
-    >=> boxFilterXYZ<float32> 1 1 1
-    >=> intensityStretch 0.0 255.0 0.0 255.0
+    >=> boxFilter<float32> 1 1 1
     >=> cast<_, uint8>
     >=> write output ".tiff"
     |> sink

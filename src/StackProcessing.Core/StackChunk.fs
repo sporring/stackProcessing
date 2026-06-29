@@ -137,53 +137,31 @@ let chunkPolygonMask
     (width: uint)
     (height: uint)
     (polygon: Polygon2D)
-    : Chunk<uint8> =
+    : unit -> Chunk<uint8> =
     if width = 0u then invalidArg "width" "chunkPolygonMask width must be positive."
     if height = 0u then invalidArg "height" "chunkPolygonMask height must be positive."
 
-    let chunk = Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
-    chunk.Bytes.AsSpan(0, chunk.ByteLength).Clear()
-    let pixels = Chunk.span chunk
-    let widthI = int width
-    let heightI = int height
+    fun () ->
+        let chunk = Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
+        chunk.Bytes.AsSpan(0, chunk.ByteLength).Clear()
+        let pixels = Chunk.span chunk
+        let widthI = int width
+        let heightI = int height
 
-    for y in 0 .. heightI - 1 do
-        for x in 0 .. widthI - 1 do
-            if pointInPolygon polygon x y then
-                pixels[Chunk.toIndex widthI heightI x y 0] <- 1uy
+        for y in 0 .. heightI - 1 do
+            for x in 0 .. widthI - 1 do
+                if pointInPolygon polygon x y then
+                    pixels[Chunk.toIndex widthI heightI x y 0] <- 1uy
 
-    chunk
-
-let euler2DTransformPath (width: uint) (height: uint) (depth: uint) (transform: string) =
-    if width = 0u then invalidArg "width" "chunkEuler2DTransformPath requires a positive width."
-    if height = 0u then invalidArg "height" "chunkEuler2DTransformPath requires a positive height."
-    if depth = 0u then invalidArg "depth" "chunkEuler2DTransformPath requires a positive depth."
-
-    let centerX = float width / 2.0 - 0.5
-    let centerY = float height / 2.0 - 0.5
-
-    fun (i: uint) ->
-        let dx = float i
-        let angle = 2.0 * Math.PI * float i / float depth
-
-        match transform.Trim().ToLowerInvariant() with
-        | "antidiagonal"
-        | "anti diagonal"
-        | "anti-diagonal" ->
-            (centerX, centerY, angle), (float width - dx - centerX, dx - centerY)
-        | "topdown"
-        | "top down"
-        | "top-down" ->
-            (centerX, centerY, angle), (0.0, dx - centerY)
-        | _ ->
-            (centerX, centerY, angle), (0.0, 0.0)
+        chunk
 
 let chunkRepeat<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
-    (chunk: Chunk<'T>)
+    (chunkSeed: unit -> Chunk<'T>)
     (depth: uint)
     (pl: Plan<unit, unit>)
     : Plan<unit, Chunk<'T>> =
     if depth = 0u then invalidArg "depth" "chunkRepeat requires a positive depth."
+    let chunk = chunkSeed()
     let width, height, _ = chunk.Size
     let widthU = uint width
     let heightU = uint height
@@ -215,32 +193,6 @@ let chunkRepeatStage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: stru
     --> flattenList ()
     |> Stage.withSliceCardinality SliceCardinality.unknown
 
-let createByEuler2DTransformFromChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
-    (depth: uint)
-    (transform: uint -> (float * float * float) * (float * float))
-    : Stage<Chunk<'T>, Chunk<'T>> =
-    if depth = 0u then invalidArg "depth" "createByEuler2DTransformFromChunk requires a positive depth."
-
-    let mapper _debug _idx (chunk: Chunk<'T>) =
-        try
-            let _width, _height, chunkDepth = chunk.Size
-            if chunkDepth <> 1UL then
-                invalidArg "chunk" $"createByEuler2DTransformFromChunk expects 2D slice chunks with depth 1, got {chunk.Size}."
-
-            [ for i in 0 .. int depth - 1 ->
-                let rotation, translation = transform (uint i)
-                ChunkKernel.euler2DTransformNativeChunk<'T> rotation translation chunk ]
-        finally
-            Chunk.decRef chunk
-
-    Stage.mapi
-        $"chunkCreateByEuler2DTransformFromChunk.{typeof<'T>.Name}.{depth}"
-        mapper
-        (fun n -> n * uint64 depth)
-        (fun _ -> uint64 depth)
-    --> flattenList ()
-    |> Stage.withSliceCardinality (SliceCardinality.reduceTo (uint64 depth))
-
 let releaseUnaryChunk name f memoryNeed : Stage<Chunk<'T>, Chunk<'U>> =
     let mapper _debug chunk =
         try
@@ -249,6 +201,23 @@ let releaseUnaryChunk name f memoryNeed : Stage<Chunk<'T>, Chunk<'U>> =
             Chunk.decRef chunk
 
     Stage.map name mapper memoryNeed id
+
+let mapi<'T, 'U when 'T: equality and 'U: equality
+                  and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType
+                  and 'U: (new: unit -> 'U) and 'U: struct and 'U :> ValueType>
+    (f: uint -> Chunk<'T> -> Chunk<'U>)
+    : Stage<Chunk<'T>, Chunk<'U>> =
+    let mapper _debug index chunk =
+        try
+            f (uint index) chunk
+        finally
+            Chunk.decRef chunk
+
+    Stage.mapi
+        $"chunkMapi.{typeof<'T>.Name}To{typeof<'U>.Name}"
+        mapper
+        (fun n -> n * uint64 (chunkElementBytes<'T> + chunkElementBytes<'U>))
+        id
 
 let validateSameSize name (a: Chunk<'T>) (b: Chunk<'U>) =
     ChunkKernel.validateSameSize name a b

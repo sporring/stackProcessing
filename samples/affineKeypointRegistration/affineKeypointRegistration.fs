@@ -20,6 +20,7 @@ let main args =
     let movingFile = movingOutput + ".csv"
     let fixedFile = fixedOutput + ".csv"
 
+    // Choose some random 3d points across (virtual) slices
     let fixedPoints = [ 
         v3 0.0 0.0 0.0;
         v3 12.0 0.0 1.0;
@@ -29,7 +30,7 @@ let main args =
         v3 5.0 8.0 13.0]
     fixedPoints |> toPointSet |> writePointSetFile fixedFile
 
-    // Use TinyLinAlg to artificially produce a transformed data set
+    // Pick some affine transformation and use TinyLinAlg to artificially produce a transformed data set
     let affineTransform =
         { A = m3 1.10 0.08 -0.04  -0.03 0.95 0.06  0.02 -0.05 1.07
           T = v3 3.0 -2.5 1.25 }
@@ -46,6 +47,7 @@ let main args =
         |> drain
         |> ofHomogeneousMatrix
 
+    // The point-wise affine registration should be very similar to the original transform
     let error = m3AffineNormMax affineTransform fittedAffineTransform
     printfn $"Fixed points:  [{fixedPoints}]"
     printfn $"Moving points: [{movingPoints}]"

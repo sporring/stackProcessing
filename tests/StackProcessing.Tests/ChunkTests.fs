@@ -2165,6 +2165,37 @@ let chunkSuite =
                 (ChunkFunctions.binaryClosingZonohedral 1u)
                 (ChunkFunctions.binaryClosingZonohedralParallel 1u 3)
 
+        testCase "ChunkFunctions binary morphology fork stages retain shared inputs" <| fun _ ->
+            let width = 5
+            let height = 4
+            let depth = 5
+            let plane = width * height
+
+            let makeChunks () =
+                [ for z in 0 .. depth - 1 ->
+                    let pixels = Array.zeroCreate<uint8> plane
+                    for y in 1 .. 2 do
+                        for x in 1 .. 3 do
+                            if z >= 1 && z <= 3 then
+                                pixels[y * width + x] <- 1uy
+                    chunkFromPixels width height pixels ]
+
+            let checkStage name stage =
+                let inputs = makeChunks ()
+                let outputs = runStageList stage inputs
+                try
+                    Expect.equal outputs.Length depth $"{name} should preserve slice count."
+                    inputs |> List.iter (fun chunk -> Expect.equal chunk.RefCount.Value 0 $"{name} should release each consumed input chunk once.")
+                finally
+                    outputs |> List.iter Chunk.decRef
+
+            checkStage "binaryContourZonohedral" (ChunkFunctions.binaryContourZonohedral false)
+            checkStage "binaryContourZonohedralParallel" (ChunkFunctions.binaryContourZonohedralParallel false 3)
+            checkStage "binaryGradientZonohedral" (ChunkFunctions.binaryGradientZonohedral 1u)
+            checkStage "binaryGradientZonohedralParallel" (ChunkFunctions.binaryGradientZonohedralParallel 1u 3)
+            checkStage "binaryWhiteTopHatZonohedral" (ChunkFunctions.binaryWhiteTopHatZonohedral 1u)
+            checkStage "binaryBlackTopHatZonohedral" (ChunkFunctions.binaryBlackTopHatZonohedral 1u)
+
         testCase "ChunkFunctions.histogramLeftEdgesReducer serially reduces compatible binned chunk histograms" <| fun _ ->
             let releaseCount = ref 0
             let values1 = [| -1.0f; 0.5f; 11.0f |]
@@ -2180,6 +2211,34 @@ let chunkSuite =
             Expect.equal results[0].Counts (Map.ofList [ 0.0, 2UL; 10.0, 2UL; 20.0, 2UL ]) "Left-edge chunk histogram reducer should add compatible ordinate arrays."
             Expect.equal results[0].Binning (Some(FixedEdges(0.0, 20.0, 3u))) "Left-edge reducer should preserve bin metadata."
             Expect.equal releaseCount.Value 2 "Left-edge histogram reducer should decRef every consumed chunk."
+
+        testCase "ChunkFunctions.chunkRepeat can reuse a polygon mask seed in multiple source plans" <| fun _ ->
+            let polygon : Polygon2D =
+                [ { X = 1.0; Y = 1.0 }
+                  { X = 3.0; Y = 1.0 }
+                  { X = 3.0; Y = 3.0 }
+                  { X = 1.0; Y = 3.0 } ]
+            let mask = ChunkFunctions.chunkPolygonMask 4u 4u polygon
+
+            let repeated () =
+                source (2UL * 1024UL * 1024UL * 1024UL)
+                |> ChunkFunctions.chunkRepeat mask 1u
+
+            let outputs =
+                (repeated (), repeated ())
+                ||> zip
+                >>=> ChunkFunctions.maximum<uint8>
+                |> Plan.drainList "repeat-reused-polygon-mask"
+
+            try
+                Expect.hasLength outputs 1 "Zipped repeats should emit one combined mask slice."
+                let values = Chunk.span<uint8> outputs[0]
+                let mutable hasForeground = false
+                for i in 0 .. values.Length - 1 do
+                    hasForeground <- hasForeground || values[i] = 1uy
+                Expect.isTrue hasForeground "Repeated polygon mask should contain foreground pixels."
+            finally
+                outputs |> List.iter Chunk.decRef
 
         testCase "writeColor accepts packed RGB chunks" <| fun _ ->
             let outputDir = tempDirectory "packed-color-output"

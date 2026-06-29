@@ -115,7 +115,7 @@
       "parameters": [
         {
           "key": "windowSize",
-          "value": "None",
+          "value": "8",
           "useInput": false
         }
       ]

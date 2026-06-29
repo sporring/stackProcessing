@@ -12,9 +12,11 @@ let main args =
         | [| input |] -> input, "../tmp/closing"
         | _ -> "../data/rotatingBoxes", "../tmp/closing"
 
+    // Read the image an perform mathematical morphology closing on it, then write the result to disk.
     src
     |> read<uint8> input ".tiff"
     >=> binaryClosing 3u
+    >=> intensityStretch 0.0 1.0 0.0 255.0
     >=> write output ".tiff"
     |> sink
 

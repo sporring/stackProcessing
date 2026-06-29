@@ -2220,7 +2220,7 @@ let generatorSuite =
                       edge "connected" "output" 0 "cast" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> connectedComponentsUInt32Windowed 15" "Connected components should produce compact Chunk label slices directly."
+            Expect.stringContains code ">=> connectedComponents 15" "Connected components should produce compact Chunk label slices directly."
             Expect.stringContains code ">=> cast<_, uint8>" "Label slices should feed regular image stages."
             Expect.isFalse (code.Contains "writeSlabSlices") "Connected components should not need slab temp writes."
             Expect.isFalse (code.Contains "makeConnectedComponentTranslationTable") "Connected components should not need a second translation-table reducer."

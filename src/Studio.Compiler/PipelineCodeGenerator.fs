@@ -1148,11 +1148,26 @@ module PipelineCodeGenerator =
 
             String.concat Environment.NewLine
                 [ $"let {maskName} = polygonMask {width} {height} {polygon}"
-                  $"let {transformName} = euler2DTransformPath {width} {height} {depth} {quote transform}"
+                  $"let {transformName} (i: uint) (chunk: StackCore.Chunk<{pixelType}>) ="
+                  $"    let _chunkWidth, _chunkHeight, chunkDepth = chunk.Size"
+                  $"    if chunkDepth <> 1UL then invalidArg \"chunk\" $\"{transformName} expects 2D slice chunks with depth 1, got {{chunk.Size}}.\""
+                  $"    let centerX = float {width} / 2.0 - 0.5"
+                  $"    let centerY = float {height} / 2.0 - 0.5"
+                  $"    let dx = float i"
+                  $"    let angle = 2.0 * System.Math.PI * float i / float {depth}"
+                  $"    let rotation, translation ="
+                  $"        match {(quote transform)}.Trim().ToLowerInvariant() with"
+                  $"        | \"antidiagonal\" | \"anti diagonal\" | \"anti-diagonal\" ->"
+                  $"            (centerX, centerY, angle), (float {width} - dx - centerX, dx - centerY)"
+                  $"        | \"topdown\" | \"top down\" | \"top-down\" ->"
+                  $"            (centerX, centerY, angle), (0.0, dx - centerY)"
+                  $"        | _ ->"
+                  $"            (centerX, centerY, angle), (0.0, 0.0)"
+                  $"    euler2DTransform<{pixelType}> rotation translation chunk"
                   $"debug 1u (optimizerEnabled ()) {uint64Literal availableMemory}"
-                  $"|> repeat {maskName} 1u"
+                  $"|> repeat {maskName} {depth}"
                   $">=> cast<_, {pixelType}>"
-                  $">=> createByEuler2DTransform {depth} {transformName}" ]
+                  $">=> mapi {transformName}" ]
         | "ReadRandom" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
@@ -1791,11 +1806,8 @@ module PipelineCodeGenerator =
             $">=> binaryClosing {radius}"
         | "ConnectedComponents" ->
             let windowSize = savedParamValue "windowSize" node
-            if String.Equals(windowSize.Trim(), "None", StringComparison.OrdinalIgnoreCase) then
-                ">=> connectedComponentsUInt32 ()"
-            else
-                let windowSize = numericLiteral Int32 windowSize
-                $">=> connectedComponentsUInt32Windowed {windowSize}"
+            let windowSize = numericLiteral Int32 windowSize
+            $">=> connectedComponents {windowSize}"
         | "MarchingCubes" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let surfaceValue = parameterValue "surfaceValue"
