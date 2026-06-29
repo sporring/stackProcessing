@@ -117,6 +117,8 @@ type ChunkIndex = int * int * int
 [<CustomEquality; NoComparison>]
 type Chunk<'T when 'T: equality> =
     { Size: uint64 * uint64 * uint64
+      Index: ChunkIndex option
+      SourceDepth: uint option
       Bytes: byte[]
       ByteLength: int
       Release: unit -> unit
@@ -419,12 +421,28 @@ let create<'T when 'T: equality> size : Chunk<'T> =
     let refCount = ref 1
     ChunkStats.recordCreate typeof<'T>.Name (int expected) refCount
     { Size = size
+      Index = None
+      SourceDepth = None
       Bytes = bytes
       ByteLength = int expected
       Release = fun () ->
           ChunkStats.recordRelease typeof<'T>.Name (int expected) refCount
           ArrayPool<byte>.Shared.Return(bytes)
       RefCount = refCount }
+
+let withIndex index (chunk: Chunk<'T>) =
+    { chunk with Index = Some index }
+
+let withSourceDepth sourceDepth (chunk: Chunk<'T>) =
+    { chunk with SourceDepth = Some sourceDepth }
+
+let withIndexOption index (chunk: Chunk<'T>) =
+    { chunk with Index = index }
+
+let withSameIndex (source: Chunk<'S>) (target: Chunk<'T>) =
+    { target with
+        Index = source.Index
+        SourceDepth = source.SourceDepth }
 
 let span<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
     MemoryMarshal.Cast<byte, 'T>(chunk.Bytes.AsSpan(0, chunk.ByteLength))

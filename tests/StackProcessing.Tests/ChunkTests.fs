@@ -22,6 +22,8 @@ let private deleteDirectory path =
 
 let private manualChunk<'T when 'T: equality> size bytes byteLength release : Chunk<'T> =
     { Size = size
+      Index = None
+      SourceDepth = None
       Bytes = bytes
       ByteLength = byteLength
       Release = release
@@ -1693,9 +1695,10 @@ let chunkSuite =
             let makeInputs () =
                 [ for _z in 0 .. depth - 1 ->
                     Array.create (width * height) 5.0f
-                    |> chunkFromFloat32Pixels width height ]
+                    |> chunkFromFloat32Pixels width height
+                    |> Chunk.withSourceDepth (uint depth) ]
 
-            let modelOutputs = runStageList (StackBias.fitBiasModelChunk<float32> 0 (uint depth)) (makeInputs ())
+            let modelOutputs = runStageList (StackBias.fitBiasModelChunk<float32> 0) (makeInputs ())
             Expect.equal modelOutputs.Length 1 "Chunk bias fitting should emit one polynomial model."
             Expect.equal modelOutputs[0].Order 0 "The fitted model should preserve the requested order."
             Expect.floatClose Accuracy.medium modelOutputs[0].Coefficients[0] 5.0 "The constant coefficient should match the input bias."
@@ -1708,6 +1711,36 @@ let chunkSuite =
                     let values = Chunk.span<float32> corrected[z]
                     for value in values do
                         Expect.floatClose Accuracy.medium (float value) 0.0 $"Corrected slice {z} should have the fitted constant bias removed."
+            finally
+                corrected |> List.iter Chunk.decRef
+
+        testCase "Chunk bias fit uses original slice indices from sampled input" <| fun _ ->
+            let width = 4
+            let height = 3
+            let depth = 5
+            let zValue z =
+                float32 (2.0 * float z / float (depth - 1) - 1.0)
+            let makeSlice z =
+                Array.create (width * height) (zValue z)
+                |> chunkFromFloat32Pixels width height
+                |> Chunk.withIndex (0, 0, z)
+                |> Chunk.withSourceDepth (uint depth)
+            let sampledInputs () =
+                [ makeSlice 1; makeSlice 4 ]
+            let fullInputs () =
+                [ for z in 0 .. depth - 1 -> makeSlice z ]
+
+            let modelOutputs = runStageList (StackBias.fitBiasModelChunk<float32> 1) (sampledInputs ())
+            Expect.equal modelOutputs.Length 1 "Chunk bias fitting should emit one polynomial model."
+
+            let corrected = runStageList (StackBias.correctBiasChunk<float32> modelOutputs[0]) (fullInputs ())
+            try
+                Expect.equal corrected.Length depth "Bias correction should preserve full stack depth."
+                for z in 0 .. corrected.Length - 1 do
+                    Expect.equal corrected[z].Index (Some(0, 0, z)) $"Corrected slice {z} should preserve the source slice index."
+                    let values = Chunk.span<float32> corrected[z]
+                    for value in values do
+                        Expect.floatClose Accuracy.low (float value) 0.0 $"Corrected slice {z} should use the physical z coordinate, not sampled stream order."
             finally
                 corrected |> List.iter Chunk.decRef
 

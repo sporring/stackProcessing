@@ -279,7 +279,7 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "|> readRandom<float> 8u \"input\" \".tiff\"" "Bias fit should be able to use readRandom."
-            Expect.stringContains code ">=> fitBiasModel<float> 2 32u" "FitBiasModel should lower to the polynomial reducer."
+            Expect.stringContains code ">=> fitBiasModel<float> 2" "FitBiasModel should lower to the polynomial reducer."
             Expect.stringContains code "|> drain" "Linked bias model reducer should be drained into a binding."
             Expect.stringContains code ">=> correctBias<float> FitBiasModel0" "CorrectBias should receive the linked bias model binding."
 

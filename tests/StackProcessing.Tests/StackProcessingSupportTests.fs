@@ -964,7 +964,7 @@ let stackProcessingSupportSuite =
             let model =
                 try
                     imagePlan sampled
-                    >=> fitBiasModel<float> 1 4u
+                    >=> fitBiasModel<float> 1
                     |> drain
                 finally
                     disposeImages sampled

@@ -68,6 +68,10 @@ module Histogram =
 
 module Chunk =
     let create<'T when 'T: equality> = ChunkPrimitive.create<'T>
+    let withIndex = ChunkPrimitive.withIndex
+    let withSourceDepth = ChunkPrimitive.withSourceDepth
+    let withIndexOption = ChunkPrimitive.withIndexOption
+    let withSameIndex = ChunkPrimitive.withSameIndex
     let setDebugLevel = ChunkPrimitive.ChunkStats.setDebugLevel
     let resetStats = ChunkPrimitive.ChunkStats.reset
     let stats = ChunkPrimitive.ChunkStats.snapshot

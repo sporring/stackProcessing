@@ -11,8 +11,7 @@
     { "id": "fitModel", "functionId": "FitBiasModel", "x": 300.0, "y": 90.0,
       "parameters": [
         { "key": "type", "value": "Float32", "useInput": false },
-        { "key": "order", "value": "2", "useInput": false },
-        { "key": "depth", "value": "256", "useInput": false } ] },
+        { "key": "order", "value": "2", "useInput": false } ] },
     { "id": "correctRead", "functionId": "Read", "x": 60.0, "y": 240.0,
       "parameters": [
         { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
@@ -58,8 +57,7 @@
     { "id": "fitMasked", "functionId": "FitBiasModelMasked", "x": 320.0, "y": 500.0,
       "parameters": [
         { "key": "type", "value": "Float32", "useInput": false },
-        { "key": "order", "value": "2", "useInput": false },
-        { "key": "depth", "value": "256", "useInput": false } ] },
+        { "key": "order", "value": "2", "useInput": false } ] },
     { "id": "maskedImageCorrect", "functionId": "Read", "x": 60.0, "y": 720.0,
       "parameters": [
         { "key": "availableMemory", "value": "2147483648UL", "useInput": false },

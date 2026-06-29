@@ -2179,7 +2179,7 @@ let private castChunkToUInt8<'T when 'T: equality and 'T: (new: unit -> 'T) and 
 let castToUInt8<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<'T>, Chunk<uint8>> =
     let mapper _debug chunk =
         try
-            castChunkToUInt8 chunk
+            castChunkToUInt8 chunk |> Chunk.withSameIndex chunk
         finally
             Chunk.decRef chunk
 
@@ -2191,7 +2191,7 @@ let private castChunkToFloat32<'T when 'T: equality and 'T: (new: unit -> 'T) an
 let castToFloat32<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<'T>, Chunk<float32>> =
     let mapper _debug chunk =
         try
-            castChunkToFloat32 chunk
+            castChunkToFloat32 chunk |> Chunk.withSameIndex chunk
         finally
             Chunk.decRef chunk
 
@@ -2203,7 +2203,7 @@ let private castFloat32ToChunk<'T when 'T: equality and 'T: (new: unit -> 'T) an
 let castFromFloat32<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<float32>, Chunk<'T>> =
     let mapper _debug chunk =
         try
-            castFloat32ToChunk<'T> chunk
+            castFloat32ToChunk<'T> chunk |> Chunk.withSameIndex chunk
         finally
             Chunk.decRef chunk
 
@@ -2213,7 +2213,7 @@ let castChunk<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct 
                           and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<'S>, Chunk<'T>> =
     let mapper _debug chunk =
         try
-            ChunkKernel.castChunk<'S, 'T> chunk
+            ChunkKernel.castChunk<'S, 'T> chunk |> Chunk.withSameIndex chunk
         finally
             Chunk.decRef chunk
 

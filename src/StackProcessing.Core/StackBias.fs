@@ -224,6 +224,35 @@ let private ensureChunkShape state (chunk: Chunk<'T>) =
 
     width, height
 
+let private chunkSliceZ fallbackOrdinal (chunk: Chunk<'T>) =
+    match chunk.Index with
+    | Some(_, _, z) when z >= 0 -> uint z
+    | Some(_, _, z) -> invalidOp $"Bias model expects non-negative slice indices, got {z}."
+    | None -> uint fallbackOrdinal
+
+let private inferSourceDepth (chunks: Chunk<'T> list) =
+    let metadataDepth =
+        chunks
+        |> List.choose (fun chunk -> chunk.SourceDepth)
+        |> List.distinct
+
+    match metadataDepth with
+    | [ depth ] -> depth
+    | [] ->
+        let maxZ =
+            chunks
+            |> List.mapi (fun ordinal chunk -> chunkSliceZ ordinal chunk)
+            |> List.max
+        maxZ + 1u
+    | depths ->
+        invalidOp $"Bias model fit got inconsistent source depths: {depths}."
+
+let private validateSameSliceIndex (chunk: Chunk<'T>) (mask: Chunk<uint8>) =
+    match chunk.Index, mask.Index with
+    | Some imageIndex, Some maskIndex when imageIndex <> maskIndex ->
+        invalidOp $"Bias model got mismatched image/mask slice indices: image {imageIndex}, mask {maskIndex}."
+    | _ -> ()
+
 let private addChunkObservationsAt<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     z
     (state: BiasFitState)
@@ -237,6 +266,7 @@ let private addChunkObservationsAt<'T when 'T: equality and 'T: (new: unit -> 'T
 
         mask
         |> Option.iter (fun maskChunk ->
+            validateSameSliceIndex chunk maskChunk
             let maskWidth, maskHeight, maskDepth = maskChunk.Size
             if maskDepth <> 1UL || maskWidth <> uint64 width || maskHeight <> uint64 height then
                 invalidOp $"fitBiasModelChunkMasked expects image and mask chunks with the same 2D shape at slice {z}.")
@@ -285,17 +315,19 @@ let private stateToModel state =
 
 let fitBiasModelChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     order
-    depth
     : Stage<Chunk<'T>, BiasPolynomialModel> =
     let name = $"fitBiasModelChunk.{typeof<'T>.Name}"
     let memoryNeed n = n * uint64 (Marshal.SizeOf<'T>())
     let apply _debug (input: AsyncSeq<Chunk<'T>>) =
         asyncSeq {
             let! chunks = input |> AsyncSeq.toListAsync
-            let state = emptyFitState order depth
+            if chunks.IsEmpty then
+                invalidOp "Bias polynomial fit did not receive any slices."
+            let sourceDepth = inferSourceDepth chunks
+            let state = emptyFitState order sourceDepth
             chunks
-            |> List.iteri (fun z chunk ->
-                addChunkObservationsAt (uint z) state chunk None |> ignore)
+            |> List.iteri (fun ordinal chunk ->
+                addChunkObservationsAt (chunkSliceZ ordinal chunk) state chunk None |> ignore)
             yield stateToModel state
         }
 
@@ -309,17 +341,22 @@ let fitBiasModelChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: str
 
 let fitBiasModelChunkMasked<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     order
-    depth
     : Stage<Chunk<'T> * Chunk<uint8>, BiasPolynomialModel> =
     let name = $"fitBiasModelChunkMasked.{typeof<'T>.Name}"
     let memoryNeed n = n * uint64 (Marshal.SizeOf<'T>() + Marshal.SizeOf<uint8>())
     let apply _debug (input: AsyncSeq<Chunk<'T> * Chunk<uint8>>) =
         asyncSeq {
             let! chunks = input |> AsyncSeq.toListAsync
-            let state = emptyFitState order depth
+            if chunks.IsEmpty then
+                invalidOp "Bias polynomial fit did not receive any slices."
+            let sourceDepth =
+                chunks
+                |> List.map fst
+                |> inferSourceDepth
+            let state = emptyFitState order sourceDepth
             chunks
-            |> List.iteri (fun z (chunk, mask) ->
-                addChunkObservationsAt (uint z) state chunk (Some mask) |> ignore)
+            |> List.iteri (fun ordinal (chunk, mask) ->
+                addChunkObservationsAt (chunkSliceZ ordinal chunk) state chunk (Some mask) |> ignore)
             yield stateToModel state
         }
 
@@ -349,13 +386,16 @@ let private correctedChunkAt<'T when 'T: equality and 'T: (new: unit -> 'T) and 
 
         mask
         |> Option.iter (fun maskChunk ->
+            validateSameSliceIndex chunk maskChunk
             let maskWidth, maskHeight, maskDepth = maskChunk.Size
             if maskDepth <> 1UL || maskWidth <> width || maskHeight <> height then
                 invalidOp $"correctBiasChunkMasked expects image and mask chunks with the same 2D shape at slice {z}.")
 
         let widthI = int width
         let heightI = int height
-        let output = Chunk.create<float32> (width, height, 1UL)
+        let output =
+            Chunk.create<float32> (width, height, 1UL)
+            |> Chunk.withSameIndex chunk
 
         try
             let inputPixels = Chunk.span<'T> chunk
@@ -402,10 +442,11 @@ let correctBiasChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: stru
     let memoryNeed n = n * uint64 (Marshal.SizeOf<'T>() + Marshal.SizeOf<float32>())
     let apply _debug (input: AsyncSeq<Chunk<'T>>) =
         asyncSeq {
-            let mutable z = 0u
+            let mutable ordinal = 0
             for chunk in input do
+                let z = chunkSliceZ ordinal chunk
                 let output = correctedChunkAt z model chunk None
-                z <- z + 1u
+                ordinal <- ordinal + 1
                 yield output
         }
 
@@ -423,10 +464,11 @@ let correctBiasChunkMasked<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T
     let memoryNeed n = n * uint64 (Marshal.SizeOf<'T>() + Marshal.SizeOf<uint8>() + Marshal.SizeOf<float32>())
     let apply _debug (input: AsyncSeq<Chunk<'T> * Chunk<uint8>>) =
         asyncSeq {
-            let mutable z = 0u
+            let mutable ordinal = 0
             for chunk, mask in input do
+                let z = chunkSliceZ ordinal chunk
                 let output = correctedChunkAt z model chunk (Some mask)
-                z <- z + 1u
+                ordinal <- ordinal + 1
                 yield output
         }
 

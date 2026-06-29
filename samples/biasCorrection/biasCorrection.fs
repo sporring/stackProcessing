@@ -13,10 +13,12 @@ let main args =
         | [| input |] -> input, input, "../tmp/biasCorrection"
         | _ -> "../data/rotatingBoxes", "../data/rotatingBoxes", "../tmp/biasCorrection"
 
+    let sampledZ = src |> sliceIndicesRandom 10u input ".tiff"
+
     let model =
-        src
-        |> readRange<float32> 0u 1 255u input ".tiff"
-        >=> fitBiasModel<float32> 2 256u
+        sampledZ
+        >=> readAtIndices<float32> input ".tiff"
+        >=> fitBiasModel<float32> 2
         |> drain
 
     src
@@ -26,14 +28,18 @@ let main args =
     >=> write (outputRoot + "/unmasked") ".tiff"
     |> sink
 
-    let image = src |> readRange<float32> 0u 1 255u input ".tiff"
-    let maskStream = src |> read<uint8> mask ".tiff"
     let maskedModel =
-        zip image maskStream
-        >=> fitBiasModelMasked<float32> 2 256u
+        sampledZ
+        >=>> (readAtIndices<float32> input ".tiff", readAtIndices<uint8> mask ".tiff")
+        >=> fitBiasModelMasked<float32> 2
         |> drain
 
-    zip image maskStream
+    let fullImage =
+        src |> read<float32> input ".tiff"
+    let fullMask =
+        src |> read<uint8> mask ".tiff"
+
+    zip fullImage fullMask
     >=> correctBiasMasked<float32> maskedModel
     >=> cast<_, uint8>
     >=> write (outputRoot + "/masked") ".tiff"

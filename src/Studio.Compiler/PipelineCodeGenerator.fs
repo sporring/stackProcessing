@@ -1695,13 +1695,11 @@ module PipelineCodeGenerator =
         | "FitBiasModel" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let order = parameterValue "order"
-            let depth = parameterValue "depth"
-            $">=> fitBiasModel<{pixelType}> {order} {depth}"
+            $">=> fitBiasModel<{pixelType}> {order}"
         | "FitBiasModelMasked" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let order = parameterValue "order"
-            let depth = parameterValue "depth"
-            $">=> fitBiasModelMasked<{pixelType}> {order} {depth}"
+            $">=> fitBiasModelMasked<{pixelType}> {order}"
         | "CorrectBias" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let model = parameterValue "model"

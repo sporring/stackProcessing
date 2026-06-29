@@ -159,7 +159,7 @@ module BuiltInCatalog =
       $"Creates a synthetic Float64 image stack where every pixel stores its {axis}-coordinate. Width and height define the slice shape, depth defines the number of emitted slices, and z is taken from the slice index. These sources are useful when building coordinate-aware models and diagnostics."
 
   let private biasModelDescription =
-      "Fits a low-order 3D polynomial bias field to streamed image slices. The z-coordinate is the slice index, so this works naturally with readRandom: sample slices to estimate the model, then connect the resulting BiasModel to correctBias on the full stream. The masked variant only uses non-zero mask pixels for fitting."
+      "Fits a low-order 3D polynomial bias field to streamed image slices. The z-coordinate is the original source slice index, so this works naturally with readRandom: sample slices to estimate the model, then connect the resulting BiasModel to correctBias on the full stream. Source depth is the full source stack depth used to normalize z, not the number of sampled slices. The masked variant only uses non-zero mask pixels for fitting."
 
   let private correctBiasDescription =
       "Subtracts a fitted polynomial BiasModel from each streamed slice and emits Float64 corrected images. The masked variant only subtracts inside non-zero mask pixels and leaves pixels outside the mask unchanged."
@@ -806,8 +806,7 @@ module BuiltInCatalog =
           Outputs = [ makePort "BiasModel" biasModel ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "order" "Order" "2" (BasicType.Numeric Int32)
-                makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32) ] }
+                makeParameter "order" "Order" "2" (BasicType.Numeric Int32) ] }
 
         { Id = "FitBiasModelMasked"
           DisplayName = "fitBiasModelMasked"
@@ -819,8 +818,7 @@ module BuiltInCatalog =
           Outputs = [ makePort "BiasModel" biasModel ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "order" "Order" "2" (BasicType.Numeric Int32)
-                makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32) ] }
+                makeParameter "order" "Order" "2" (BasicType.Numeric Int32) ] }
 
         { Id = "Volume"
           DisplayName = "volume"

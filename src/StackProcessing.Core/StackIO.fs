@@ -1351,7 +1351,10 @@ let private readChunkSlicesExact<'T when 'T: equality and 'T: (new: unit -> 'T) 
         let fileName = files[i]
         if pl.debug then
             printfn $"[{name}] Reading chunk slice {i}: {fileName} as {typeof<'T>.Name}"
-        let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+        let chunk =
+            Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+            |> Chunk.withIndex (0, 0, i)
+            |> Chunk.withSourceDepth (uint files.Length)
         try
             readSliceIntoOffset fileName 0 chunk 0
             chunk
@@ -1825,7 +1828,7 @@ let private readSelectedChunkSlices<'T when 'T: equality and 'T: (new: unit -> '
     (name: string)
     (inputDir: string)
     (suffix: string)
-    (selectPages: (string * int)[] -> (string * int)[])
+    (selectPages: (int * string * int)[] -> (int * string * int)[])
     (sourcePeekFields: (string * string) list)
     (pl: Plan<unit, unit>)
     : Plan<unit, Chunk<'T>> =
@@ -1835,7 +1838,10 @@ let private readSelectedChunkSlices<'T when 'T: equality and 'T: (new: unit -> '
         stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
 
     let sourcePages = getStackPagesForFiles sourceFiles
-    let pages = selectPages sourcePages
+    let indexedSourcePages =
+        sourcePages
+        |> Array.mapi (fun z (fileName, pageIndex) -> z, fileName, pageIndex)
+    let pages = selectPages indexedSourcePages
     if pages.Length = 0 then
         stopWithInputError $"{name} selected no {suffixDescription suffix} files from input stack directory: {inputDir}"
 
@@ -1864,10 +1870,13 @@ let private readSelectedChunkSlices<'T when 'T: equality and 'T: (new: unit -> '
                  @ sourcePeekFields))
 
     let mapper (i: int) =
-        let fileName, pageIndex = pages[i]
+        let sourceZ, fileName, pageIndex = pages[i]
         if pl.debug then
-            printfn $"[{name}] Reading chunk slice {i}: {fileName} page {pageIndex} as {typeof<'T>.Name}"
-        let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+            printfn $"[{name}] Reading chunk slice {i} from source z {sourceZ}: {fileName} page {pageIndex} as {typeof<'T>.Name}"
+        let chunk =
+            Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+            |> Chunk.withIndex (0, 0, sourceZ)
+            |> Chunk.withSourceDepth (uint sourcePages.Length)
         try
             readSliceIntoOffset fileName pageIndex chunk 0
             chunk
@@ -2109,7 +2118,10 @@ let private readChunkVolumeExact<'T when 'T: equality and 'T: (new: unit -> 'T) 
         if pl.debug then
             printfn $"[readChunkVolume] Reading TIFF page {index} from {filename} as {typeof<'T>.Name}"
 
-        let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+        let chunk =
+            Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+            |> Chunk.withIndex (0, 0, index)
+            |> Chunk.withSourceDepth (uint depth)
         try
             readSliceIntoOffset filename index chunk 0
             chunk
@@ -2178,6 +2190,124 @@ let private randomIndices count depth =
     let rng = Random()
     Array.init (int count) (fun _ -> rng.Next(depth))
 
+let sliceIndicesRandom
+    (count: uint)
+    inputDir
+    suffix
+    (pl: Plan<unit, unit>)
+    : Plan<unit, uint> =
+    let name = "sliceIndicesRandom"
+    let sourceFiles = getStackFiles inputDir suffix
+    if sourceFiles.Length = 0 then
+        stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
+
+    let sourceDepth = getStackPagesForFiles sourceFiles |> Array.length
+    let selected = randomIndices count sourceDepth |> Array.map uint
+    let mapper (i: int) =
+        if pl.debug then
+            printfn $"[{name}] Slice index {i}: source z {selected[i]}"
+        selected[i]
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memoryNeed _ = uint64 sizeof<uint>
+    let elementTransformation _ = 1UL
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel = StageTimeCostModel.zero Source
+    let stage =
+        Stage.init name count mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    let sourcePeek =
+        SourcePeek.create
+            name
+            (uint64 sizeof<uint>)
+            (Some(uint64 count))
+            (Map.ofList
+                [ "kind", "slice-indices"
+                  "inputDir", inputDir
+                  "suffix", suffix
+                  "count", string count
+                  "sourceDepth", string sourceDepth ])
+
+    Plan.createWithOptimizer stage pl.memAvail (uint64 sizeof<uint>) (uint64 sizeof<uint>) (uint64 count) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
+    |> Plan.withSourcePeek sourcePeek
+
+let private readIndexedChunkSlicesExact<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    inputDir
+    suffix
+    : Stage<uint, Chunk<'T>> =
+    let name = $"readAtIndices.{typeof<'T>.Name}"
+    ensureDirectTiffChunkRead<'T> suffix
+    let sourceFiles = getStackFiles inputDir suffix
+    if sourceFiles.Length = 0 then
+        stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
+
+    let sourcePages = getStackPagesForFiles sourceFiles
+    let readPlan = inspectChunkTiffSliceForRead<'T> sourceFiles[0]
+    let width = readPlan.Width
+    let height = readPlan.Height
+    let readSliceIntoOffset = scalarTiffReaderForPlan<'T> readPlan
+    let elementBytes = uint64 readPlan.RowBytes * uint64 height
+
+    let mapper debug (z: uint) =
+        let sourceZ = int z
+        if sourceZ < 0 || sourceZ >= sourcePages.Length then
+            invalidArg "z" $"{name} got slice index {z}, outside source depth {sourcePages.Length}."
+        let fileName, pageIndex = sourcePages[sourceZ]
+        if debug then
+            printfn $"[{name}] Reading source z {sourceZ}: {fileName} page {pageIndex} as {typeof<'T>.Name}"
+        let chunk =
+            Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+            |> Chunk.withIndex (0, 0, sourceZ)
+            |> Chunk.withSourceDepth (uint sourcePages.Length)
+        try
+            readSliceIntoOffset fileName pageIndex chunk 0
+            chunk
+        with
+        | _ ->
+            Chunk.decRef chunk
+            reraise()
+
+    Stage.map name mapper (fun _ -> elementBytes) (fun _ -> uint64 width * uint64 height)
+
+let private readIndexedChunkSlicesAs<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct and 'S :> ValueType
+                                               and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    inputDir
+    suffix
+    : Stage<uint, Chunk<'T>> =
+
+    let source = readIndexedChunkSlicesExact<'S> inputDir suffix
+    if typeof<'S> = typeof<'T> then
+        unbox (box source)
+    else
+        Stage.compose source castChunkStage<'S, 'T>
+
+let readChunkSlicesAtIndices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    inputDir
+    suffix
+    : Stage<uint, Chunk<'T>> =
+
+    if not (isTiffStackSuffix suffix) then
+        invalidArg "suffix" $"readAtIndices currently supports scalar TIFF stacks for UInt8, Int8, UInt16, Int16, UInt32, Int32, Float32, and Float64; got suffix '{suffix}'."
+
+    let files = getStackFiles inputDir suffix
+    if files.Length = 0 then
+        stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
+
+    match (getFileInfo files[0]).componentType with
+    | "UInt8" -> readIndexedChunkSlicesAs<uint8, 'T> inputDir suffix
+    | "Int8" -> readIndexedChunkSlicesAs<int8, 'T> inputDir suffix
+    | "UInt16" -> readIndexedChunkSlicesAs<uint16, 'T> inputDir suffix
+    | "Int16" -> readIndexedChunkSlicesAs<int16, 'T> inputDir suffix
+    | "UInt32" -> readIndexedChunkSlicesAs<uint32, 'T> inputDir suffix
+    | "Int32" -> readIndexedChunkSlicesAs<int32, 'T> inputDir suffix
+    | "Float32" -> readIndexedChunkSlicesAs<float32, 'T> inputDir suffix
+    | "Float64" -> readIndexedChunkSlicesAs<float, 'T> inputDir suffix
+    | sourceType ->
+        invalidOp $"readAtIndices cannot read TIFF source component type '{sourceType}' as {friendlyScalarTypeName typeof<'T>}."
+
 let private rangeIndices (first: uint) step (last: uint) depth =
     if step = 0 then
         invalidArg "step" "readRange step must be non-zero."
@@ -2201,10 +2331,57 @@ let private rangeIndices (first: uint) step (last: uint) depth =
             [| for index in startIndex .. step .. lastIndex -> index |]
 
 
-let private rangeFilter first step last files =
-    let sorted = Array.sort files
-    rangeIndices first step last sorted.Length
-    |> Array.map (fun index -> sorted[index])
+let private rangeFilter (first: uint) (step: int) (last: uint) (pages: (int * string * int)[]) =
+    rangeIndices first step last pages.Length
+    |> Array.map (fun index -> pages[index])
+
+let sliceIndicesRange
+    (first: uint)
+    (step: int)
+    (last: uint)
+    inputDir
+    suffix
+    (pl: Plan<unit, unit>)
+    : Plan<unit, uint> =
+    let name = "sliceIndicesRange"
+    let sourceFiles = getStackFiles inputDir suffix
+    if sourceFiles.Length = 0 then
+        stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
+
+    let sourceDepth = getStackPagesForFiles sourceFiles |> Array.length
+    let selected = rangeIndices first step last sourceDepth |> Array.map uint
+    let mapper (i: int) =
+        if pl.debug then
+            printfn $"[{name}] Slice index {i}: source z {selected[i]}"
+        selected[i]
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memoryNeed _ = uint64 sizeof<uint>
+    let elementTransformation _ = 1UL
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel = StageTimeCostModel.zero Source
+    let stage =
+        Stage.init name (uint selected.Length) mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    let sourcePeek =
+        SourcePeek.create
+            name
+            (uint64 sizeof<uint>)
+            (Some(uint64 selected.Length))
+            (Map.ofList
+                [ "kind", "slice-indices"
+                  "inputDir", inputDir
+                  "suffix", suffix
+                  "first", string first
+                  "step", string step
+                  "last", string last
+                  "sourceDepth", string sourceDepth ])
+
+    Plan.createWithOptimizer stage pl.memAvail (uint64 sizeof<uint>) (uint64 sizeof<uint>) (uint64 selected.Length) pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
+    |> Plan.withSourcePeek sourcePeek
 
 let readChunkSlicesRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     first
