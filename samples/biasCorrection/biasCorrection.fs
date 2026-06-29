@@ -31,7 +31,7 @@ let main args =
     let maskedModel =
         sampledZ
         >=>> (readAtIndices<float32> input ".tiff", readAtIndices<uint8> mask ".tiff")
-        >=> fitBiasModelMasked<float32> 2
+        >>=> fitBiasModelMasked<float32> 2
         |> drain
 
     let fullImage =

@@ -312,8 +312,8 @@ module PipelineCodeGenerator =
 
     let private pairCompositionOperator (node: SavedNode) =
         match node.FunctionId with
-        | "ImageOpImage" -> ">=>"
-        | _ -> ">=>"
+        | "ImageOpImage" -> ">>=>"
+        | _ -> ">>=>"
 
     let private safeIdentifier (value: string) =
         let chars =

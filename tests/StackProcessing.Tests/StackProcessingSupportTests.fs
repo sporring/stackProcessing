@@ -181,6 +181,9 @@ let private imagePlan (images: Image<'T> list) =
 let private scalarStage name f =
     Stage.map name (fun _ value -> f value) (fun _ -> 0UL) id
 
+let private pairStage name f =
+    Stage.map name (fun _ (left, right) -> f left right) (fun _ -> 0UL) id
+
 let stackProcessingSupportSuite =
     testSequenced <| testList "StackProcessing support coverage" [
         testCase ">=> composes a plan with a stage" <| fun _ ->
@@ -284,7 +287,7 @@ let stackProcessingSupportSuite =
             let actual =
                 scalarPlan [ 1; 2; 3 ]
                 >=>> (scalarStage "increment" ((+) 1), scalarStage "double" ((*) 2))
-                >>=> (+)
+                >>=> pairStage "add pair" (+)
                 |> drainList
 
             Expect.equal actual [ 4; 7; 10 ] ">>=> should combine paired values."

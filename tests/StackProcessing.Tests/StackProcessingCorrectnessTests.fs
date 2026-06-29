@@ -244,7 +244,7 @@ let private runPairSlicePipeline name suffix (left: Image<'In>) (right: Image<'I
     let rightPlan = source (2UL * 1024UL * 1024UL * 1024UL) |> read<'In> rightDir suffix
 
     zip leftPlan rightPlan
-    >>=> combine
+    >>=> SlimPipeline.Stage.map $"{name}.combine" (fun _ (left, right) -> combine left right) (fun _ -> 0UL) id
     >=> write outputDir suffix
     |> sink
 

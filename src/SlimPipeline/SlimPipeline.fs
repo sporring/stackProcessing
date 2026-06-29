@@ -2308,12 +2308,8 @@ module Plan =
 
         composePlan ">=>>" pl stage
 
-    let (>>=>) (pl: Plan<'In,'U*'V>) ((f: 'U -> 'V -> 'W)) : Plan<'In,'W>  = 
-        map ">>=>" (fun (u,v) -> f u v) pl
-(*
     let (>>=>) (pl: Plan<'In,'U*'V>) (stage: Stage<'U*'V,'W>) : Plan<'In,'W>  = 
         composePlan ">>=>" pl stage
-*)
 
     let (>>=>>) (pl: Plan<'In,'U*'V>) (stage1: Stage<'U,'S>, stage2: Stage<'V,'T>) : Plan<'In,'S*'T> =
         let memoryNeed nElemsPerSlice =

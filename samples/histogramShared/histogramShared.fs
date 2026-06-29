@@ -29,8 +29,7 @@ let main arg =
     histogramMaker
     >=>> (print (),plot plt)
     //>=>> (tap "left", tap "right")
-    >>=> fun _ _ -> ()
-//    >>=> ignorePairs ()
+    >>=> ignorePairs ()
     |> sink
 
     0
