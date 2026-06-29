@@ -21,12 +21,12 @@ type ImageGeom =
 let indexToPhysical (g:ImageGeom) (i:int) (j:int) (k:int) : V3 =
     // p = origin + direction * ( [i*spx, j*spy, k*spz] )
     let v = v3 (float i * g.Spacing.x) (float j * g.Spacing.y) (float k * g.Spacing.z)
-    add g.Origin (mulMV g.Direction v)
+    v3Add g.Origin (m3v3Mul g.Direction v)
 
 // Convert physical point to continuous index in image g:
 // c = inv(Direction) * (p - origin) / spacing
 let physicalToContIndex (g:ImageGeom) (invDir:M3) (p:V3) : V3 =
-    let q = mulMV invDir (sub p g.Origin)
+    let q = m3v3Mul invDir (v3Sub p g.Origin)
     v3 (q.x / g.Spacing.x) (q.y / g.Spacing.y) (q.z / g.Spacing.z)
 
 let inline clamp (lo:int) (hi:int) (v:int) = if v < lo then lo elif v > hi then hi else v
@@ -102,7 +102,7 @@ let trilinearSampleChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) an
 // -------------------------
 let requiredChunksForSliceTrilinear (winsz:int) (inG:ImageGeom) (outG:ImageGeom) (affOutToIn: Affine) (k:int) : seq<int*int*int> =
 
-    let invInDir = inv3 inG.Direction
+    let invInDir = m3Inv inG.Direction
 
     // corners in output index space
     let corners =
@@ -166,26 +166,26 @@ let resampleAffineChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and
     input |> List.iter (validateChunkSlice "resampleAffineChunk" inG.W inG.H)
     let slices = input |> List.toArray
 
-    let invInDir = inv3 inG.Direction
+    let invInDir = m3Inv inG.Direction
 
-    let stepI_out = mulMV outG.Direction (v3 outG.Spacing.x 0.0 0.0)
-    let stepJ_out = mulMV outG.Direction (v3 0.0 outG.Spacing.y 0.0)
-    let stepK_out = mulMV outG.Direction (v3 0.0 0.0 outG.Spacing.z)
+    let stepI_out = m3v3Mul outG.Direction (v3 outG.Spacing.x 0.0 0.0)
+    let stepJ_out = m3v3Mul outG.Direction (v3 0.0 outG.Spacing.y 0.0)
+    let stepK_out = m3v3Mul outG.Direction (v3 0.0 0.0 outG.Spacing.z)
 
-    let stepI_in_phys = mulMV affOutToIn.A stepI_out
-    let stepJ_in_phys = mulMV affOutToIn.A stepJ_out
-    let stepK_in_phys = mulMV affOutToIn.A stepK_out
+    let stepI_in_phys = m3v3Mul affOutToIn.A stepI_out
+    let stepJ_in_phys = m3v3Mul affOutToIn.A stepJ_out
+    let stepK_in_phys = m3v3Mul affOutToIn.A stepK_out
 
     let stepI_in_cont =
-        let q = mulMV invInDir stepI_in_phys
+        let q = m3v3Mul invInDir stepI_in_phys
         v3 (q.x / inG.Spacing.x) (q.y / inG.Spacing.y) (q.z / inG.Spacing.z)
 
     let stepJ_in_cont =
-        let q = mulMV invInDir stepJ_in_phys
+        let q = m3v3Mul invInDir stepJ_in_phys
         v3 (q.x / inG.Spacing.x) (q.y / inG.Spacing.y) (q.z / inG.Spacing.z)
 
     let stepK_in_cont =
-        let q = mulMV invInDir stepK_in_phys
+        let q = m3v3Mul invInDir stepK_in_phys
         v3 (q.x / inG.Spacing.x) (q.y / inG.Spacing.y) (q.z / inG.Spacing.z)
 
     let outputs = ResizeArray<Chunk<'T>>(outG.D)
@@ -206,8 +206,8 @@ let resampleAffineChunkSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and
                     for i in 0 .. outG.W - 1 do
                         outputPixels[flatIndex2 outG.W i j] <-
                             trilinearSampleChunkSlices inG.W inG.H inG.D background lerp c slices
-                        c <- add c stepI_in_cont
-                    rowStart <- add rowStart stepJ_in_cont
+                        c <- v3Add c stepI_in_cont
+                    rowStart <- v3Add rowStart stepJ_in_cont
 
                 outputs.Add output
             with

@@ -47,22 +47,22 @@ let tinyLinAlgSuite =
             let a = v3 1.0 -2.0 3.5
             let b = v3 4.0 5.0 -6.0
 
-            expectV3 (add a b) (v3 5.0 3.0 -2.5) "add"
-            expectV3 (sub a b) (v3 -3.0 -7.0 9.5) "sub"
-            expectV3 (scale 2.0 a) (v3 2.0 -4.0 7.0) "scale"
-            expectV3 (scale -0.5 (add a b)) (v3 -2.5 -1.5 1.25) "scale after add"
+            expectV3 (v3Add a b) (v3 5.0 3.0 -2.5) "v3Add"
+            expectV3 (v3Sub a b) (v3 -3.0 -7.0 9.5) "v3Sub"
+            expectV3 (v3Scale 2.0 a) (v3 2.0 -4.0 7.0) "v3Scale"
+            expectV3 (v3Scale -0.5 (v3Add a b)) (v3 -2.5 -1.5 1.25) "v3Scale after v3Add"
             Expect.equal (v3 1.0 -2.0 3.5) a "v3 should construct the public V3 record shape."
 
-        testCase "matrix-vector multiplication uses row-major M3 fields" <| fun _ ->
+        testCase "m3v3Mul uses row-major M3 fields" <| fun _ ->
             let m =
                 { m00 = 1.0; m01 = 2.0; m02 = 3.0
                   m10 = 4.0; m11 = 5.0; m12 = 6.0
                   m20 = 7.0; m21 = 8.0; m22 = 9.0 }
 
-            expectV3 (mulMV m (v3 1.0 2.0 3.0)) (v3 14.0 32.0 50.0) "mulMV"
-            expectV3 (mulMV identity (v3 -4.0 0.5 9.0)) (v3 -4.0 0.5 9.0) "identity mulMV"
+            expectV3 (m3v3Mul m (v3 1.0 2.0 3.0)) (v3 14.0 32.0 50.0) "m3v3Mul"
+            expectV3 (m3v3Mul identity (v3 -4.0 0.5 9.0)) (v3 -4.0 0.5 9.0) "identity m3v3Mul"
 
-        testCase "det3 covers common matrix families" <| fun _ ->
+        testCase "m3Det covers common matrix families" <| fun _ ->
             let diagonal =
                 { m00 = 2.0; m01 = 0.0; m02 = 0.0
                   m10 = 0.0; m11 = -3.0; m12 = 0.0
@@ -78,22 +78,22 @@ let tinyLinAlgSuite =
                   m10 = 1.0; m11 = 0.0; m12 = 0.0
                   m20 = 0.0; m21 = 0.0; m22 = 1.0 }
 
-            expectFloat (det3 identity) 1.0 "identity determinant"
-            expectFloat (det3 diagonal) -24.0 "diagonal determinant"
-            expectFloat (det3 triangular) -30.0 "triangular determinant"
-            expectFloat (det3 swapXY) -1.0 "orientation reversing determinant"
+            expectFloat (m3Det identity) 1.0 "identity determinant"
+            expectFloat (m3Det diagonal) -24.0 "diagonal determinant"
+            expectFloat (m3Det triangular) -30.0 "triangular determinant"
+            expectFloat (m3Det swapXY) -1.0 "orientation reversing determinant"
 
-        testCase "det3 and inv3 agree with matrix identity" <| fun _ ->
+        testCase "m3Det and m3Inv agree with matrix identity" <| fun _ ->
             let m =
                 { m00 = 4.0; m01 = 7.0; m02 = 2.0
                   m10 = 3.0; m11 = 6.0; m12 = 1.0
                   m20 = 2.0; m21 = 5.0; m22 = 3.0 }
 
-            expectFloat (det3 m) 9.0 "determinant"
-            expectM3 (mulMM m (inv3 m)) identity "m * inv(m)"
-            expectM3 (mulMM (inv3 m) m) identity "inv(m) * m"
+            expectFloat (m3Det m) 9.0 "determinant"
+            expectM3 (mulMM m (m3Inv m)) identity "m * inv(m)"
+            expectM3 (mulMM (m3Inv m) m) identity "inv(m) * m"
 
-        testCase "inv3 handles identity diagonal and orientation reversing matrices" <| fun _ ->
+        testCase "m3Inv handles identity diagonal and orientation reversing matrices" <| fun _ ->
             let diagonal =
                 { m00 = 2.0; m01 = 0.0; m02 = 0.0
                   m10 = 0.0; m11 = -4.0; m12 = 0.0
@@ -104,23 +104,23 @@ let tinyLinAlgSuite =
                   m10 = 1.0; m11 = 0.0; m12 = 0.0
                   m20 = 0.0; m21 = 0.0; m22 = 1.0 }
 
-            expectM3 (inv3 identity) identity "identity inverse"
+            expectM3 (m3Inv identity) identity "identity inverse"
             expectM3
-                (inv3 diagonal)
+                (m3Inv diagonal)
                 { m00 = 0.5; m01 = 0.0; m02 = 0.0
                   m10 = 0.0; m11 = -0.25; m12 = 0.0
                   m20 = 0.0; m21 = 0.0; m22 = 2.0 }
                 "diagonal inverse"
-            expectM3 (inv3 swapXY) swapXY "axis swap inverse"
+            expectM3 (m3Inv swapXY) swapXY "axis swap inverse"
 
-        testCase "inv3 rejects singular matrices" <| fun _ ->
+        testCase "m3Inv rejects singular matrices" <| fun _ ->
             let singular =
                 { m00 = 1.0; m01 = 2.0; m02 = 3.0
                   m10 = 2.0; m11 = 4.0; m12 = 6.0
                   m20 = 7.0; m21 = 8.0; m22 = 9.0 }
 
-            Expect.throws (fun () -> inv3 singular |> ignore) "Singular matrices should not be inverted."
-            Expect.throws (fun () -> inv3 { identity with m22 = 1e-20 } |> ignore) "Nearly singular matrices should respect the singularity threshold."
+            Expect.throws (fun () -> m3Inv singular |> ignore) "Singular matrices should not be inverted."
+            Expect.throws (fun () -> m3Inv { identity with m22 = 1e-20 } |> ignore) "Nearly singular matrices should respect the singularity threshold."
 
         testCase "symmetricEigen sorts eigenpairs for symmetric matrices" <| fun _ ->
             let diagonal =
@@ -183,7 +183,7 @@ let tinyLinAlgSuite =
             Expect.floatClose Accuracy.high (abs ((eigen[0] |> snd)[1])) 0.0 "First PCA eigenvector y"
             Expect.floatClose Accuracy.high (abs ((eigen[0] |> snd)[2])) 0.0 "First PCA eigenvector z"
 
-        testCase "affinePoint follows SimpleITK center convention" <| fun _ ->
+        testCase "affinePoint applies linear part and translation directly" <| fun _ ->
             let rotateZ90 =
                 { m00 = 0.0; m01 = -1.0; m02 = 0.0
                   m10 = 1.0; m11 = 0.0; m12 = 0.0
@@ -191,31 +191,22 @@ let tinyLinAlgSuite =
 
             let affine =
                 { A = rotateZ90
-                  T = v3 10.0 0.5 -2.0
-                  C = v3 1.0 1.0 0.0 }
+                  T = v3 10.0 0.5 -2.0 }
 
-            expectV3 (affinePoint affine (v3 2.0 1.0 3.0)) (v3 11.0 2.5 1.0) "affinePoint"
+            expectV3 (affinePoint affine (v3 2.0 1.0 3.0)) (v3 9.0 2.5 1.0) "affinePoint"
 
-        testCase "affinePoint composes identity linear part with translation and center" <| fun _ ->
+        testCase "affinePoint composes identity linear part with translation" <| fun _ ->
             let affine =
                 { A = identity
-                  T = v3 -2.0 5.0 0.25
-                  C = v3 100.0 -50.0 7.0 }
+                  T = v3 -2.0 5.0 0.25 }
 
-            expectV3 (affinePoint affine (v3 4.0 -3.0 2.0)) (v3 2.0 2.0 2.25) "identity affine translates independent of center"
+            expectV3 (affinePoint affine (v3 4.0 -3.0 2.0)) (v3 2.0 2.0 2.25) "identity affine translates"
 
-        testCase "affinePoint handles scaling around a nonzero center" <| fun _ ->
-            let scaleAroundCenter =
-                { m00 = 2.0; m01 = 0.0; m02 = 0.0
-                  m10 = 0.0; m11 = 3.0; m12 = 0.0
-                  m20 = 0.0; m21 = 0.0; m22 = -1.0 }
+        testCase "randomRigidTransformAround folds the center into translation" <| fun _ ->
+            let center = v3 4.0 5.0 6.0
+            let affine = randomRigidTransformAround 123 center 0.0
 
-            let affine =
-                { A = scaleAroundCenter
-                  T = v3 0.5 -1.0 2.0
-                  C = v3 1.0 2.0 -3.0 }
-
-            expectV3 (affinePoint affine (v3 2.0 4.0 -1.0)) (v3 3.5 7.0 -3.0) "scaled affine"
+            expectV3 (affinePoint affine center) center "rotation around center should keep center fixed when translation radius is zero"
 
         testCase "dense least squares recovers coefficients for overdetermined systems" <| fun _ ->
             let a =

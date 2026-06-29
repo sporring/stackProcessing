@@ -28,8 +28,7 @@ let main args =
 
     let affine =
         { A = identity
-          T = v3 4.0 -2.0 0.0
-          C = v3 32.0 32.0 4.0 }
+          T = v3 4.0 -2.0 0.0 }
 
     src
     |> read<float32> input ".tiff"

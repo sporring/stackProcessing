@@ -9,13 +9,9 @@
       "parameters": [
         { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
         { "key": "input", "value": "affinePoints.csv", "useInput": false } ] },
-    { "id": "registration", "functionId": "AffineRegistration", "x": 320.0, "y": 150.0,
+    { "id": "registration", "functionId": "AffineRegistrationMatrix", "x": 320.0, "y": 150.0,
       "parameters": [
-        { "key": "maxIterations", "value": "1", "useInput": false },
-        { "key": "initialLinearStep", "value": "0.02", "useInput": false },
-        { "key": "initialTranslationStep", "value": "1.0", "useInput": false },
-        { "key": "minStep", "value": "0.001", "useInput": false },
-        { "key": "stepShrink", "value": "0.5", "useInput": false } ] },
+        { "key": "regularizer", "value": "1e-12", "useInput": false } ] },
     { "id": "write", "functionId": "WriteMatrix", "x": 560.0, "y": 150.0,
       "parameters": [
         { "key": "output", "value": "../tmp/affineKeypointRegistration", "useInput": false },

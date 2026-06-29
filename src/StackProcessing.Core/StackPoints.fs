@@ -24,6 +24,21 @@ type CoordinatePoint =
 type PointSet =
     { Points: CoordinatePoint list }
 
+let coordinatePoint x y z : CoordinatePoint =
+    { X = x
+      Y = y
+      Z = z
+      Scale = 1.0
+      Response = 1.0 }
+
+let toVector3 (p: CoordinatePoint) = v3 p.X p.Y p.Z
+let ofVector3 (v: V3) = coordinatePoint v.x v.y v.z
+let toPointSet (a: V3 list) =
+    let lst = List.map (fun (p: V3) -> coordinatePoint p.x p.y p.z) a
+    {Points=lst}
+let ofPointSet (a: PointSet) =
+    List.map (fun p -> v3 p.X p.Y p.Z) a.Points
+
 module PointSet =
     let empty = { Points = [] }
 
@@ -66,35 +81,49 @@ let private splitCsvLine (line: string) =
     line.Split(',')
     |> Array.map _.Trim()
 
+let readPointSetFile (path: string) : PointSet =
+    let lines =
+        File.ReadLines(path)
+        |> Seq.filter (fun line -> not (String.IsNullOrWhiteSpace line))
+        |> Seq.toArray
+
+    let start =
+        if lines.Length > 0 && lines[0].ToLowerInvariant().Contains("x") then 1 else 0
+
+    let points =
+        lines
+        |> Seq.skip start
+        |> Seq.map (fun line ->
+            let columns = splitCsvLine line
+            if columns.Length < 3 then
+                failwith $"Point-set CSV rows must contain at least x,y,z columns, but got '{line}'."
+
+            { X = parseFloat columns[0]
+              Y = parseFloat columns[1]
+              Z = parseFloat columns[2]
+              Scale = if columns.Length > 3 then parseFloat columns[3] else Double.NaN
+              Response = if columns.Length > 4 then parseFloat columns[4] else Double.NaN })
+        |> Seq.toList
+
+    { Points = points }
+
+let writePointSetFile (path: string) (points: PointSet) =
+    let directory = Path.GetDirectoryName(path)
+    if not (String.IsNullOrWhiteSpace directory) then
+        Directory.CreateDirectory(directory) |> ignore
+
+    use writer = new StreamWriter(path, false)
+    writer.WriteLine("x,y,z,scale,response")
+
+    for point in points.Points do
+        writer.WriteLine($"{f point.X},{f point.Y},{f point.Z},{f point.Scale},{f point.Response}")
+
 let readPointSet (path: string) (pl: Plan<unit, unit>) : Plan<unit, PointSet> =
     let mapper (_idx: int) =
         if pl.debug then
             printfn $"[readPointSet] Reading {path}"
 
-        let lines =
-            File.ReadLines(path)
-            |> Seq.filter (fun line -> not (String.IsNullOrWhiteSpace line))
-            |> Seq.toArray
-
-        let start =
-            if lines.Length > 0 && lines[0].ToLowerInvariant().Contains("x") then 1 else 0
-
-        let points =
-            lines
-            |> Seq.skip start
-            |> Seq.map (fun line ->
-                let columns = splitCsvLine line
-                if columns.Length < 3 then
-                    failwith $"Point-set CSV rows must contain at least x,y,z columns, but got '{line}'."
-
-                { X = parseFloat columns[0]
-                  Y = parseFloat columns[1]
-                  Z = parseFloat columns[2]
-                  Scale = if columns.Length > 3 then parseFloat columns[3] else Double.NaN
-                  Response = if columns.Length > 4 then parseFloat columns[4] else Double.NaN })
-            |> Seq.toList
-
-        { Points = points }
+        readPointSetFile path
 
     let stage =
         Stage.init "readPointSet" 1u mapper (ProfileTransition.create Unit Streaming) (fun _ -> 0UL) id
@@ -690,7 +719,7 @@ let harris3DKeypointsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T
                           m10 = ixy[x, y, z]; m11 = iyy[x, y, z]; m12 = iyz[x, y, z]
                           m20 = ixz[x, y, z]; m21 = iyz[x, y, z]; m22 = izz[x, y, z] }
                     let trace = m.m00 + m.m11 + m.m22
-                    response[x, y, z] <- det3 m - k * trace * trace * trace
+                    response[x, y, z] <- m3Det m - k * trace * trace * trace
 
         keypointsFromChunkResponse threshold (max sigma rho) window response)
 
@@ -744,7 +773,7 @@ let forstner3DKeypointsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 
                           m10 = ixy[x, y, z]; m11 = iyy[x, y, z]; m12 = iyz[x, y, z]
                           m20 = ixz[x, y, z]; m21 = iyz[x, y, z]; m22 = izz[x, y, z] }
                     let trace = m.m00 + m.m11 + m.m22
-                    response[x, y, z] <- if trace <= 1.0e-12 then 0.0 else det3 m / trace
+                    response[x, y, z] <- if trace <= 1.0e-12 then 0.0 else m3Det m / trace
 
         keypointsFromChunkResponse threshold (max sigma rho) window response)
 

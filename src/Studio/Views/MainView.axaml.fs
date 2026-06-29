@@ -467,7 +467,8 @@ type MainView() as this =
             || pipelineNode.State.Definition.Id = "SurfaceArea"
             || pipelineNode.State.Definition.Id = "Volume"
             || pipelineNode.State.Definition.Id = "PointPairDistances"
-            || pipelineNode.State.Definition.Id = "AffineRegistration"
+            || pipelineNode.State.Definition.Id = "AffineRegistrationMatrix"
+            || pipelineNode.State.Definition.Id = "AffineRegistrationInverseMatrix"
         | _ -> false
 
     let isDataNode (node: INode) =

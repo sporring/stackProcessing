@@ -1,6 +1,7 @@
 module StackRegistration
 
 open System
+open FSharp.Control
 open SlimPipeline
 open StackCore
 open StackPoints
@@ -11,7 +12,8 @@ type AffineRegistrationOptions =
       InitialLinearStep: float
       InitialTranslationStep: float
       MinStep: float
-      StepShrink: float }
+      StepShrink: float
+      Regularizer: float }
 
 type AffineRegistrationResult =
     { Transform: Affine
@@ -25,7 +27,8 @@ let defaultAffineRegistrationOptions =
       InitialLinearStep = 0.05
       InitialTranslationStep = 1.0
       MinStep = 1.0e-4
-      StepShrink = 0.5 }
+      StepShrink = 0.5
+      Regularizer = 1.0e-12 }
 
 let private pointToV3 point =
     v3 point.X point.Y point.Z
@@ -163,52 +166,122 @@ let transformPointSet (transform: Affine) (points: PointSet) =
             |> v3ToPoint point) }
 
 let inverseAffine (transform: Affine) =
-    let inverseA = inv3 transform.A
+    let inverseA = m3Inv transform.A
     { A = inverseA
-      T = scale -1.0 (mulMV inverseA transform.T)
-      C = transform.C }
+      T = v3Scale -1.0 (m3v3Mul inverseA transform.T) }
 
-let private affineFromParameters (center: V3) (parameters: float[]) =
+let private affineFromParameters (parameters: float[]) =
     { A =
         { m00 = parameters[0]; m01 = parameters[1]; m02 = parameters[2]
           m10 = parameters[3]; m11 = parameters[4]; m12 = parameters[5]
           m20 = parameters[6]; m21 = parameters[7]; m22 = parameters[8] }
-      T = v3 parameters[9] parameters[10] parameters[11]
-      C = center }
+      T = v3 parameters[9] parameters[10] parameters[11] }
 
-let affineToMatrix (transform: Affine) =
-    let c = transform.C
-    let ac = mulMV transform.A c
-    let offset = add transform.T (sub c ac)
+let toHomogeneousMatrix (transform: Affine) =
     let matrix = Array2D.zeroCreate<float> 4 4
     matrix[0, 0] <- transform.A.m00
     matrix[0, 1] <- transform.A.m01
     matrix[0, 2] <- transform.A.m02
-    matrix[0, 3] <- offset.x
+    matrix[0, 3] <- transform.T.x
     matrix[1, 0] <- transform.A.m10
     matrix[1, 1] <- transform.A.m11
     matrix[1, 2] <- transform.A.m12
-    matrix[1, 3] <- offset.y
+    matrix[1, 3] <- transform.T.y
     matrix[2, 0] <- transform.A.m20
     matrix[2, 1] <- transform.A.m21
     matrix[2, 2] <- transform.A.m22
-    matrix[2, 3] <- offset.z
+    matrix[2, 3] <- transform.T.z
     matrix[3, 3] <- 1.0
     vectorizeMatrix matrix
 
-let matrixToAffine (matrix: VectorizedMatrix) =
+let ofHomogeneousMatrix (matrix: VectorizedMatrix) : Affine =
     let matrix = unvectorizeMatrix matrix
     if matrix.GetLength(0) <> 4 || matrix.GetLength(1) <> 4 then
-        invalidArg "matrix" "matrixToAffine expects a 4x4 homogeneous affine matrix."
+        invalidArg "matrix" "ofHomogeneousMatrix expects a 4x4 homogeneous affine matrix."
     if abs (matrix[3, 0]) > 1.0e-12 || abs (matrix[3, 1]) > 1.0e-12 || abs (matrix[3, 2]) > 1.0e-12 || abs (matrix[3, 3] - 1.0) > 1.0e-12 then
-        invalidArg "matrix" "matrixToAffine expects the last row to be [0, 0, 0, 1]."
+        invalidArg "matrix" "ofHomogeneousMatrix expects the last row to be [0, 0, 0, 1]."
 
     { A =
         { m00 = matrix[0, 0]; m01 = matrix[0, 1]; m02 = matrix[0, 2]
           m10 = matrix[1, 0]; m11 = matrix[1, 1]; m12 = matrix[1, 2]
           m20 = matrix[2, 0]; m21 = matrix[2, 1]; m22 = matrix[2, 2] }
-      T = v3 matrix[0, 3] matrix[1, 3] matrix[2, 3]
-      C = v3 0.0 0.0 0.0 }
+      T = v3 matrix[0, 3] matrix[1, 3] matrix[2, 3] }
+
+let private affineFromHomogeneousRows (a: float[,]) =
+    { A =
+        { m00 = a[0, 0]; m01 = a[0, 1]; m02 = a[0, 2]
+          m10 = a[1, 0]; m11 = a[1, 1]; m12 = a[1, 2]
+          m20 = a[2, 0]; m21 = a[2, 1]; m22 = a[2, 2] }
+      T = v3 a[0, 3] a[1, 3] a[2, 3] }
+
+let private affineRegistrationRls (regularizer: float) (input: AsyncSeq<PointSet * PointSet>) =
+    async {
+        if regularizer <= 0.0 then
+            invalidArg "regularizer" "affineRegistration RLS regularizer must be positive."
+
+        let p = Array2D.zeroCreate<float> 4 4
+        let a = Array2D.zeroCreate<float> 3 4
+        let x = Array.zeroCreate<float> 4
+        let px = Array.zeroCreate<float> 4
+        let k = Array.zeroCreate<float> 4
+        let mutable count = 0
+
+        for i in 0 .. 3 do
+            p[i, i] <- 1.0 / regularizer
+
+        let addPoint (source: CoordinatePoint) (target: CoordinatePoint) =
+            x[0] <- source.X
+            x[1] <- source.Y
+            x[2] <- source.Z
+            x[3] <- 1.0
+
+            for row in 0 .. 3 do
+                let mutable value = 0.0
+                for column in 0 .. 3 do
+                    value <- value + p[row, column] * x[column]
+                px[row] <- value
+
+            let mutable denominator = 1.0
+            for i in 0 .. 3 do
+                denominator <- denominator + x[i] * px[i]
+
+            for i in 0 .. 3 do
+                k[i] <- px[i] / denominator
+
+            let targetValues = [| target.X; target.Y; target.Z |]
+            for row in 0 .. 2 do
+                let mutable predicted = 0.0
+                for column in 0 .. 3 do
+                    predicted <- predicted + a[row, column] * x[column]
+
+                let error = targetValues[row] - predicted
+                for column in 0 .. 3 do
+                    a[row, column] <- a[row, column] + error * k[column]
+
+            for row in 0 .. 3 do
+                for column in 0 .. 3 do
+                    p[row, column] <- p[row, column] - k[row] * px[column]
+
+            count <- count + 1
+
+        do!
+            input
+            |> AsyncSeq.iterAsync (fun (fixedPoints, movingPoints) ->
+                async {
+                    if fixedPoints.Points.Length <> movingPoints.Points.Length then
+                        invalidArg
+                            "input"
+                            $"affineRegistration expected matched point sets with equal length, got {fixedPoints.Points.Length} fixed and {movingPoints.Points.Length} moving points."
+
+                    List.zip fixedPoints.Points movingPoints.Points
+                    |> List.iter (fun (fixedPoint, movingPoint) -> addPoint fixedPoint movingPoint)
+                })
+
+        if count < 4 then
+            invalidOp $"affineRegistration needs at least four matched 3D point pairs, got {count}."
+
+        return affineFromHomogeneousRows a
+    }
 
 let private transformPoints transform (points: CoordinatePoint[]) =
     points
@@ -234,24 +307,22 @@ let affineRegistration
     let movingPoints = movingPoints |> Seq.toArray
     let fixedCenter = centroid fixedPoints
     let movingCenter = centroid movingPoints
-    let center = movingCenter
-
     let parameters =
         [| 1.0; 0.0; 0.0
            0.0; 1.0; 0.0
            0.0; 0.0; 1.0
-           fixedCenter.x - movingCenter.x
-           fixedCenter.y - movingCenter.y
-           fixedCenter.z - movingCenter.z |]
+           movingCenter.x - fixedCenter.x
+           movingCenter.y - fixedCenter.y
+           movingCenter.z - fixedCenter.z |]
 
     let steps =
         [| yield! Array.create 9 options.InitialLinearStep
            yield! Array.create 3 options.InitialTranslationStep |]
 
     let objective parameters =
-        let transform = affineFromParameters center parameters
-        let transformedMoving = transformPoints transform movingPoints
-        earthMoversDistance fixedPoints transformedMoving
+        let transform = affineFromParameters parameters
+        let transformedFixed = transformPoints transform fixedPoints
+        earthMoversDistance movingPoints transformedFixed
 
     let mutable bestParameters = Array.copy parameters
     let mutable bestDistance = objective bestParameters
@@ -277,7 +348,7 @@ let affineRegistration
 
         iteration <- iteration + 1
 
-    let transform = affineFromParameters center bestParameters
+    let transform = affineFromParameters bestParameters
 
     { Transform = transform
       InverseTransform = inverseAffine transform
@@ -285,13 +356,29 @@ let affineRegistration
       Iterations = iteration
       Converged = (steps |> Array.max) <= options.MinStep }
 
-let affineRegistrationMatrices options : Stage<PointSet * PointSet, VectorizedMatrix> =
-    Stage.map
-        "affineRegistration"
-        (fun _ (fixedPoints, movingPoints) ->
-            let result = affineRegistration options fixedPoints.Points movingPoints.Points
-            [ affineToMatrix result.Transform
-              affineToMatrix result.InverseTransform ])
-        (fun _ -> 0UL)
-        (fun pointSets -> pointSets * 2UL)
-    --> StackCore.flattenList ()
+let affineRegistrationMatrix options : Stage<PointSet * PointSet, VectorizedMatrix> =
+    Stage.reduce
+        "affineRegistrationMatrix"
+        (fun _ input ->
+            async {
+                let! transform = affineRegistrationRls options.Regularizer input
+                return toHomogeneousMatrix transform
+            })
+        Streaming
+        (fun _ -> uint64 (16 * sizeof<float> + 12 * sizeof<float>))
+        (fun _ -> 1UL)
+
+let affineRegistrationInverseMatrix options : Stage<PointSet * PointSet, VectorizedMatrix> =
+    Stage.reduce
+        "affineRegistrationInverseMatrix"
+        (fun _ input ->
+            async {
+                let! transformMatrix = affineRegistrationRls options.Regularizer input
+                return
+                    transformMatrix
+                    |> inverseAffine
+                    |> toHomogeneousMatrix
+            })
+        Streaming
+        (fun _ -> uint64 (16 * sizeof<float> + 12 * sizeof<float>))
+        (fun _ -> 1UL)

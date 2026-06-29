@@ -103,10 +103,10 @@ let transformToMatrix transform =
     rowsToVectorized transform.Matrix
 
 let transformFromAffine affine =
-    affine |> affineToMatrix |> transformFromMatrix
+    affine |> toHomogeneousMatrix |> transformFromMatrix
 
 let transformToAffine transform =
-    transform |> transformToMatrix |> matrixToAffine
+    transform |> transformToMatrix |> ofHomogeneousMatrix
 
 let createManifest name units =
     { Version = 1

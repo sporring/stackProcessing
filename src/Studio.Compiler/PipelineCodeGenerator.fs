@@ -281,13 +281,15 @@ module PipelineCodeGenerator =
         | "AppendVectorElement" -> Some "appendVectorElement<float>"
         | "VectorDot" -> Some "vectorDot"
         | "VectorCross3D" -> Some "vectorCross3D"
-        | "AffineRegistration" ->
-            let maxIterations = savedParamValue "maxIterations" node |> numericLiteral Int32
-            let initialLinearStep = savedParamValue "initialLinearStep" node |> numericLiteral Float64
-            let initialTranslationStep = savedParamValue "initialTranslationStep" node |> numericLiteral Float64
-            let minStep = savedParamValue "minStep" node |> numericLiteral Float64
-            let stepShrink = savedParamValue "stepShrink" node |> numericLiteral Float64
-            Some $"affineRegistrationMatrices {{ defaultAffineRegistrationOptions with MaxIterations = {maxIterations}; InitialLinearStep = {initialLinearStep}; InitialTranslationStep = {initialTranslationStep}; MinStep = {minStep}; StepShrink = {stepShrink} }}"
+        | "AffineRegistrationMatrix"
+        | "AffineRegistrationInverseMatrix" ->
+            let regularizer = savedParamValue "regularizer" node |> numericLiteral Float64
+            let functionName =
+                if node.FunctionId = "AffineRegistrationInverseMatrix" then
+                    "affineRegistrationInverseMatrix"
+                else
+                    "affineRegistrationMatrix"
+            Some $"{functionName} {{ defaultAffineRegistrationOptions with Regularizer = {regularizer} }}"
         | "ImageComparison" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float64" node
             let comparison =
@@ -2312,9 +2314,7 @@ module PipelineCodeGenerator =
                         match nodesById |> Map.tryFind edge.FromNode with
                         | Some upstream ->
                             let upstreamExpression = pipelineExpression visited upstream
-                            if upstream.FunctionId = "AffineRegistration" && edge.FromPort >= 0 && edge.FromPort <= 1 then
-                                $"{upstreamExpression}{newLine}>=> selectGroupedValueOutput 2u {edge.FromPort}u"
-                            elif upstream.FunctionId = "EstimateHistogram" && edge.FromPort = 0 then
+                            if upstream.FunctionId = "EstimateHistogram" && edge.FromPort = 0 then
                                 $"{upstreamExpression}{newLine}>=> histogramEstimateMap"
                             else
                                 upstreamExpression
@@ -2426,7 +2426,8 @@ module PipelineCodeGenerator =
                     | "PointPairDistances"
                     | "FitBiasModel"
                     | "FitBiasModelMasked"
-                    | "AffineRegistration"
+                    | "AffineRegistrationMatrix"
+                    | "AffineRegistrationInverseMatrix"
                     | "SerialEstBoundingBox" ->
                         $"{expression}{newLine}|> drain"
                     | "Histogram" ->
@@ -2444,9 +2445,7 @@ module PipelineCodeGenerator =
                 match nodesById |> Map.tryFind edge.FromNode with
                 | Some upstream ->
                     let upstreamExpression = pipelineExpression Set.empty upstream
-                    if upstream.FunctionId = "AffineRegistration" && edge.FromPort >= 0 && edge.FromPort <= 1 then
-                        $"{upstreamExpression}{newLine}>=> selectGroupedValueOutput 2u {edge.FromPort}u"
-                    elif upstream.FunctionId = "EstimateHistogram" && edge.FromPort = 0 then
+                    if upstream.FunctionId = "EstimateHistogram" && edge.FromPort = 0 then
                         $"{upstreamExpression}{newLine}>=> histogramEstimateMap"
                     else
                         upstreamExpression

@@ -1305,13 +1305,12 @@ let stackProcessingSupportSuite =
             Expect.floatClose Accuracy.high (earthMoversDistance fixedPoints movingPoints) 5.0 "One fixed point should receive half the moving mass from each moving point."
 
         testCase "inverseAffine round-trips nontrivial affine points" <| fun _ ->
-            let affine: Affine =
-                { A =
-                    { m00 = 1.2; m01 = 0.1; m02 = -0.05
-                      m10 = -0.2; m11 = 0.9; m12 = 0.15
-                      m20 = 0.05; m21 = -0.1; m22 = 1.1 }
-                  T = TinyLinAlg.v3 2.0 -3.0 0.5
-                  C = TinyLinAlg.v3 1.0 2.0 -1.0 }
+	            let affine: Affine =
+	                { A =
+	                    { m00 = 1.2; m01 = 0.1; m02 = -0.05
+	                      m10 = -0.2; m11 = 0.9; m12 = 0.15
+	                      m20 = 0.05; m21 = -0.1; m22 = 1.1 }
+	                  T = TinyLinAlg.v3 2.0 -3.0 0.5 }
 
             let original: PointSet =
                 { Points = [ point 4.0 -2.0 3.0; point -1.0 5.0 2.5 ] }
@@ -1320,28 +1319,27 @@ let stackProcessingSupportSuite =
                 |> transformPointSet affine
                 |> transformPointSet (inverseAffine affine)
 
-            Expect.isLessThan (earthMoversDistance original.Points roundTripped.Points) 1.0e-10 "inverseAffine should invert affinePoint for resampler-style backward transforms."
-
-            let homogeneous = affineToMatrix affine |> unvectorizeMatrix
-            let expectedOffset = add affine.T (sub affine.C (mulMV affine.A affine.C))
-
-            Expect.floatClose Accuracy.high homogeneous[0, 3] expectedOffset.x "The homogeneous matrix fourth column should hold the X addition term."
-            Expect.floatClose Accuracy.high homogeneous[1, 3] expectedOffset.y "The homogeneous matrix fourth column should hold the Y addition term."
-            Expect.floatClose Accuracy.high homogeneous[2, 3] expectedOffset.z "The homogeneous matrix fourth column should hold the Z addition term."
+	            Expect.isLessThan (earthMoversDistance original.Points roundTripped.Points) 1.0e-10 "inverseAffine should invert affinePoint for resampler-style backward transforms."
+	
+	            let homogeneous = toHomogeneousMatrix affine |> unvectorizeMatrix
+	
+	            Expect.floatClose Accuracy.high homogeneous[0, 3] affine.T.x "The homogeneous matrix fourth column should hold the X translation term."
+	            Expect.floatClose Accuracy.high homogeneous[1, 3] affine.T.y "The homogeneous matrix fourth column should hold the Y translation term."
+	            Expect.floatClose Accuracy.high homogeneous[2, 3] affine.T.z "The homogeneous matrix fourth column should hold the Z translation term."
             Expect.floatClose Accuracy.high homogeneous[3, 0] 0.0 "The homogeneous matrix last row should keep affine point weight unchanged."
             Expect.floatClose Accuracy.high homogeneous[3, 1] 0.0 "The homogeneous matrix last row should keep affine point weight unchanged."
             Expect.floatClose Accuracy.high homogeneous[3, 2] 0.0 "The homogeneous matrix last row should keep affine point weight unchanged."
             Expect.floatClose Accuracy.high homogeneous[3, 3] 1.0 "The homogeneous matrix last row should keep affine point weight unchanged."
 
         testCase "affine registration aligns translated point sets and exposes resampler-compatible inverse" <| fun _ ->
-            let moving =
+            let fixedPoints =
                 [ point 0.0 0.0 0.0
                   point 1.0 0.0 0.0
                   point 0.0 1.0 0.0
                   point 0.0 0.0 1.0 ]
 
-            let fixedPoints =
-                moving
+            let movingPoints =
+                fixedPoints
                 |> List.map (fun p -> point (p.X + 2.0) (p.Y - 1.0) (p.Z + 0.5))
 
             let shuffledFixed =
@@ -1354,43 +1352,64 @@ let stackProcessingSupportSuite =
                 affineRegistration
                     { defaultAffineRegistrationOptions with MaxIterations = 5 }
                     fixedPoints
-                    moving
+                    movingPoints
 
             Expect.isLessThan result.Distance 1.0e-8 "The optimizer should find the centroid translation immediately for a pure translation."
 
-            let transformedMoving =
-                transformPointSet result.Transform { Points = moving }
+            let transformedFixed =
+                transformPointSet result.Transform { Points = fixedPoints }
                 |> _.Points
 
-            Expect.isLessThan (earthMoversDistance fixedPoints transformedMoving) 1.0e-8 "The forward registration transform should map moving points to fixed points."
+            Expect.isLessThan (earthMoversDistance movingPoints transformedFixed) 1.0e-8 "The forward registration transform should map fixed points to moving points."
 
-            let fixedAsMovingCoordinates =
-                transformPointSet result.InverseTransform { Points = fixedPoints }
+            let movingAsFixedCoordinates =
+                transformPointSet result.InverseTransform { Points = movingPoints }
                 |> _.Points
 
-            Expect.isLessThan (earthMoversDistance moving fixedAsMovingCoordinates) 1.0e-8 "The inverse transform should map fixed-grid coordinates back to moving coordinates for StackAffineResampler."
+            Expect.isLessThan (earthMoversDistance fixedPoints movingAsFixedCoordinates) 1.0e-8 "The inverse transform should map moving-grid coordinates back to fixed coordinates for StackAffineResampler."
 
-            let transformMatrix = affineToMatrix result.Transform
-            let matrixAffine = matrixToAffine transformMatrix
-            let matrixTransformedMoving =
-                transformPointSet matrixAffine { Points = moving }
+            let transformMatrix = toHomogeneousMatrix result.Transform
+            let matrixAffine = ofHomogeneousMatrix transformMatrix
+            let matrixTransformedFixed =
+                transformPointSet matrixAffine { Points = fixedPoints }
                 |> _.Points
 
-            Expect.equal transformMatrix.Rows 4u "affineToMatrix should produce a 4x4 homogeneous matrix."
-            Expect.equal transformMatrix.Columns 4u "affineToMatrix should produce a 4x4 homogeneous matrix."
-            Expect.isLessThan (earthMoversDistance fixedPoints matrixTransformedMoving) 1.0e-8 "matrixToAffine should preserve the transform represented by affineToMatrix."
+            Expect.equal transformMatrix.Rows 4u "toHomogeneousMatrix should produce a 4x4 homogeneous matrix."
+            Expect.equal transformMatrix.Columns 4u "toHomogeneousMatrix should produce a 4x4 homogeneous matrix."
+            Expect.isLessThan (earthMoversDistance movingPoints matrixTransformedFixed) 1.0e-8 "ofHomogeneousMatrix should preserve the transform represented by toHomogeneousMatrix."
 
-            let matrices =
-                scalarPlan [ ({ Points = fixedPoints } : PointSet) ]
-                >=>> (
-                    Stage.map "fixed" (fun _ points -> points) id id,
-                    Stage.map "moving" (fun _ _ -> ({ Points = moving } : PointSet)) id id)
-                >=> affineRegistrationMatrices { defaultAffineRegistrationOptions with MaxIterations = 5 }
-                |> drainList
+            let matchedBatches =
+                [ ({ Points = fixedPoints |> List.take 2 } : PointSet),
+                  ({ Points = movingPoints |> List.take 2 } : PointSet);
+                  ({ Points = fixedPoints |> List.skip 2 } : PointSet),
+                  ({ Points = movingPoints |> List.skip 2 } : PointSet) ]
 
-            Expect.equal matrices.Length 2 "affineRegistrationMatrices should emit transform and inverse transform matrices."
-            Expect.equal matrices[0].Rows 4u "The forward transform matrix should be 4x4."
-            Expect.equal matrices[1].Rows 4u "The inverse transform matrix should be 4x4."
+            let forwardMatrix =
+                scalarPlan matchedBatches
+                >=> affineRegistrationMatrix { defaultAffineRegistrationOptions with Regularizer = 1.0e-12 }
+                |> drain
+
+            let inverseMatrix =
+                scalarPlan matchedBatches
+                >=> affineRegistrationInverseMatrix { defaultAffineRegistrationOptions with Regularizer = 1.0e-12 }
+                |> drain
+
+            Expect.equal forwardMatrix.Rows 4u "The forward transform matrix should be 4x4."
+            Expect.equal inverseMatrix.Rows 4u "The inverse transform matrix should be 4x4."
+
+            let streamedAffine = ofHomogeneousMatrix forwardMatrix
+            let streamedTransformedFixed =
+                transformPointSet streamedAffine { Points = fixedPoints }
+                |> _.Points
+
+            Expect.isLessThan (earthMoversDistance movingPoints streamedTransformedFixed) 1.0e-8 "The streaming affine reducer should update from multiple point-set batches."
+
+            let streamedInverse = ofHomogeneousMatrix inverseMatrix
+            let streamedMovingAsFixed =
+                transformPointSet streamedInverse { Points = movingPoints }
+                |> _.Points
+
+            Expect.isLessThan (earthMoversDistance fixedPoints streamedMovingAsFixed) 1.0e-8 "The inverse affine reducer should emit the resampler direction."
 
         testCase "2D affine RANSAC ignores outlier point matches" <| fun _ ->
             let matches: PointMatch2D list =
@@ -1412,13 +1431,12 @@ let stackProcessingSupportSuite =
         testCase "image-set manifest round-trips spatial data items as independent JSON sidecar" <| fun _ ->
             let outputDir = tempDirectory "image-set-manifest"
             let manifestPath = Path.Combine(outputDir, "imageset.json")
-            let affine: Affine =
-                { A =
-                    { m00 = 1.0; m01 = 0.0; m02 = 0.0
-                      m10 = 0.0; m11 = 1.0; m12 = 0.0
-                      m20 = 0.0; m21 = 0.0; m22 = 1.0 }
-                  T = v3 2.0 -1.0 0.5
-                  C = v3 4.0 5.0 6.0 }
+	            let affine: Affine =
+	                { A =
+	                    { m00 = 1.0; m01 = 0.0; m02 = 0.0
+	                      m10 = 0.0; m11 = 1.0; m12 = 0.0
+	                      m20 = 0.0; m21 = 0.0; m22 = 1.0 }
+	                  T = v3 2.0 -1.0 0.5 }
 
             try
                 let scalarItem =
@@ -1499,17 +1517,15 @@ let stackProcessingSupportSuite =
                 deleteDirectory outputDir
 
         testCase "identity manifest and registration composition update moving item transforms" <| fun _ ->
-            let fixedToWorld =
-                { A = identity3
-                  T = v3 10.0 0.0 0.0
-                  C = v3 0.0 0.0 0.0 }
-                |> imageSetTransformFromAffine
-
-            let fixedFromMoving =
-                { A = identity3
-                  T = v3 3.0 0.0 0.0
-                  C = v3 0.0 0.0 0.0 }
-                |> imageSetTransformFromAffine
+	            let fixedToWorld =
+	                { A = identity3
+	                  T = v3 10.0 0.0 0.0 }
+	                |> imageSetTransformFromAffine
+	
+	            let fixedFromMoving =
+	                { A = identity3
+	                  T = v3 3.0 0.0 0.0 }
+	                |> imageSetTransformFromAffine
 
             let fixedItem =
                 scalarImageSetItem "fixed" "fixed" ".tiff" [ 2UL; 2UL; 1UL ] [ 1.0; 1.0; 1.0 ] fixedToWorld []
@@ -1659,10 +1675,9 @@ let stackProcessingSupportSuite =
                 let lerp (a: float32) (b: float32) (t: float32) =
                     a + (b - a) * t
 
-                let transform: Affine =
-                    { A = identity3
-                      T = v3 0.5 1.0 0.0
-                      C = v3 0.0 0.0 0.0 }
+	                let transform: Affine =
+	                    { A = identity3
+	                      T = v3 0.5 1.0 0.0 }
 
                 let output =
                     resampleAffineFromChunks
@@ -1712,10 +1727,9 @@ let stackProcessingSupportSuite =
                 |> sink
 
                 let lerp a b t = a + (b - a) * t
-                let transform: Affine =
-                    { A = identity3
-                      T = v3 0.25 0.5 0.5
-                      C = v3 0.0 0.0 0.0 }
+	                let transform: Affine =
+	                    { A = identity3
+	                      T = v3 0.25 0.5 0.5 }
 
                 let output =
                     resampleAffineFromChunks
@@ -1763,10 +1777,9 @@ let stackProcessingSupportSuite =
 
                 let background = -1234.0f
                 let lerp a b t = a + (b - a) * t
-                let transform: Affine =
-                    { A = identity3
-                      T = v3 -0.25 0.5 0.5
-                      C = v3 0.0 0.0 0.0 }
+	                let transform: Affine =
+	                    { A = identity3
+	                      T = v3 -0.25 0.5 0.5 }
 
                 let output =
                     resampleAffineFromChunks

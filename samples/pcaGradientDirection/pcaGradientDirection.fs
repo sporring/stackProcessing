@@ -14,7 +14,7 @@ let main args =
 
     let covariance =
         src
-        |> read<float32> input ".tiff"
+        |> readRange<float32> 1u 1 20u input ".tiff"
         >=> gradientVector 1.0 7
         >=> covarianceMatrix
         |> drain

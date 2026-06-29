@@ -1,10 +1,9 @@
-// Estimate an affine transform between two small 3D point sets.
-//
-// The compact sample writes a tiny point-set CSV and feeds it through the public
-// readPointSet box twice, so the estimated matrix should be close to identity.
+// Fit an affine transform from streamed 3D point-set correspondences.
+open System
+open System.Globalization
 open SlimPipeline
-open System.IO
 open StackProcessing
+open TinyLinAlg
 
 [<EntryPoint>]
 let main args =
@@ -16,22 +15,42 @@ let main args =
         | [| output |] -> output
         | _ -> "../tmp/affineKeypointRegistration"
 
-    let pointFile = output + "-points.csv"
-    let directory = Path.GetDirectoryName(pointFile)
-    if not (System.String.IsNullOrWhiteSpace directory) then
-        Directory.CreateDirectory(directory) |> ignore
+    let movingOutput = output + "-moving"
+    let fixedOutput = output + "-fixed"
+    let movingFile = movingOutput + ".csv"
+    let fixedFile = fixedOutput + ".csv"
 
-    File.WriteAllLines(
-        pointFile,
-        [| "x,y,z,scale,response"
-           "4,4,2,1,1"
-           "24,5,3,1,1"
-           "6,25,10,1,1"
-           "26,26,12,1,1" |])
+    let fixedPoints = [ 
+        v3 0.0 0.0 0.0;
+        v3 12.0 0.0 1.0;
+        v3 1.0 10.0 2.0;
+        v3 2.0 1.0 9.0;
+        v3 14.0 11.0 4.0;
+        v3 5.0 8.0 13.0]
+    fixedPoints |> toPointSet |> writePointSetFile fixedFile
 
-    zip (readPointSet pointFile src) (readPointSet pointFile src)
-    >=> affineRegistrationMatrices { defaultAffineRegistrationOptions with MaxIterations = 1 }
-    >=> writeMatrix output ".csv"
-    |> sink
+    // Use TinyLinAlg to artificially produce a transformed data set
+    let affineTransform =
+        { A = m3 1.10 0.08 -0.04  -0.03 0.95 0.06  0.02 -0.05 1.07
+          T = v3 3.0 -2.5 1.25 }
+    let movingPoints =
+        fixedPoints |> List.map (affinePoint affineTransform)
+    movingPoints |> toPointSet |> writePointSetFile movingFile
+
+    // Start 2 streaming of points and reduce to a fitted affine matrix.
+    let fixedPlan = src |> readPointSet fixedFile
+    let movingPlan = src |> readPointSet movingFile
+    let fittedAffineTransform =
+        zip fixedPlan movingPlan
+        >=> affineRegistrationMatrix defaultAffineRegistrationOptions
+        |> drain
+        |> ofHomogeneousMatrix
+
+    let error = m3AffineNormMax affineTransform fittedAffineTransform
+    printfn $"Fixed points:  [{fixedPoints}]"
+    printfn $"Moving points: [{movingPoints}]"
+    printfn $"Known affine matrix:  [{affineTransform}]"
+    printfn $"Fitted affine matrix: [{fittedAffineTransform}]"
+    printfn $"Matrix max error: {error}"
 
     0

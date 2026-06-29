@@ -1058,12 +1058,8 @@ let generatorSuite =
                       p "input" "moving.csv" false ]
 
             let registration =
-                node "registration" "AffineRegistration"
-                    [ p "maxIterations" "5" false
-                      p "initialLinearStep" "0.05" false
-                      p "initialTranslationStep" "1.0" false
-                      p "minStep" "0.0001" false
-                      p "stepShrink" "0.5" false ]
+                node "registration" "AffineRegistrationInverseMatrix"
+                    [ p "regularizer" "1e-12" false ]
 
             let writeTransform =
                 node "writeTransform" "WriteMatrix"
@@ -1074,12 +1070,13 @@ let generatorSuite =
                 graph [ fixedPoints; movingPoints; registration; writeTransform ]
                     [ edge "fixedPoints" "output" 0 "registration" "input" 0
                       edge "movingPoints" "output" 0 "registration" "input" 1
-                      edge "registration" "reducerOutput" 1 "writeTransform" "input" 0 ]
+                      edge "registration" "reducerOutput" 0 "writeTransform" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains registrationCode ">=> affineRegistrationMatrices" "AffineRegistration should lower to the point-set registration matrix stage."
-            Expect.stringContains registrationCode ">=> selectGroupedValueOutput 2u 1u" "Connecting the inverse transform output should select the second matrix."
-            Expect.stringContains registrationCode ">=> writeMatrix \"transform\" \".csv\"" "AffineRegistration matrices should be writable with writeMatrix."
+            Expect.stringContains registrationCode ">=> affineRegistrationInverseMatrix" "AffineRegistrationInverseMatrix should lower to the inverse point-set registration stage."
+            Expect.stringContains registrationCode "{ defaultAffineRegistrationOptions with Regularizer = 1e-12 }" "AffineRegistrationInverseMatrix should lower the RLS regularizer."
+            Expect.isFalse (registrationCode.Contains("selectGroupedValueOutput 2u")) "AffineRegistrationInverseMatrix should emit one matrix without grouped-output selection."
+            Expect.stringContains registrationCode ">=> writeMatrix \"transform\" \".csv\"" "AffineRegistration inverse matrices should be writable with writeMatrix."
 
         testCase "streamed object and painter boxes lower to object-mask DSL stages" <| fun _ ->
             let read =

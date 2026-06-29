@@ -1001,24 +1001,33 @@ module BuiltInCatalog =
                 makeParameter "yUnit" "Y unit" "1.0" (BasicType.Numeric Float64)
                 makeParameter "zUnit" "Z unit" "1.0" (BasicType.Numeric Float64) ] }
 
-        { Id = "AffineRegistration"
-          DisplayName = "affineRegistration"
+        { Id = "AffineRegistrationMatrix"
+          DisplayName = "affineRegistrationMatrix"
           Category = "Geometry"
-          Summary = "Register two point sets and emit affine transform matrices."
-          Description = "Registers moving points to fixed points using the point-set affine optimizer. The outputs are 4x4 homogeneous Float64 matrices: Transform maps moving coordinates to fixed coordinates, and Inverse transform maps fixed coordinates back to moving coordinates. The matrices can be written with writeMatrix."
-          Aliases = [ "registration"; "affine"; "points"; "transform"; "matrix"; "alignment"; "reducer" ]
+          Summary = "Register two point sets and emit the fixed-to-moving affine matrix."
+          Description = "Registers fixed/source points to moving/target points using the streaming point-set affine reducer. The output is a 4x4 homogeneous Float64 matrix mapping fixed coordinates to moving coordinates."
+          Aliases = [ "registration"; "affine"; "points"; "transform"; "matrix"; "alignment"; "forward"; "reducer" ]
           Inputs =
               [ makePort "Fixed PointSet" pointSet
                 makePort "Moving PointSet" pointSet ]
           Outputs =
-              [ makePort "Transform" float64Matrix
-                makePort "Inverse transform" float64Matrix ]
+              [ makePort "Transform" float64Matrix ]
           Parameters =
-              [ makeParameter "maxIterations" "Max iterations" "200" (BasicType.Numeric Int32)
-                makeParameter "initialLinearStep" "Linear step" "0.05" (BasicType.Numeric Float64)
-                makeParameter "initialTranslationStep" "Translation step" "1.0" (BasicType.Numeric Float64)
-                makeParameter "minStep" "Min step" "0.0001" (BasicType.Numeric Float64)
-                makeParameter "stepShrink" "Step shrink" "0.5" (BasicType.Numeric Float64) ] }
+              [ makeParameter "regularizer" "Regularizer" "1e-12" (BasicType.Numeric Float64) ] }
+
+        { Id = "AffineRegistrationInverseMatrix"
+          DisplayName = "affineRegistrationInverseMatrix"
+          Category = "Geometry"
+          Summary = "Register two point sets and emit the moving-to-fixed affine matrix."
+          Description = "Registers fixed/source points to moving/target points using the streaming point-set affine reducer, then emits the inverse 4x4 homogeneous Float64 matrix mapping moving coordinates back to fixed coordinates. This is the transform usually needed by backward resampling."
+          Aliases = [ "registration"; "affine"; "points"; "inverse"; "matrix"; "alignment"; "resample"; "reducer" ]
+          Inputs =
+              [ makePort "Fixed PointSet" pointSet
+                makePort "Moving PointSet" pointSet ]
+          Outputs =
+              [ makePort "Inverse transform" float64Matrix ]
+          Parameters =
+              [ makeParameter "regularizer" "Regularizer" "1e-12" (BasicType.Numeric Float64) ] }
 
         { Id = "WriteMatrix"
           DisplayName = "writeMatrix"
@@ -2353,7 +2362,7 @@ module BuiltInCatalog =
                 makeParameter "windowSize" "Window size" "None" BasicType.String
                 makeParameter "inputGeometry" "Input geometry" "{ W = 64; H = 64; D = 64; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 } }" BasicType.String
                 makeParameter "outputGeometry" "Output geometry" "{ W = 64; H = 64; D = 64; Origin = TinyLinAlg.v3 0.0 0.0 0.0; Spacing = TinyLinAlg.v3 1.0 1.0 1.0; Direction = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 } }" BasicType.String
-                makeParameter "affine" "Affine" "{ A = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 }; T = TinyLinAlg.v3 0.0 0.0 0.0; C = TinyLinAlg.v3 0.0 0.0 0.0 }" BasicType.String
+                makeParameter "affine" "Affine" "{ A = { m00 = 1.0; m01 = 0.0; m02 = 0.0; m10 = 0.0; m11 = 1.0; m12 = 0.0; m20 = 0.0; m21 = 0.0; m22 = 1.0 }; T = TinyLinAlg.v3 0.0 0.0 0.0 }" BasicType.String
                 makeParameter "background" "Background" "0.0f" (BasicType.Numeric Float32) ] }
 
         makeGenericCast() ]

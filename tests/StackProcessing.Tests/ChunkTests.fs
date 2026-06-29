@@ -1659,8 +1659,7 @@ let chunkSuite =
 
             let transform: Affine =
                 { A = identity3
-                  T = v3 0.5 1.0 0.0
-                  C = v3 0.0 0.0 0.0 }
+                  T = v3 0.5 1.0 0.0 }
 
             let stage =
                 StackAffineResampler.resampleAffineChunk

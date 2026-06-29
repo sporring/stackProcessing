@@ -74,7 +74,7 @@ let catalogSuite =
     testList "Studio.Graph catalog" [
         testCase "catalog exposes expected generic functions" <| fun _ ->
             let ids = BuiltInCatalog.orderedFunctions |> List.map _.Id
-            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "ReadRandom"; "EstimateHistogram"; "ReadRange"; "ReadPointSet"; "Zero"; "CoordinateX"; "CoordinateY"; "CoordinateZ"; "NormalNoise"; "SaltAndPepperNoise"; "ShotNoise"; "Write"; "WriteChunks"; "WriteMesh"; "WritePointSet"; "WriteMatrix"; "Expand"; "GetChunkInfo"; "GetZarrInfo"; "GetNexusInfo"; "Resize"; "Resample"; "CreatePadding"; "Crop"; "MarchingCubes"; "SurfaceArea"; "DogKeypoints"; "SiftKeypoints"; "LogBlobKeypoints"; "HessianKeypoints"; "Forstner3DKeypoints"; "PhaseCongruencyKeypoints"; "PointPairDistances"; "AffineRegistration"; "StreamConnectedObjects"; "MeasureObjects"; "ObjectSizes"; "ObjectSizeStats"; "PaintObjects"; "PaintObjectsCropped"; "ImageOpImage"; "ComputeStats"; "FitBiasModel"; "FitBiasModelMasked"; "CorrectBias"; "CorrectBiasMasked"; "SerialPolynomialBiasCorrect"; "SerialEstTrans"; "SerialApplyTrans"; "SerialEstBoundingBox"; "Volume"; "Quantiles"; "Chart"; "SumProjection"; "ImHistogram"; "ImHistogramData"; "Histogram"] "Important Studio functions should be in the palette catalog."
+            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "ReadRandom"; "EstimateHistogram"; "ReadRange"; "ReadPointSet"; "Zero"; "CoordinateX"; "CoordinateY"; "CoordinateZ"; "NormalNoise"; "SaltAndPepperNoise"; "ShotNoise"; "Write"; "WriteChunks"; "WriteMesh"; "WritePointSet"; "WriteMatrix"; "Expand"; "GetChunkInfo"; "GetZarrInfo"; "GetNexusInfo"; "Resize"; "Resample"; "CreatePadding"; "Crop"; "MarchingCubes"; "SurfaceArea"; "DogKeypoints"; "SiftKeypoints"; "LogBlobKeypoints"; "HessianKeypoints"; "Forstner3DKeypoints"; "PhaseCongruencyKeypoints"; "PointPairDistances"; "AffineRegistrationMatrix"; "AffineRegistrationInverseMatrix"; "StreamConnectedObjects"; "MeasureObjects"; "ObjectSizes"; "ObjectSizeStats"; "PaintObjects"; "PaintObjectsCropped"; "ImageOpImage"; "ComputeStats"; "FitBiasModel"; "FitBiasModelMasked"; "CorrectBias"; "CorrectBiasMasked"; "SerialPolynomialBiasCorrect"; "SerialEstTrans"; "SerialApplyTrans"; "SerialEstBoundingBox"; "Volume"; "Quantiles"; "Chart"; "SumProjection"; "ImHistogram"; "ImHistogramData"; "Histogram"] "Important Studio functions should be in the palette catalog."
             Expect.isFalse (ids |> List.contains "WriteVolume") "Volume-file writing should be selected from the combined Write box."
             Expect.isFalse (ids |> List.contains "WriteZarr") "Zarr writing should be selected from the combined Write box."
             Expect.isFalse (ids |> List.contains "WriteNexus") "NeXus writing should be selected from the combined Write box."
@@ -117,7 +117,8 @@ let catalogSuite =
             let surfaceArea = BuiltInCatalog.find "SurfaceArea"
             let volume = BuiltInCatalog.find "Volume"
             let pointPairDistances = BuiltInCatalog.find "PointPairDistances"
-            let affineRegistration = BuiltInCatalog.find "AffineRegistration"
+            let affineRegistration = BuiltInCatalog.find "AffineRegistrationMatrix"
+            let affineRegistrationInverse = BuiltInCatalog.find "AffineRegistrationInverseMatrix"
             let writeMatrix = BuiltInCatalog.find "WriteMatrix"
 
             Expect.equal surfaceArea.Inputs.[0].Type (PortType.Custom "Mesh") "surfaceArea should consume streamed triangle sets."
@@ -129,7 +130,8 @@ let catalogSuite =
             Expect.equal pointPairDistances.Inputs.[0].Type (PortType.Custom "PointSet") "pointPairDistances should consume point sets."
             Expect.equal pointPairDistances.Outputs.[0].Type (PortType.Custom "Float64Matrix") "pointPairDistances should emit a vectorized Float64 matrix."
             Expect.equal (affineRegistration.Inputs |> List.map _.Type) [ PortType.Custom "PointSet"; PortType.Custom "PointSet" ] "affineRegistration should consume fixed and moving point sets."
-            Expect.equal (affineRegistration.Outputs |> List.map _.Type) [ PortType.Custom "Float64Matrix"; PortType.Custom "Float64Matrix" ] "affineRegistration should emit transform and inverse matrices."
+            Expect.equal (affineRegistration.Outputs |> List.map _.Type) [ PortType.Custom "Float64Matrix" ] "affineRegistrationMatrix should emit one transform matrix."
+            Expect.equal (affineRegistrationInverse.Outputs |> List.map _.Type) [ PortType.Custom "Float64Matrix" ] "affineRegistrationInverseMatrix should emit one inverse matrix."
             Expect.equal writeMatrix.Inputs.[0].Type (PortType.Custom "Float64Matrix") "writeMatrix should consume vectorized Float64 matrices."
             Expect.isFalse (ids |> List.contains "Normalize") "normalize is intentionally not exposed as a streaming Studio box; use computeStats plus shiftScale."
             Expect.isFalse (ids |> List.contains "RescaleIntensity") "rescaleIntensity is intentionally not exposed as a streaming Studio box; use sampled statistics or quantiles plus intensityStretch."
