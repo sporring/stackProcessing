@@ -3066,14 +3066,14 @@ module ChunkFunctions =
 
     let convolveNativeX<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (kernel: float32[]) (chunk: Chunk<'T>) =
         match convolveNativeAxis<'T> NativeX kernel 0 1 [| chunk |] with
-        | [ output ] -> output
+        | [ output ] -> output |> withSameIndex chunk
         | outputs ->
             outputs |> List.iter decRef
             invalidOp $"Native specialized X convolution unexpectedly returned {outputs.Length} outputs."
 
     let convolveNativeY<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (kernel: float32[]) (chunk: Chunk<'T>) =
         match convolveNativeAxis<'T> NativeY kernel 0 1 [| chunk |] with
-        | [ output ] -> output
+        | [ output ] -> output |> withSameIndex chunk
         | outputs ->
             outputs |> List.iter decRef
             invalidOp $"Native specialized Y convolution unexpectedly returned {outputs.Length} outputs."
@@ -3083,7 +3083,7 @@ module ChunkFunctions =
         if window.Length <> kernel.Length then
             invalidArg "window" $"Native specialized Z convolution expects one window slice per kernel tap, got {window.Length} slices and {kernel.Length} taps."
         match convolveNativeAxis<'T> NativeZ kernel radius 1 window with
-        | [ output ] -> output
+        | [ output ] -> output |> withSameIndex window[radius]
         | outputs ->
             outputs |> List.iter decRef
             invalidOp $"Native specialized Z convolution unexpectedly returned {outputs.Length} outputs."

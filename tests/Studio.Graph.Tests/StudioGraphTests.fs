@@ -97,7 +97,7 @@ let catalogSuite =
             Expect.isFalse (ids |> List.contains "MomentsThreshold") "whole-image-style momentsThreshold should not be exposed as an LMIP Studio box."
             Expect.isFalse (ids |> List.contains "SampledOtsuThreshold") "sampledOtsuThreshold hides the histogram-to-threshold step and should not be exposed."
             Expect.isFalse (ids |> List.contains "SampledMomentsThreshold") "sampledMomentsThreshold hides the histogram-to-threshold step and should not be exposed."
-            Expect.containsAll ids ["Clamp"; "ShiftScale"; "IntensityStretch"; "HistogramEqualization"; "SmoothWMedian"; "SmoothWBilateral"; "GradientMagnitude"; "SobelEdge"; "Laplacian"; "ImageComparison"; "MaskLogic"; "MaskNot"] "The high-value SimpleITK filter families should be available in Studio."
+            Expect.containsAll ids ["Clamp"; "ShiftScale"; "IntensityStretch"; "HistogramEqualization"; "SmoothWMedian"; "SmoothWBilateral"; "GradientMagnitudeSquared"; "SobelEdge"; "Laplacian"; "ImageComparison"; "MaskLogic"; "MaskNot"] "The high-value SimpleITK filter families should be available in Studio."
             Expect.isFalse (ids |> List.contains "Mask") "mask is intentionally not exposed; use binary arithmetic/logical stages directly."
 
         testCase "read source boxes default to Float32 image streams" <| fun _ ->

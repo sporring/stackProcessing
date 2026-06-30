@@ -1615,9 +1615,10 @@ module PipelineCodeGenerator =
             let rangeSigma = parameterValue "rangeSigma"
             let windowSize = parameterValue "windowSize" |> optionUInt
             $">=> smoothWBilateral<{pixelType}> {domainSigma} {rangeSigma} {windowSize}"
-        | "GradientMagnitude" ->
+        | "GradientMagnitudeSquared" ->
             let sigma = "1.0"
-            $">=> gradientMagnitude {sigma} 3"
+            let windowSize = parameterValue "windowSize" |> optionUInt
+            $">=> gradientMagnitudeSquared {sigma} {windowSize}"
         | "SobelEdge" ->
             $">=> sobelMagnitude ()"
         | "Laplacian" ->

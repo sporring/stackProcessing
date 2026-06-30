@@ -505,7 +505,7 @@ module private Pipe =
                                             |> uint
 
                                         let items = classified |> List.map fst
-                                        Some(Window.createWithRelease pad emitCount stride items)
+                                        Some(Window.createWithRelease pad emitCount (uint classified.Length) items)
                                     else
                                         None)
                 }

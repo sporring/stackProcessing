@@ -577,7 +577,7 @@ let private parameterOverridesForFunction options overrides parameters functionI
         [ floatOptionOrInferred options.Sigma "sigma" parameters |> Option.map (fun value -> "sigma", value)
           windowSize |> Option.map (fun value -> "windowSize", value) ]
         |> List.choose id
-    | "GradientMagnitude"
+    | "GradientMagnitudeSquared"
     | "SobelEdge"
     | "Laplacian"
     | "BinaryContour" ->

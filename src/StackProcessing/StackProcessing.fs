@@ -267,6 +267,7 @@ let vectorCross3D = ChunkFunctions.vectorCross3D
 let vectorAngleTo = ChunkFunctions.vectorAngleTo
 let vectorDotFloat32 = ChunkFunctions.vectorDotFloat32
 let vectorMagnitudeFloat32 = ChunkFunctions.vectorMagnitudeFloat32
+let vectorMagnitudeSquaredFloat32 = ChunkFunctions.vectorMagnitudeSquaredFloat32
 let vectorAngleToFloat32 = ChunkFunctions.vectorAngleToFloat32
 let pca = ChunkFunctions.PCA
 let covarianceMatrix = ChunkFunctions.covarianceMatrix
@@ -650,10 +651,14 @@ let gradientVector sigma radius =
     ChunkFunctions.gradientVectorNativeParallelCollect stackProcessingWorkers sigma radius
 let gradientVectorXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ =
     ChunkFunctions.gradientVectorNativeParallelCollectXYZ stackProcessingWorkers sigmaX radiusX sigmaY radiusY sigmaZ radiusZ
-let gradientMagnitude sigma radius =
-    ChunkFunctions.gradientMagnitudeNativeParallelCollect sigma radius stackProcessingWorkers
-let gradientMagnitudeXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ =
-    ChunkFunctions.gradientMagnitudeNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ stackProcessingWorkers
+let gradientMagnitudeSquared sigma windowSize =
+    let radius = windowSize |> gaussianWindowSizeOrDefault sigma |> radiusFromOddWindowSize "windowSize"
+    ChunkFunctions.gradientMagnitudeSquaredNativeParallelCollect sigma radius stackProcessingWorkers
+let gradientMagnitudeSquaredXYZ sigmaX windowSizeX sigmaY windowSizeY sigmaZ windowSizeZ =
+    let radiusX = windowSizeX |> gaussianWindowSizeOrDefault sigmaX |> radiusFromOddWindowSize "windowSizeX"
+    let radiusY = windowSizeY |> gaussianWindowSizeOrDefault sigmaY |> radiusFromOddWindowSize "windowSizeY"
+    let radiusZ = windowSizeZ |> gaussianWindowSizeOrDefault sigmaZ |> radiusFromOddWindowSize "windowSizeZ"
+    ChunkFunctions.gradientMagnitudeSquaredNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ stackProcessingWorkers
 let hessianUpper sigma radius =
     ChunkFunctions.hessianUpperNativeParallelCollect sigma radius stackProcessingWorkers
 let hessianUpperXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ =

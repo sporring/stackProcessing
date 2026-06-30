@@ -1763,12 +1763,12 @@ module BuiltInCatalog =
                 makeParameter "rangeSigma" "Range sigma" "50.0" (BasicType.Numeric Float64)
                 makeParameter "windowSize" "Window size" "None" BasicType.String ] }
 
-        { Id = "GradientMagnitude"
-          DisplayName = "gradientMagnitude"
+        { Id = "GradientMagnitudeSquared"
+          DisplayName = "gradientMagnitudeSquared"
           Category = "Filters"
-          Summary = "Compute local gradient magnitude."
+          Summary = "Compute local squared gradient magnitude."
           Description = edgeDescription
-          Aliases = [ "edge"; "gradient"; "magnitude"; "derivative"; "filter" ]
+          Aliases = [ "edge"; "gradient"; "magnitude"; "squared"; "derivative"; "filter" ]
           Inputs = [ makePort "Number" imageAny ]
           Outputs = [ makePort "Number" imageAny ]
           Parameters =

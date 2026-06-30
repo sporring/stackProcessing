@@ -6,14 +6,15 @@ let main args =
     let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
     let src, args = commandLineSource availableMemory args
 
-    let output =
-        match args with
-        | [| output |] -> output
-        | _ -> "../tmp/hessianKeypoints"
+    let input, output = 
+        if args.Length > 0 then
+            "../data/objects", "../tmp/hessianKeypoints"
+        else
+            "../data/objects", "../tmp/hessianKeypoints"
 
+    // read an image and calculate its keypoints
     src
-    |> zero<float32> 64u 64u 64u
-    >=> addNormalNoise 128.0 25.0
+    |> read<uint8> input ".tiff"
     >=> hessianKeypoints 3.0 "Blob" 0.1 16u
     >=> writePointSet output ".csv"
     |> sink

@@ -214,7 +214,7 @@ let viewModelSuite =
                   "Crop"
                   "SmoothWMedian"
                   "SmoothWBilateral"
-                  "GradientMagnitude"
+                  "GradientMagnitudeSquared"
                   "SobelEdge"
                   "Laplacian"
                   "GrayscaleErode"

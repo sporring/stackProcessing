@@ -1742,7 +1742,7 @@ let generatorSuite =
                       p "windowSize" "None" false ]
 
             let edgeFilter =
-                node "edge" "GradientMagnitude"
+                node "edge" "GradientMagnitudeSquared"
                     [ p "type" "Float64" false
                       p "windowSize" "5" false ]
 
@@ -1766,7 +1766,7 @@ let generatorSuite =
             Expect.stringContains code ">=> smoothWMedian<float> 1u (Some 3u)" "smoothWMedian should lower with radius and window size."
             Expect.stringContains code ">=> smoothWBilateral<float> 2.0 10.0 (Some 5u)" "smoothWBilateral should lower with sigmas and window size."
             Expect.stringContains code ">=> smoothWGauss 1.0 None None None" "smoothWGauss should lower with explicit options."
-            Expect.stringContains code ">=> gradientMagnitude<float> (Some 5u)" "Gradient magnitude should lower with its window size."
+            Expect.stringContains code ">=> gradientMagnitudeSquared 1.0 (Some 5u)" "Gradient magnitude squared should lower with its window size."
 
         testCase "sum projection lowers to a Float64 image reducer" <| fun _ ->
             let read =

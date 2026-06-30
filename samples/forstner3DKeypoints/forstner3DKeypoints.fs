@@ -5,15 +5,15 @@ open StackProcessing
 let main args =
     let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
     let src, args = commandLineSource availableMemory args
+    let input, output = 
+        if args.Length > 0 then
+            "../data/objects", "../tmp/forstner3DKeypoints"
+        else
+            "../data/objects", "../tmp/forstner3DKeypoints"
 
-    let output =
-        match args with
-        | [| output |] -> output
-        | _ -> "../tmp/forstner3DKeypoints"
-
+    // read an image and calculate its keypoints
     src
-    |> zero<float32> 64u 64u 64u
-    >=> addNormalNoise 128.0 25.0
+    |> read<uint8> input ".tiff"
     >=> forstner3DKeypoints 3.0 1.5 0.1 16u
     >=> writePointSet output ".csv"
     |> sink

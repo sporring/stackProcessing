@@ -344,6 +344,32 @@ let private chunkToVolume<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T:
 
         volume
 
+let private chunkToVolumeFloat32<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunks: Chunk<'T> list) =
+    match chunks with
+    | [] -> Array3D.zeroCreate<float32> 0 0 0
+    | first :: _ ->
+        let width64, height64, depth64 = first.Size
+        if depth64 <> 1UL then
+            invalidArg "chunks" $"Chunk keypoint stages expect 2D slice chunks with depth 1, got {first.Size}."
+        if width64 > uint64 Int32.MaxValue || height64 > uint64 Int32.MaxValue then
+            invalidArg "chunks" $"Chunk keypoint slice dimensions must fit Int32, got {first.Size}."
+
+        let width = int width64
+        let height = int height64
+        let depth = chunks.Length
+        let volume = Array3D.zeroCreate<float32> width height depth
+
+        chunks
+        |> List.iteri (fun z chunk ->
+            if chunk.Size <> first.Size then
+                invalidArg "chunks" $"Chunk keypoint windows need same-sized slices, got {chunk.Size} and {first.Size}."
+            let pixels = Chunk.span chunk
+            for y in 0 .. height - 1 do
+                for x in 0 .. width - 1 do
+                    volume[x, y, z] <- Convert.ToSingle(pixels[Chunk.toIndex width height x y 0], invariant))
+
+        volume
+
 let private clamp lo hi value =
     if value < lo then lo elif value > hi then hi else value
 
@@ -388,6 +414,49 @@ let private gaussianBlur3D sigma (source: double[,,]) =
 
     output
 
+let private gaussianBlur3DFloat32 sigma (source: float32[,,]) =
+    let radius = max 1 (int (ceil (3.0 * sigma)))
+    let sigma32 = float32 sigma
+    let kernel =
+        [| for i in -radius .. radius ->
+            MathF.Exp(-(float32 (i * i)) / (2.0f * sigma32 * sigma32)) |]
+    let kernelSum = kernel |> Array.sum
+    for i in 0 .. kernel.Length - 1 do
+        kernel[i] <- kernel[i] / kernelSum
+
+    let width = source.GetLength(0)
+    let height = source.GetLength(1)
+    let depth = source.GetLength(2)
+    let tmpX = Array3D.zeroCreate<float32> width height depth
+    let tmpY = Array3D.zeroCreate<float32> width height depth
+    let output = Array3D.zeroCreate<float32> width height depth
+
+    for z in 0 .. depth - 1 do
+        for y in 0 .. height - 1 do
+            for x in 0 .. width - 1 do
+                let mutable acc = 0.0f
+                for k in -radius .. radius do
+                    acc <- acc + kernel[k + radius] * source[clamp 0 (width - 1) (x + k), y, z]
+                tmpX[x, y, z] <- acc
+
+    for z in 0 .. depth - 1 do
+        for y in 0 .. height - 1 do
+            for x in 0 .. width - 1 do
+                let mutable acc = 0.0f
+                for k in -radius .. radius do
+                    acc <- acc + kernel[k + radius] * tmpX[x, clamp 0 (height - 1) (y + k), z]
+                tmpY[x, y, z] <- acc
+
+    for z in 0 .. depth - 1 do
+        for y in 0 .. height - 1 do
+            for x in 0 .. width - 1 do
+                let mutable acc = 0.0f
+                for k in -radius .. radius do
+                    acc <- acc + kernel[k + radius] * tmpY[x, y, clamp 0 (depth - 1) (z + k)]
+                output[x, y, z] <- acc
+
+    output
+
 let private central (source: double[,,]) x y z axis =
     let width = source.GetLength(0)
     let height = source.GetLength(1)
@@ -397,6 +466,16 @@ let private central (source: double[,,]) x y z axis =
     | 0 -> (source[clamp 0 (width - 1) (x + 1), y, z] - source[clamp 0 (width - 1) (x - 1), y, z]) / 2.0
     | 1 -> (source[x, clamp 0 (height - 1) (y + 1), z] - source[x, clamp 0 (height - 1) (y - 1), z]) / 2.0
     | _ -> (source[x, y, clamp 0 (depth - 1) (z + 1)] - source[x, y, clamp 0 (depth - 1) (z - 1)]) / 2.0
+
+let private centralFloat32 (source: float32[,,]) x y z axis =
+    let width = source.GetLength(0)
+    let height = source.GetLength(1)
+    let depth = source.GetLength(2)
+
+    match axis with
+    | 0 -> (source[clamp 0 (width - 1) (x + 1), y, z] - source[clamp 0 (width - 1) (x - 1), y, z]) * 0.5f
+    | 1 -> (source[x, clamp 0 (height - 1) (y + 1), z] - source[x, clamp 0 (height - 1) (y - 1), z]) * 0.5f
+    | _ -> (source[x, y, clamp 0 (depth - 1) (z + 1)] - source[x, y, clamp 0 (depth - 1) (z - 1)]) * 0.5f
 
 let private second (source: double[,,]) x y z axis =
     let width = source.GetLength(0)
@@ -408,25 +487,60 @@ let private second (source: double[,,]) x y z axis =
     | 1 -> source[x, clamp 0 (height - 1) (y + 1), z] - 2.0 * source[x, y, z] + source[x, clamp 0 (height - 1) (y - 1), z]
     | _ -> source[x, y, clamp 0 (depth - 1) (z + 1)] - 2.0 * source[x, y, z] + source[x, y, clamp 0 (depth - 1) (z - 1)]
 
-let private mixed (source: double[,,]) x y z axisA axisB =
+let private secondFloat32 (source: float32[,,]) x y z axis =
+    let width = source.GetLength(0)
+    let height = source.GetLength(1)
+    let depth = source.GetLength(2)
+
+    match axis with
+    | 0 -> source[clamp 0 (width - 1) (x + 1), y, z] - 2.0f * source[x, y, z] + source[clamp 0 (width - 1) (x - 1), y, z]
+    | 1 -> source[x, clamp 0 (height - 1) (y + 1), z] - 2.0f * source[x, y, z] + source[x, clamp 0 (height - 1) (y - 1), z]
+    | _ -> source[x, y, clamp 0 (depth - 1) (z + 1)] - 2.0f * source[x, y, z] + source[x, y, clamp 0 (depth - 1) (z - 1)]
+
+let private mixedFloat32 (source: float32[,,]) x y z axisA axisB =
     let shifted da db =
         let sx = if axisA = 0 then x + da elif axisB = 0 then x + db else x
         let sy = if axisA = 1 then y + da elif axisB = 1 then y + db else y
         let sz = if axisA = 2 then z + da elif axisB = 2 then z + db else z
         source[clamp 0 (source.GetLength(0) - 1) sx, clamp 0 (source.GetLength(1) - 1) sy, clamp 0 (source.GetLength(2) - 1) sz]
 
-    (shifted 1 1 - shifted 1 -1 - shifted -1 1 + shifted -1 -1) / 4.0
+    (shifted 1 1 - shifted 1 -1 - shifted -1 1 + shifted -1 -1) * 0.25f
 
 let private isStrictLocalMaximum (response: double[,,]) x y z =
     let value = response[x, y, z]
     let mutable isMaximum = true
+    let mutable dz = -1
 
-    for dz in -1 .. 1 do
-        for dy in -1 .. 1 do
-            for dx in -1 .. 1 do
+    while isMaximum && dz <= 1 do
+        let mutable dy = -1
+        while isMaximum && dy <= 1 do
+            let mutable dx = -1
+            while isMaximum && dx <= 1 do
                 if dx <> 0 || dy <> 0 || dz <> 0 then
                     if value <= response[x + dx, y + dy, z + dz] then
                         isMaximum <- false
+                dx <- dx + 1
+            dy <- dy + 1
+        dz <- dz + 1
+
+    isMaximum
+
+let private isStrictLocalMaximumFloat32 (response: float32[,,]) x y z =
+    let value = response[x, y, z]
+    let mutable isMaximum = true
+    let mutable dz = -1
+
+    while isMaximum && dz <= 1 do
+        let mutable dy = -1
+        while isMaximum && dy <= 1 do
+            let mutable dx = -1
+            while isMaximum && dx <= 1 do
+                if dx <> 0 || dy <> 0 || dz <> 0 then
+                    if value <= response[x + dx, y + dy, z + dz] then
+                        isMaximum <- false
+                dx <- dx + 1
+            dy <- dy + 1
+        dz <- dz + 1
 
     isMaximum
 
@@ -451,6 +565,30 @@ let private keypointsFromChunkResponse threshold scale (window: Window<Chunk<'T>
                                   Z = float z
                                   Scale = scale
                                   Response = value }
+
+    { Points = points |> Seq.toList }
+
+let private keypointsFromChunkResponseFloat32 threshold scale (window: Window<Chunk<'T>>) (response: float32[,,]) =
+    let width = response.GetLength(0)
+    let height = response.GetLength(1)
+    let depth = response.GetLength(2)
+    let emitStart, emitCount = window.EmitRange
+    let emitStop = int emitStart + int emitCount - 1
+    let points = ResizeArray<CoordinatePoint>()
+
+    if width >= 3 && height >= 3 && depth >= 3 then
+        for z in 1 .. depth - 2 do
+            if z >= int emitStart && z <= emitStop then
+                for y in 1 .. height - 2 do
+                    for x in 1 .. width - 2 do
+                        let value = response[x, y, z]
+                        if float value >= threshold && isStrictLocalMaximumFloat32 response x y z then
+                            points.Add
+                                { X = float x
+                                  Y = float y
+                                  Z = float z
+                                  Scale = scale
+                                  Response = float value }
 
     { Points = points |> Seq.toList }
 
@@ -483,6 +621,27 @@ let private localChunkKeypointStage<'T when 'T: equality and 'T: (new: unit -> '
         try
             let volume = chunkToVolume window.Items
             response window volume
+        finally
+            releaseConsumedChunks window
+
+    Stage.window $"{name}.window" windowSize pad zeroChunkLike<'T> stride
+    --> StackCore.mapWindow name mapper id id
+
+let private localChunkWindowStage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    name
+    sigma
+    stride
+    response
+    : Stage<Chunk<'T>, PointSet> =
+    if sigma <= 0.0 then invalidArg "sigma" $"{name} sigma must be positive."
+    if stride = 0u then invalidArg "stride" $"{name} stride must be positive."
+
+    let pad = uint (ceil (3.0 * sigma)) + 2u
+    let windowSize = stride + 2u * pad
+
+    let mapper (_debug: bool) (window: Window<Chunk<'T>>) =
+        try
+            response window
         finally
             releaseConsumedChunks window
 
@@ -612,48 +771,98 @@ let logBlobKeypointsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T:
 
         keypointsFromChunkResponse threshold sigma window response)
 
-let private hessianResponse (responseKind: string) sigma (smoothed: double[,,]) =
+let inline private sortValuesDescending3 a b c =
+    if a >= b then
+        if b >= c then struct (a, b, c)
+        elif a >= c then struct (a, c, b)
+        else struct (c, a, b)
+    else
+        if a >= c then struct (b, a, c)
+        elif b >= c then struct (b, c, a)
+        else struct (c, b, a)
+
+let inline private symmetricEigenvalues3Raw xx xy xz yy yz zz =
+    let p1 = xy * xy + xz * xz + yz * yz
+    if p1 = 0.0 then
+        sortValuesDescending3 xx yy zz
+    else
+        let q = (xx + yy + zz) / 3.0
+        let axx = xx - q
+        let ayy = yy - q
+        let azz = zz - q
+        let p2 = axx * axx + ayy * ayy + azz * azz + 2.0 * p1
+        let p = sqrt (p2 / 6.0)
+        let bxx = axx / p
+        let bxy = xy / p
+        let bxz = xz / p
+        let byy = ayy / p
+        let byz = yz / p
+        let bzz = azz / p
+        let detB =
+            bxx * (byy * bzz - byz * byz)
+            - bxy * (bxy * bzz - byz * bxz)
+            + bxz * (bxy * byz - byy * bxz)
+        let r = detB / 2.0
+        let phi =
+            if r <= -1.0 then Math.PI / 3.0
+            elif r >= 1.0 then 0.0
+            else Math.Acos(r) / 3.0
+        let e0 = q + 2.0 * p * Math.Cos(phi)
+        let e2 = q + 2.0 * p * Math.Cos(phi + 2.0 * Math.PI / 3.0)
+        let e1 = 3.0 * q - e0 - e2
+        sortValuesDescending3 e0 e1 e2
+
+let inline private sortAbsValuesDescending3 a b c =
+    sortValuesDescending3 (abs a) (abs b) (abs c)
+
+let private hessianResponseFloat32 (responseKind: string) sigma (smoothed: float32[,,]) =
     let width = smoothed.GetLength(0)
     let height = smoothed.GetLength(1)
     let depth = smoothed.GetLength(2)
-    let response = Array3D.zeroCreate<double> width height depth
+    let response = Array3D.zeroCreate<float32> width height depth
     let kind = responseKind.Trim().ToLowerInvariant()
+    let scale = float32 (sigma ** 6.0)
+    let epsilon = 1.0e-12f
 
     for z in 0 .. depth - 1 do
         for y in 0 .. height - 1 do
             for x in 0 .. width - 1 do
-                let hxx = second smoothed x y z 0
-                let hyy = second smoothed x y z 1
-                let hzz = second smoothed x y z 2
-                let hxy = mixed smoothed x y z 0 1
-                let hxz = mixed smoothed x y z 0 2
-                let hyz = mixed smoothed x y z 1 2
-                let eig =
-                    symmetricEigen
-                        { m00 = hxx; m01 = hxy; m02 = hxz
-                          m10 = hxy; m11 = hyy; m12 = hyz
-                          m20 = hxz; m21 = hyz; m22 = hzz }
-                    |> List.map (fst >> abs)
-                    |> List.sortDescending
-
-                let l1 = eig[0]
-                let l2 = eig[1]
-                let l3 = eig[2]
-                let epsilon = 1.0e-12
+                let hxx = secondFloat32 smoothed x y z 0
+                let hyy = secondFloat32 smoothed x y z 1
+                let hzz = secondFloat32 smoothed x y z 2
+                let hxy = mixedFloat32 smoothed x y z 0 1
+                let hxz = mixedFloat32 smoothed x y z 0 2
+                let hyz = mixedFloat32 smoothed x y z 1 2
                 let value =
                     match kind with
+                    | "blob"
+                    | "blobness" ->
+                        abs
+                            (hxx * (hyy * hzz - hyz * hyz)
+                             - hxy * (hxy * hzz - hyz * hxz)
+                             + hxz * (hxy * hyz - hyy * hxz))
                     | "tube"
                     | "tubeness"
                     | "vessel"
                     | "vesselness" ->
+                        let struct (l1, l2, l3) =
+                            symmetricEigenvalues3Raw
+                                (float hxx) (float hxy) (float hxz)
+                                (float hyy) (float hyz) (float hzz)
+                            |> fun struct (e0, e1, e2) -> sortAbsValuesDescending3 (float32 e0) (float32 e1) (float32 e2)
                         l2 * l3 / (l1 + epsilon)
                     | "sheet"
                     | "sheetness" ->
+                        let struct (l1, l2, l3) =
+                            symmetricEigenvalues3Raw
+                                (float hxx) (float hxy) (float hxz)
+                                (float hyy) (float hyz) (float hzz)
+                            |> fun struct (e0, e1, e2) -> sortAbsValuesDescending3 (float32 e0) (float32 e1) (float32 e2)
                         l1 * l3 / (l2 + epsilon)
                     | _ ->
-                        l1 * l2 * l3
+                        invalidArg "responseKind" $"Unsupported Hessian response kind '{responseKind}'. Expected Blob, Tube, or Sheet."
 
-                response[x, y, z] <- (sigma ** 6.0) * value
+                response[x, y, z] <- scale * value
 
     response
 
@@ -663,10 +872,11 @@ let hessianKeypointsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T:
     (threshold: float)
     (stride: uint)
     : Stage<Chunk<'T>, PointSet> =
-    localChunkKeypointStage<'T> "chunkHessianKeypoints" sigma stride (fun window volume ->
-        let smoothed = gaussianBlur3D sigma volume
-        let response = hessianResponse responseKind sigma smoothed
-        keypointsFromChunkResponse threshold sigma window response)
+    localChunkWindowStage<'T> "chunkHessianKeypoints" sigma stride (fun window ->
+        let volume = chunkToVolumeFloat32 window.Items
+        let smoothed = gaussianBlur3DFloat32 sigma volume
+        let response = hessianResponseFloat32 responseKind sigma smoothed
+        keypointsFromChunkResponseFloat32 threshold sigma window response)
 
 let harris3DKeypointsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (sigma: float)
@@ -677,25 +887,27 @@ let harris3DKeypointsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T
     : Stage<Chunk<'T>, PointSet> =
     if sigma <= 0.0 then invalidArg "sigma" "chunkHarris3DKeypoints sigma must be positive."
     if rho <= 0.0 then invalidArg "rho" "chunkHarris3DKeypoints rho must be positive."
+    if stride = 0u then invalidArg "stride" "chunkHarris3DKeypoints stride must be positive."
 
-    localChunkKeypointStage<'T> "chunkHarris3DKeypoints" (max sigma rho) stride (fun window volume ->
-        let smoothed = gaussianBlur3D sigma volume
+    localChunkWindowStage<'T> "chunkHarris3DKeypoints" (max sigma rho) stride (fun window ->
+        let volume = chunkToVolumeFloat32 window.Items
+        let smoothed = gaussianBlur3DFloat32 sigma volume
         let width = smoothed.GetLength(0)
         let height = smoothed.GetLength(1)
         let depth = smoothed.GetLength(2)
-        let ixx = Array3D.zeroCreate<double> width height depth
-        let iyy = Array3D.zeroCreate<double> width height depth
-        let izz = Array3D.zeroCreate<double> width height depth
-        let ixy = Array3D.zeroCreate<double> width height depth
-        let ixz = Array3D.zeroCreate<double> width height depth
-        let iyz = Array3D.zeroCreate<double> width height depth
+        let ixx = Array3D.zeroCreate<float32> width height depth
+        let iyy = Array3D.zeroCreate<float32> width height depth
+        let izz = Array3D.zeroCreate<float32> width height depth
+        let ixy = Array3D.zeroCreate<float32> width height depth
+        let ixz = Array3D.zeroCreate<float32> width height depth
+        let iyz = Array3D.zeroCreate<float32> width height depth
 
         for z in 0 .. depth - 1 do
             for y in 0 .. height - 1 do
                 for x in 0 .. width - 1 do
-                    let gx = central smoothed x y z 0
-                    let gy = central smoothed x y z 1
-                    let gz = central smoothed x y z 2
+                    let gx = centralFloat32 smoothed x y z 0
+                    let gy = centralFloat32 smoothed x y z 1
+                    let gz = centralFloat32 smoothed x y z 2
                     ixx[x, y, z] <- gx * gx
                     iyy[x, y, z] <- gy * gy
                     izz[x, y, z] <- gz * gz
@@ -703,25 +915,32 @@ let harris3DKeypointsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T
                     ixz[x, y, z] <- gx * gz
                     iyz[x, y, z] <- gy * gz
 
-        let ixx = gaussianBlur3D rho ixx
-        let iyy = gaussianBlur3D rho iyy
-        let izz = gaussianBlur3D rho izz
-        let ixy = gaussianBlur3D rho ixy
-        let ixz = gaussianBlur3D rho ixz
-        let iyz = gaussianBlur3D rho iyz
-        let response = Array3D.zeroCreate<double> width height depth
+        let ixx = gaussianBlur3DFloat32 rho ixx
+        let iyy = gaussianBlur3DFloat32 rho iyy
+        let izz = gaussianBlur3DFloat32 rho izz
+        let ixy = gaussianBlur3DFloat32 rho ixy
+        let ixz = gaussianBlur3DFloat32 rho ixz
+        let iyz = gaussianBlur3DFloat32 rho iyz
+        let response = Array3D.zeroCreate<float32> width height depth
+        let k = float32 k
 
         for z in 0 .. depth - 1 do
             for y in 0 .. height - 1 do
                 for x in 0 .. width - 1 do
-                    let m =
-                        { m00 = ixx[x, y, z]; m01 = ixy[x, y, z]; m02 = ixz[x, y, z]
-                          m10 = ixy[x, y, z]; m11 = iyy[x, y, z]; m12 = iyz[x, y, z]
-                          m20 = ixz[x, y, z]; m21 = iyz[x, y, z]; m22 = izz[x, y, z] }
-                    let trace = m.m00 + m.m11 + m.m22
-                    response[x, y, z] <- m3Det m - k * trace * trace * trace
+                    let xx = ixx[x, y, z]
+                    let xy = ixy[x, y, z]
+                    let xz = ixz[x, y, z]
+                    let yy = iyy[x, y, z]
+                    let yz = iyz[x, y, z]
+                    let zz = izz[x, y, z]
+                    let trace = xx + yy + zz
+                    let det =
+                        xx * (yy * zz - yz * yz)
+                        - xy * (xy * zz - yz * xz)
+                        + xz * (xy * yz - yy * xz)
+                    response[x, y, z] <- det - k * trace * trace * trace
 
-        keypointsFromChunkResponse threshold (max sigma rho) window response)
+        keypointsFromChunkResponseFloat32 threshold (max sigma rho) window response)
 
 let forstner3DKeypointsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (sigma: float)
@@ -731,25 +950,27 @@ let forstner3DKeypointsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 
     : Stage<Chunk<'T>, PointSet> =
     if sigma <= 0.0 then invalidArg "sigma" "chunkForstner3DKeypoints sigma must be positive."
     if rho <= 0.0 then invalidArg "rho" "chunkForstner3DKeypoints rho must be positive."
+    if stride = 0u then invalidArg "stride" "chunkForstner3DKeypoints stride must be positive."
 
-    localChunkKeypointStage<'T> "chunkForstner3DKeypoints" (max sigma rho) stride (fun window volume ->
-        let smoothed = gaussianBlur3D sigma volume
+    localChunkWindowStage<'T> "chunkForstner3DKeypoints" (max sigma rho) stride (fun window ->
+        let volume = chunkToVolumeFloat32 window.Items
+        let smoothed = gaussianBlur3DFloat32 sigma volume
         let width = smoothed.GetLength(0)
         let height = smoothed.GetLength(1)
         let depth = smoothed.GetLength(2)
-        let ixx = Array3D.zeroCreate<double> width height depth
-        let iyy = Array3D.zeroCreate<double> width height depth
-        let izz = Array3D.zeroCreate<double> width height depth
-        let ixy = Array3D.zeroCreate<double> width height depth
-        let ixz = Array3D.zeroCreate<double> width height depth
-        let iyz = Array3D.zeroCreate<double> width height depth
+        let ixx = Array3D.zeroCreate<float32> width height depth
+        let iyy = Array3D.zeroCreate<float32> width height depth
+        let izz = Array3D.zeroCreate<float32> width height depth
+        let ixy = Array3D.zeroCreate<float32> width height depth
+        let ixz = Array3D.zeroCreate<float32> width height depth
+        let iyz = Array3D.zeroCreate<float32> width height depth
 
         for z in 0 .. depth - 1 do
             for y in 0 .. height - 1 do
                 for x in 0 .. width - 1 do
-                    let gx = central smoothed x y z 0
-                    let gy = central smoothed x y z 1
-                    let gz = central smoothed x y z 2
+                    let gx = centralFloat32 smoothed x y z 0
+                    let gy = centralFloat32 smoothed x y z 1
+                    let gz = centralFloat32 smoothed x y z 2
                     ixx[x, y, z] <- gx * gx
                     iyy[x, y, z] <- gy * gy
                     izz[x, y, z] <- gz * gz
@@ -757,25 +978,34 @@ let forstner3DKeypointsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 
                     ixz[x, y, z] <- gx * gz
                     iyz[x, y, z] <- gy * gz
 
-        let ixx = gaussianBlur3D rho ixx
-        let iyy = gaussianBlur3D rho iyy
-        let izz = gaussianBlur3D rho izz
-        let ixy = gaussianBlur3D rho ixy
-        let ixz = gaussianBlur3D rho ixz
-        let iyz = gaussianBlur3D rho iyz
-        let response = Array3D.zeroCreate<double> width height depth
+        let ixx = gaussianBlur3DFloat32 rho ixx
+        let iyy = gaussianBlur3DFloat32 rho iyy
+        let izz = gaussianBlur3DFloat32 rho izz
+        let ixy = gaussianBlur3DFloat32 rho ixy
+        let ixz = gaussianBlur3DFloat32 rho ixz
+        let iyz = gaussianBlur3DFloat32 rho iyz
+        let response = Array3D.zeroCreate<float32> width height depth
 
         for z in 0 .. depth - 1 do
             for y in 0 .. height - 1 do
                 for x in 0 .. width - 1 do
-                    let m =
-                        { m00 = ixx[x, y, z]; m01 = ixy[x, y, z]; m02 = ixz[x, y, z]
-                          m10 = ixy[x, y, z]; m11 = iyy[x, y, z]; m12 = iyz[x, y, z]
-                          m20 = ixz[x, y, z]; m21 = iyz[x, y, z]; m22 = izz[x, y, z] }
-                    let trace = m.m00 + m.m11 + m.m22
-                    response[x, y, z] <- if trace <= 1.0e-12 then 0.0 else m3Det m / trace
+                    let xx = ixx[x, y, z]
+                    let xy = ixy[x, y, z]
+                    let xz = ixz[x, y, z]
+                    let yy = iyy[x, y, z]
+                    let yz = iyz[x, y, z]
+                    let zz = izz[x, y, z]
+                    let trace = xx + yy + zz
+                    if trace <= 1.0e-12f then
+                        response[x, y, z] <- 0.0f
+                    else
+                        let det =
+                            xx * (yy * zz - yz * yz)
+                            - xy * (xy * zz - yz * xz)
+                            + xz * (xy * yz - yy * xz)
+                        response[x, y, z] <- det / trace
 
-        keypointsFromChunkResponse threshold (max sigma rho) window response)
+        keypointsFromChunkResponseFloat32 threshold (max sigma rho) window response)
 
 let phaseCongruencyKeypointsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (sigma: float)

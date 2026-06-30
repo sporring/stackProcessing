@@ -10,12 +10,22 @@ let main args =
         match args with
         | [| input; output |] -> input, output
         | [| input |] -> input, "../tmp/gradientMagnitude"
-        | _ -> "../data/volume", "../tmp/gradientMagnitude"
+        | _ -> "../data/rotatingBoxes", "../tmp/gradientMagnitude"
+
+    // calculate the gradient magnitude squared, smoothing it with a normal distribution of std 1.0
+    // It's calculated twice, first to get the statistics. For larger than memory imageprocessing,
+    // sweeping twice should probably be avoided.
+    let stats = 
+        src
+        |> read<float32> input ".tiff"
+        >=> gradientMagnitudeSquared 1.0 (Some 7u)
+        >=> computeStats ()
+        |> drain
 
     src
     |> read<float32> input ".tiff"
-    >=> gradientMagnitude 1.0 3
-    >=> intensityStretch 0.0 255.0 0.0 255.0
+    >=> gradientMagnitudeSquared 1.0 (Some 7u)
+    >=> intensityStretch stats.Min stats.Max 0.0 255.0
     >=> cast<_, uint8>
     >=> write output ".tiff"
     |> sink

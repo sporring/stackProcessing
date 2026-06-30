@@ -975,6 +975,24 @@ let vectorMagnitudeFloat32 (vector: VectorChunk<float32>) =
         decRef output
         reraise()
 
+let vectorMagnitudeSquaredFloat32 (vector: VectorChunk<float32>) =
+    validateVectorStorage "vector" vector
+    let components = vector.Components.Length
+    let output = create<float32> vector.SpatialSize
+    try
+        let outputPixels = span<float32> output
+        outputPixels.Clear()
+        for c in 0 .. components - 1 do
+            let inputPixels = span<float32> vector.Components[c]
+            for i in 0 .. outputPixels.Length - 1 do
+                let value = inputPixels[i]
+                outputPixels[i] <- outputPixels[i] + value * value
+        output
+    with
+    | _ ->
+        decRef output
+        reraise()
+
 let vectorAngleToFloat32 (reference: float32 list) (vector: VectorChunk<float32>) =
     validateVectorStorage "vector" vector
     let components = vector.Components.Length

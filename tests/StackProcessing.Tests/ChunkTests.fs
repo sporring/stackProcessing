@@ -1528,9 +1528,9 @@ let chunkSuite =
                     (ChunkFunctions.laplacianNativeParallelCollect 1.0 0 2)
                     (makeSlices ())
 
-            let gradientMagnitude =
+            let gradientMagnitudeSquared =
                 runStageList
-                    (ChunkFunctions.gradientMagnitudeNativeParallelCollect 1.0 0 2)
+                    (ChunkFunctions.gradientMagnitudeSquaredNativeParallelCollect 1.0 0 2)
                     (makeSlices ())
 
             let sobelMagnitude =
@@ -1541,14 +1541,14 @@ let chunkSuite =
             let expectedGradient = ChunkKernel.gradientVectorFromSmoothedNative expectedSlices
             let expectedHessian = ChunkKernel.hessianUpperFromSmoothedNative expectedSlices
             let expectedLaplacian = ChunkKernel.laplacianFromSmoothedNative expectedSlices
-            let expectedGradientMagnitude = Chunk.vectorMagnitudeFloat32 expectedGradient
+            let expectedGradientMagnitudeSquared = Chunk.vectorMagnitudeSquaredFloat32 expectedGradient
             let expectedSobelMagnitude = ChunkKernel.sobelMagnitudeFromNativeFloat32 expectedSlices
 
             try
                 Expect.equal gradient.Length 3 "Gradient stage should emit one vector chunk per input slice."
                 Expect.equal hessian.Length 3 "Hessian stage should emit one vector chunk per input slice."
                 Expect.equal laplacian.Length 3 "Laplacian stage should emit one scalar chunk per input slice."
-                Expect.equal gradientMagnitude.Length 3 "Gradient magnitude stage should emit one scalar chunk per input slice."
+                Expect.equal gradientMagnitudeSquared.Length 3 "Gradient magnitude squared stage should emit one scalar chunk per input slice."
                 Expect.equal sobelMagnitude.Length 3 "Sobel magnitude stage should emit one scalar chunk per input slice."
 
                 Expect.equal (Chunk.vectorComponentCount gradient.[1]) 3u "Gradient should contain Dx, Dy, Dz."
@@ -1572,9 +1572,9 @@ let chunkSuite =
                     "Laplacian stage center slice should match the pure Chunk derivative helper."
 
                 Expect.sequenceEqual
-                    ((Chunk.span<float32> gradientMagnitude.[1]).ToArray())
-                    ((Chunk.span<float32> expectedGradientMagnitude).ToArray())
-                    "Gradient magnitude stage center slice should match vector magnitude of the gradient helper."
+                    ((Chunk.span<float32> gradientMagnitudeSquared.[1]).ToArray())
+                    ((Chunk.span<float32> expectedGradientMagnitudeSquared).ToArray())
+                    "Gradient magnitude squared stage center slice should match vector magnitude squared of the gradient helper."
 
                 Expect.sequenceEqual
                     ((Chunk.span<float32> sobelMagnitude.[1]).ToArray())
@@ -1584,12 +1584,12 @@ let chunkSuite =
                 gradient |> List.iter Chunk.decRefVector
                 hessian |> List.iter Chunk.decRefVector
                 laplacian |> List.iter Chunk.decRef
-                gradientMagnitude |> List.iter Chunk.decRef
+                gradientMagnitudeSquared |> List.iter Chunk.decRef
                 sobelMagnitude |> List.iter Chunk.decRef
                 Chunk.decRefVector expectedGradient
                 Chunk.decRefVector expectedHessian
                 Chunk.decRef expectedLaplacian
-                Chunk.decRef expectedGradientMagnitude
+                Chunk.decRef expectedGradientMagnitudeSquared
                 Chunk.decRef expectedSobelMagnitude
                 expectedSlices |> Array.iter Chunk.decRef
 

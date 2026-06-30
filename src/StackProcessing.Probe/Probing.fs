@@ -157,9 +157,8 @@ let private sumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T:
 let private smoothWGauss<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> sigma _outputRegionMode _boundaryCondition windowSize =
     gaussianFilter<'T> sigma windowSize
 
-let private gradientMagnitude<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> windowSize =
-    let radius = windowSize |> Option.map (fun w -> int ((w - 1u) / 2u)) |> Option.defaultValue 3
-    cast<'T, float32> --> StackProcessing.gradientMagnitude 1.0 radius
+let private gradientMagnitudeSquared<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> windowSize =
+    cast<'T, float32> --> StackProcessing.gradientMagnitudeSquared 1.0 windowSize
 
 let private sobelEdge<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> _windowSize =
     cast<'T, float32> --> StackProcessing.sobelMagnitude ()
@@ -621,7 +620,7 @@ let private sampleCompatibleProbeFeatures (probe: ProbeResultJson) =
             yield readFeatureWithAxes
             yield "SmoothWMedian:type=Float32:radius=3:windowSize=7"
             yield "SmoothWBilateral:type=Float32:domainSigma=1.5:rangeSigma=30.0:windowSize=7"
-            yield "GradientMagnitude:type=Float32:windowSize=7"
+            yield "GradientMagnitudeSquared:type=Float32:windowSize=7"
             yield "SobelEdge:type=Float32:windowSize=7"
             yield "Laplacian:type=Float32:windowSize=7"
             yield "IntensityStretch:type=Float32:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0"
@@ -1845,7 +1844,7 @@ let private bottomUpGraphTemplates config =
         let floatFilters =
             [ "gauss", "SmoothWGauss", [ "sigma", "3.0"; "outputRegionMode", "None"; "boundaryCondition", "None"; "windowSize", "None" ]
               "median", "SmoothWMedian", [ "radius", "3"; "windowSize", "7" ]
-              "gradient", "GradientMagnitude", [ "windowSize", "7" ]
+              "gradient", "GradientMagnitudeSquared", [ "windowSize", "7" ]
               "laplacian", "Laplacian", [ "windowSize", "7" ]
               "sobel", "SobelEdge", [ "windowSize", "7" ] ]
 
@@ -2290,7 +2289,7 @@ let private generatedGraphTemplates () =
     let filterOps =
         [ "median", "SmoothWMedian", [ "type", "Float32"; "radius", "3"; "windowSize", "7" ], "SmoothWMedian:type=Float32:radius=3:windowSize=7"
           "bilateral", "SmoothWBilateral", [ "type", "Float32"; "domainSigma", "1.5"; "rangeSigma", "30.0"; "windowSize", "7" ], "SmoothWBilateral:type=Float32:domainSigma=1.5:rangeSigma=30.0:windowSize=7"
-          "gradient", "GradientMagnitude", [ "type", "Float32"; "windowSize", "7" ], "GradientMagnitude:type=Float32:windowSize=7"
+          "gradient", "GradientMagnitudeSquared", [ "type", "Float32"; "windowSize", "7" ], "GradientMagnitudeSquared:type=Float32:windowSize=7"
           "sobel", "SobelEdge", [ "type", "Float32"; "windowSize", "7" ], "SobelEdge:type=Float32:windowSize=7"
           "laplacian", "Laplacian", [ "type", "Float32"; "windowSize", "7" ], "Laplacian:type=Float32:windowSize=7"
           "gauss", "SmoothWGauss", [ "sigma", "3.0"; "outputRegionMode", "None"; "boundaryCondition", "None"; "windowSize", "None" ], "SmoothWGauss:sigma=3.0:outputRegionMode=None:boundaryCondition=None:windowSize=None" ]
@@ -2529,7 +2528,7 @@ let private operationGraph (probe: ProbeResultJson) =
             withWrite
                 [ readNode "Float32"
                   "median", "SmoothWMedian", [ "type", "Float32"; "radius", "3"; "windowSize", "7" ]
-                  "gradient", "GradientMagnitude", [ "type", "Float32"; "windowSize", "7" ]
+                  "gradient", "GradientMagnitudeSquared", [ "type", "Float32"; "windowSize", "7" ]
                   intensityStretchNode "stretch" "Float32" "0.0" "255.0"
                   castNode "Float32" "UInt8" ])
     | "bio-background-mask-write" ->
@@ -2999,7 +2998,7 @@ let main args =
                                       encodedFeatures
                                           [ readFloatFeature
                                             readFloatFeatureWithAxes
-                                            "GradientMagnitude:type=Float32:windowSize=7"
+                                            "GradientMagnitudeSquared:type=Float32:windowSize=7"
                                             "IntensityStretch:type=Float32:inputMinimum=0.0:inputMaximum=255.0:outputMinimum=0.0:outputMaximum=255.0"
                                             "Cast:sourceType=Float32:targetType=UInt8"
                                             writeStackFeature
@@ -3008,7 +3007,7 @@ let main args =
                                  (fun () ->
                                      source availableMemory
                                      |> read<float32> inputDir ".tiff"
-                                     >=> gradientMagnitude<float32> (Some 7u)
+                                     >=> gradientMagnitudeSquared<float32> (Some 7u)
                                      >=> intensityStretch 0.0 255.0 0.0 255.0
                                      >=> cast<_, uint8>
                                      >=> write (outputDir size "bio-edge-filter-float-write") ".tiff")
@@ -3242,7 +3241,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<float32> inputDir ".tiff"
-                                         >=> gradientMagnitude<float32> (Some 7u)
+                                         >=> gradientMagnitudeSquared<float32> (Some 7u)
                                          >=> sobelEdge<float32> (Some 7u)
                                          >=> laplacian<float32> (Some 7u)
                                          >=> intensityStretch 0.0 255.0 0.0 255.0

@@ -3458,7 +3458,7 @@ let stackProcessingSupportSuite =
                 let shiftScaleStage : Stage<Image<float32>, Image<float32>> = StackProcessing.shiftScale<float32> 1.0 2.0
                 let stretchStage : Stage<Image<float32>, Image<float32>> = StackProcessing.intensityStretch 0.0 200.0 0.0 1.0
                 let medianStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.smoothWMedian<uint8> 1u (Some 3u)
-                let gradientStage : Stage<Image<float32>, Image<float32>> = StackProcessing.gradientMagnitude<float32> (Some 3u)
+                let gradientStage : Stage<Image<float32>, Image<float32>> = StackProcessing.gradientMagnitudeSquared 1.0 (Some 3u)
                 let sobelStage : Stage<Image<float32>, Image<float32>> = StackProcessing.sobelEdge<float32> (Some 3u)
                 let laplacianStage : Stage<Image<float32>, Image<float32>> = StackProcessing.laplacian<float32> (Some 3u)
                 let erodeStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.grayscaleErode<uint8> 1u (Some 3u)
@@ -3480,7 +3480,7 @@ let stackProcessingSupportSuite =
                 expectSameShapeFloat32 "shiftScale" floatSlices shiftScaleStage
                 expectSameShapeFloat32 "intensityStretch" floatSlices stretchStage
                 expectSameShapeUint8 "smoothWMedian" uintSlices medianStage
-                expectSameShapeFloat32 "gradientMagnitude" floatSlices gradientStage
+                expectSameShapeFloat32 "gradientMagnitudeSquared" floatSlices gradientStage
                 expectSameShapeFloat32 "sobelEdge" floatSlices sobelStage
                 expectSameShapeFloat32 "laplacian" floatSlices laplacianStage
                 expectSameShapeUint8 "grayscaleErode" uintSlices erodeStage

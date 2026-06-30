@@ -1011,6 +1011,12 @@ let vectorMagnitudeFloat32 : Stage<VectorChunk<float32>, Chunk<float32>> =
         Chunk.vectorMagnitudeFloat32
         (fun n -> 2UL * chunkMemoryNeed<float32> n)
 
+let vectorMagnitudeSquaredFloat32 : Stage<VectorChunk<float32>, Chunk<float32>> =
+    releaseUnaryVectorChunk
+        "chunkVectorMagnitudeSquaredFloat32"
+        Chunk.vectorMagnitudeSquaredFloat32
+        (fun n -> 2UL * chunkMemoryNeed<float32> n)
+
 let vectorAngleToFloat32 reference : Stage<VectorChunk<float32>, Chunk<float32>> =
     releaseUnaryVectorChunk
         "chunkVectorAngleToFloat32"
@@ -1686,12 +1692,12 @@ let gradientVectorNativeParallelCollectXYZ workers sigmaX radiusX sigmaY radiusY
 let gradientVectorNativeParallelCollect workers sigma radius : Stage<Chunk<float32>, VectorChunk<float32>> =
     gradientVectorNativeParallelCollectXYZ workers sigma radius sigma radius sigma radius
 
-let gradientMagnitudeNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers : Stage<Chunk<float32>, Chunk<float32>> =
+let gradientMagnitudeSquaredNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ workers : Stage<Chunk<float32>, Chunk<float32>> =
     gradientVectorNativeParallelCollectXYZ workers sigmaX radiusX sigmaY radiusY sigmaZ radiusZ
-    --> vectorMagnitudeFloat32
+    --> vectorMagnitudeSquaredFloat32
 
-let gradientMagnitudeNativeParallelCollect sigma radius workers : Stage<Chunk<float32>, Chunk<float32>> =
-    gradientMagnitudeNativeParallelCollectXYZ sigma radius sigma radius sigma radius workers
+let gradientMagnitudeSquaredNativeParallelCollect sigma radius workers : Stage<Chunk<float32>, Chunk<float32>> =
+    gradientMagnitudeSquaredNativeParallelCollectXYZ sigma radius sigma radius sigma radius workers
 
 let structureTensorNativeParallelCollect workers sigma radius rho rhoRadius : Stage<Chunk<float32>, VectorChunk<float32>> =
     let outerProduct =

@@ -3,23 +3,20 @@
 open StackProcessing
 
 [<EntryPoint>]
-let main arg =
-    printfn "Setting up finite difference filter"
+let main args =
     let availableMemory = 2UL * 1024UL * 1024UL *1024UL // 1MB for example
-    let src, arg = commandLineSource availableMemory arg
+    let src, args = commandLineSource availableMemory args
     let input, output = 
-        if arg.Length > 0 then
-            "../data/volume", "../tmp/finiteDiff3D"
+        if args.Length > 0 then
+            "../data/objects", "../tmp/finiteDiff3D"
         else
-            "../data/volume", "../tmp/finiteDiff3D"
+            "../data/objects", "../tmp/finiteDiff3D"
 
+    // read an image and calculate the derivative in the z-direction
     src
     |> read<float32> input ".tiff"
-    >=> tap "tap: For finiteDiff"
     >=> finiteDiffZ 2u
-    >=> tap "tap: For cast"
     >=> cast<_, uint8>
-    >=> tap "tap: For write"
     >=> write output ".tiff"
     |> sink
 
