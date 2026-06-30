@@ -14,7 +14,7 @@ let main args =
     // generate an image of zeros and add salt and peper noise to it.
     src
     |> zero<uint8> 64u 64u 64u
-    >=> addSaltAndPepperNoise<uint8> 0.02 None None
+    >=> addSaltAndPepperNoise 0.02 None None
     >=> write output ".tiff"
     |> sink
 

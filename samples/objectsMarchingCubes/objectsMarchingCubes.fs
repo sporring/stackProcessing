@@ -20,7 +20,7 @@ let main args =
 
     src
     |> read<uint8> input ".tiff"
-    >=> marchingCubes<uint8> 0.5
+    >=> marchingCubes 0.5
     >=> writeMesh output ".obj"
     |> sink
 

@@ -15,7 +15,7 @@ let main args =
 
     src
     |> read<uint8> input ".tiff"
-    >=> sumProjection<uint8> "Identity"
+    >=> sumProjection "Identity"
     >=> cast<_, uint8>
     >=> write output ".tiff"
     |> sink

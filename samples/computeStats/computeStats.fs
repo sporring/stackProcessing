@@ -17,13 +17,13 @@ let main arg =
     let stats = 
         src
         |> read<uint8> input ".tiff"
-        >=> computeStats<uint8> ()
+        >=> computeStats ()
         |> drain
 
     let partialStats = 
         src
         |> readRandom<uint8> 5u input ".tiff"
-        >=> computeStats<uint8> ()
+        >=> computeStats ()
         |> drain
 
     printfn "Full image statistics: %A" stats

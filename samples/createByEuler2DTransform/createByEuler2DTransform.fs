@@ -48,8 +48,8 @@ let main arg =
     let antiDiagonal = movingMask "AntiDiagonal"
 
     // Max of a tripple fan-out
-    zip (zip diagonal topDown >>=> maxOfPair<uint8>) antiDiagonal
-    >>=> maxOfPair<uint8>
+    zip (zip diagonal topDown >>=> maxOfPair) antiDiagonal
+    >>=> maxOfPair
     >=> intensityStretch 0.0 1.0 0.0 255.0
     >=> write output ".tiff"
     |> sink

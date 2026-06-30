@@ -70,7 +70,8 @@ let showChartWithLabels = StackCharts.showChartWithLabels
 let showChartXY = StackCharts.showChartXY
 let showChartXYWithLabels = StackCharts.showChartXYWithLabels
 let showChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackCharts.showChunk<'T>
-let showChunkWithLabels<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackCharts.showChunkWithLabels<'T>
+let showChunkWithLabels<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> colorMap title xAxis yAxis chunk =
+    StackCharts.showChunkWithLabels<'T> colorMap title xAxis yAxis chunk
 
 type FileInfo = StackIO.FileInfo
 type ChunkInfo = StackIO.ChunkInfo
@@ -125,7 +126,8 @@ let readZarrComplexHermitian path multiscaleIndex datasetIndex timepoint channel
 let readZarrComplexHermitianTiledRange = StackIO.readZarrSpectralComplex64InterleavedFloat32TiledRange
 let readZarrComplexHermitianTiled path multiscaleIndex datasetIndex timepoint channel maxParallelChunks =
     readZarrComplexHermitianTiledRange 0u 1 UInt32.MaxValue path multiscaleIndex datasetIndex timepoint channel maxParallelChunks
-let writeZarr<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.writeZarrChunkSlices<'T>
+let writeZarr<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> outputPath name depth chunkX chunkY chunkZ physicalSizeX physicalSizeY physicalSizeZ maxConcurrentWrites =
+    StackIO.writeZarrChunkSlices<'T> outputPath name depth chunkX chunkY chunkZ physicalSizeX physicalSizeY physicalSizeZ maxConcurrentWrites
 let writeZarrWithCompression<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.writeZarrChunkSlicesWithCompression<'T>
 let writeZarrThick<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.writeZarrChunkThick<'T>
 let writeZarrThickWithCompression<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.writeZarrChunkThickWithCompression<'T>
@@ -239,9 +241,12 @@ let pad<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> 
 let crop<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.crop<'T>
 let squeeze<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.squeeze<'T>
 let concatenateAlong<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.concatenateAlong<'T>
-let permuteAxes<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.permuteAxes<'T>
-let resize<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.chunkResize<'T>
-let resample<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.chunkResample<'T>
+let permuteAxes<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> order =
+    ChunkFunctions.permuteAxes<'T> order
+let resize<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> outputWidth outputHeight outputDepth interpolationName =
+    ChunkFunctions.chunkResize<'T> outputWidth outputHeight outputDepth interpolationName
+let resample<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> factorX factorY factorZ interpolationName =
+    ChunkFunctions.chunkResample<'T> factorX factorY factorZ interpolationName
 let show<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.show<'T>
 let signedDistanceBand bandRadius stride =
     ChunkFunctions.signedDistanceBandNativeParallelCollect stackProcessingWorkers bandRadius stride
@@ -297,15 +302,22 @@ let invFft3DRealXY = ChunkFunctions.invFft3DRealXYComplex64InterleavedToFloat32
 let invFft = ChunkFunctions.invFftXYComplex64InterleavedToFloat32
 let invFftRealXY = ChunkFunctions.invFftXYHermitianPackedComplex64InterleavedToFloat32
 let fftShift3D = ChunkFunctions.fftShift3DComplex64Interleaved
-let imageHistogram<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.histogramReducer<'T>
-let imageHistogramDense<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.histogramDenseReducer<'T>
-let imageHistogramLeftEdges<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.histogramLeftEdgesReducer<'T>
-let imageHistogramFixedBins<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.histogramFixedBinsReducer<'T>
-let histogramEqualization<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.histogramEqualization<'T>
-let quantiles = ChunkFunctions.quantiles
+let imageHistogram<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> () =
+    ChunkFunctions.histogramReducer<'T> ()
+let imageHistogramDense<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> () =
+    ChunkFunctions.histogramDenseReducer<'T> ()
+let imageHistogramLeftEdges<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> leftEdges =
+    ChunkFunctions.histogramLeftEdgesReducer<'T> leftEdges
+let imageHistogramFixedBins<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> firstLeftEdge lastLeftEdge bins =
+    ChunkFunctions.histogramFixedBinsReducer<'T> firstLeftEdge lastLeftEdge bins
+let histogramEqualization<'T, 'H when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (histogram: 'H) =
+    ChunkFunctions.histogramEqualization<'T> (box histogram)
+let quantiles quantileValues histogram =
+    ChunkFunctions.quantiles quantileValues (box histogram)
 let computeStats<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> () = ChunkFunctions.computeStats<'T> ()
 let volume = ChunkFunctions.volume
-let sumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.chunkSumProjection<'T>
+let sumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> projectionKind =
+    ChunkFunctions.chunkSumProjection<'T> projectionKind
 
 let momentsThresholdFromHistogram (histogram: Histogram<'T>) : float =
     let ordered =
@@ -465,7 +477,8 @@ let log<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> 
     else
         invalidArg "T" $"log<'T> supports float32 and float chunks, got {typeof<'T>.Name}."
 let squareFloat32 = ChunkFunctions.squareFloat32
-let clamp<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.clamp<'T>
+let clamp<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> lower upper =
+    ChunkFunctions.clamp<'T> lower upper
 let shiftScale<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.shiftScale<'T>
 let intensityStretch = ChunkFunctions.intensityStretch
 let cast<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct and 'S :> ValueType
@@ -665,9 +678,12 @@ let medianInt32 radius =
     ChunkFunctions.medianNativeNthElementInt32ParallelCollect radius stackProcessingWorkers
 let medianFloat32 radius =
     ChunkFunctions.medianNativeNthElementFloat32ParallelCollect radius stackProcessingWorkers
-let addNormalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.addNormalNoise<'T>
-let addSaltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.addSaltAndPepperNoise<'T>
-let addPoissonNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.addPoissonNoise<'T>
+let addNormalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> mean std =
+    ChunkFunctions.addNormalNoise<'T> mean std
+let addSaltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> probability pepper salt =
+    ChunkFunctions.addSaltAndPepperNoise<'T> probability pepper salt
+let addPoissonNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> lambda =
+    ChunkFunctions.addPoissonNoise<'T> lambda
 let binaryDilate = ChunkFunctions.binaryDilateZonohedral
 let binaryErode = ChunkFunctions.binaryErodeZonohedral
 let binaryOpening = ChunkFunctions.binaryOpeningZonohedral
@@ -686,7 +702,8 @@ type ObjectBounds = StackObjects.ObjectBounds
 type StreamedObject = StackObjects.StreamedObject
 type ObjectMeasurements = StackObjects.ObjectMeasurements
 type ObjectSizeStats = StackObjects.ObjectSizeStats
-let streamConnectedObjects<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackObjects.streamConnectedObjectsChunk<'T>
+let streamConnectedObjects<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> connectivity =
+    StackObjects.streamConnectedObjectsChunk<'T> connectivity
 let paintObjects = StackObjects.paintObjectsChunk
 let paintObjectsCropped = StackObjects.paintObjectsCroppedChunk
 let measureObjects = StackObjects.measureObjects
@@ -699,34 +716,59 @@ let fillSmallHoles = StackObjects.fillSmallHolesChunk
 type Point3D = StackMesh.Point3D
 type Triangle = StackMesh.Triangle
 type TriangleSet = StackMesh.TriangleSet
-let marchingCubes<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackMesh.marchingCubesChunk<'T>
+let marchingCubes<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> surfaceValue =
+    StackMesh.marchingCubesChunk<'T> surfaceValue
 let surfaceArea = StackMesh.surfaceArea
 let writeMesh = StackMesh.writeMesh
 let meshFilePath = StackMesh.meshFilePath
 
 let dogKeypoints<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackPoints.dogKeypointsChunk<'T>
 let logBlobKeypoints<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackPoints.logBlobKeypointsChunk<'T>
-let hessianKeypoints<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackPoints.hessianKeypointsChunk<'T>
-let harris3DKeypoints<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackPoints.harris3DKeypointsChunk<'T>
-let forstner3DKeypoints<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackPoints.forstner3DKeypointsChunk<'T>
+let hessianKeypoints<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> sigma responseKind threshold stride =
+    StackPoints.hessianKeypointsChunk<'T> sigma responseKind threshold stride
+let harris3DKeypoints<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> sigma rho k threshold stride =
+    StackPoints.harris3DKeypointsChunk<'T> sigma rho k threshold stride
+let forstner3DKeypoints<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> sigma rho threshold stride =
+    StackPoints.forstner3DKeypointsChunk<'T> sigma rho threshold stride
 let phaseCongruencyKeypoints<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackPoints.phaseCongruencyKeypointsChunk<'T>
-let siftKeypoints<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackPoints.siftKeypointsChunk<'T>
+let siftKeypoints<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> sigma0 scaleFactor scaleLevels contrastThreshold stride =
+    StackPoints.siftKeypointsChunk<'T> sigma0 scaleFactor scaleLevels contrastThreshold stride
 
 type BiasPolynomialTerm = StackBias.BiasPolynomialTerm
 type BiasPolynomialModel = StackBias.BiasPolynomialModel
-let fitBiasModel<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackBias.fitBiasModelChunk<'T>
-let fitBiasModelMasked<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackBias.fitBiasModelChunkMasked<'T>
-let correctBias<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackBias.correctBiasChunk<'T>
-let correctBiasMasked<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackBias.correctBiasChunkMasked<'T>
-let serialPolynomialBiasCorrect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackBias.serialPolynomialBiasCorrectChunk<'T>
+let fitBiasModel<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> order =
+    StackBias.fitBiasModelChunk<'T> order
+let fitBiasModelMasked<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> order =
+    StackBias.fitBiasModelChunkMasked<'T> order
+let correctBias<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> model =
+    StackBias.correctBiasChunk<'T> model
+let correctBiasMasked<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> model =
+    StackBias.correctBiasChunkMasked<'T> model
+let serialPolynomialBiasCorrect<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> order =
+    StackBias.serialPolynomialBiasCorrectChunk<'T> order
 
 type SerialSliceTransform = StackSerialSections.SerialSliceTransform
 type SerialSliceManifest = StackSerialSections.SerialSliceManifest
 type SerialVolumeGeometry = StackSerialSections.SerialVolumeGeometry
 let serialIdentityManifest = StackSerialSections.serialIdentityManifest
-let serialEstTrans<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackSerialSections.serialEstTransChunk<'T>
-let serialEstBoundingBox<'T when 'T: equality> = StackSerialSections.serialEstBoundingBoxChunk<'T>
-let serialApplyTrans<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackSerialSections.serialApplyTransChunk<'T>
+let serialEstTrans<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> searchRadius method scale pixelFraction =
+    StackSerialSections.serialEstTransChunk<'T> searchRadius method scale pixelFraction
+let serialEstBoundingBox<'T when 'T: equality> : Stage<Chunk<'T> * SerialSliceManifest, SerialVolumeGeometry> =
+    StackSerialSections.serialEstBoundingBoxChunk<'T>
+let private serialBackgroundFromDouble<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: double) =
+    if typeof<'T> = typeof<uint8> then unbox<'T> (box (uint8 value))
+    elif typeof<'T> = typeof<int8> then unbox<'T> (box (int8 value))
+    elif typeof<'T> = typeof<uint16> then unbox<'T> (box (uint16 value))
+    elif typeof<'T> = typeof<int16> then unbox<'T> (box (int16 value))
+    elif typeof<'T> = typeof<uint32> then unbox<'T> (box (uint32 value))
+    elif typeof<'T> = typeof<int32> then unbox<'T> (box (int32 value))
+    elif typeof<'T> = typeof<uint64> then unbox<'T> (box (uint64 value))
+    elif typeof<'T> = typeof<int64> then unbox<'T> (box (int64 value))
+    elif typeof<'T> = typeof<float32> then unbox<'T> (box (float32 value))
+    elif typeof<'T> = typeof<float> then unbox<'T> (box value)
+    else invalidArg "T" $"serialApplyTrans background supports real numeric chunks, got {typeof<'T>.Name}."
+let serialApplyTrans<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (background: double) geometry =
+    StackSerialSections.serialApplyTransChunk<'T> (serialBackgroundFromDouble<'T> background) geometry
 let serialTrans<'T when 'T: equality> = StackSerialSections.serialTransChunk<'T>
 let serialTransManifest<'T when 'T: equality> = StackSerialSections.serialTransManifestChunk<'T>
 let serialApplyManifestInBoundingBox<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackSerialSections.serialApplyManifestInBoundingBoxChunk<'T>

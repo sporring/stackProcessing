@@ -15,7 +15,7 @@ let main args =
     // Runs a separable uniform filter on an input image
     src
     |> read<float32> input ".tiff"
-    >=> boxFilter<float32> 1 1 1
+    >=> boxFilter 1 1 1
     >=> cast<_, uint8>
     >=> write output ".tiff"
     |> sink

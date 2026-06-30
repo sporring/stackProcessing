@@ -172,7 +172,7 @@ let generatorSuite =
 
             Expect.stringContains code "debug 1u (optimizerEnabled ()) 2048UL" "NormalNoise should generate a debug source with available memory."
             Expect.stringContains code "|> zero<float32> 12u 13u 4u" "NormalNoise should generate a typed zero source."
-            Expect.stringContains code ">=> addNormalNoise<float32> 5.0 0.25" "NormalNoise should generate typed distribution parameters."
+            Expect.stringContains code ">=> addNormalNoise 5.0 0.25" "NormalNoise should generate typed distribution parameters."
 
             let saltCode =
                 graph
@@ -214,9 +214,9 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains saltCode "|> zero<float32> 12u 13u 4u" "SaltAndPepperNoise should generate a typed zero source."
-            Expect.stringContains saltCode ">=> addSaltAndPepperNoise<float32> 0.01 None None" "SaltAndPepperNoise should default pepper and salt values."
+            Expect.stringContains saltCode ">=> addSaltAndPepperNoise 0.01 None None" "SaltAndPepperNoise should default pepper and salt values."
             Expect.stringContains shotCode "|> zero<float32> 12u 13u 4u" "PoissonNoise should generate a typed zero source."
-            Expect.stringContains shotCode ">=> addPoissonNoise<float32> 2.0" "PoissonNoise should lower with lambda."
+            Expect.stringContains shotCode ">=> addPoissonNoise 2.0" "PoissonNoise should lower with lambda."
             Expect.stringContains speckleCode "|> speckleNoise<float32> 12u 13u 4u 0.5" "SpeckleNoise should lower with std."
 
         testCase "coordinate sources lower to Float64 coordinate image streams" <| fun _ ->
@@ -282,9 +282,9 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "|> readRandom<float> 8u \"input\" \".tiff\"" "Bias fit should be able to use readRandom."
-            Expect.stringContains code ">=> fitBiasModel<float> 2" "FitBiasModel should lower to the polynomial reducer."
+            Expect.stringContains code ">=> fitBiasModel 2" "FitBiasModel should lower to the polynomial reducer."
             Expect.stringContains code "|> drain" "Linked bias model reducer should be drained into a binding."
-            Expect.stringContains code ">=> correctBias<float> FitBiasModel0" "CorrectBias should receive the linked bias model binding."
+            Expect.stringContains code ">=> correctBias FitBiasModel0" "CorrectBias should receive the linked bias model binding."
 
         testCase "readRandom supports volume, zarr, and nexus formats" <| fun _ ->
             let volume =
@@ -358,8 +358,8 @@ let generatorSuite =
                       edge "apply" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> serialEstTrans<float> 4 \"dogAffine\" 1.6 0.1" "SerialEstTrans should lower to the streamed image/manifest estimator."
-            Expect.stringContains code ">=> serialApplyTrans<float> 0.0 None" "Serial apply should consume the streamed image/manifest pairs."
+            Expect.stringContains code ">=> serialEstTrans 4 \"dogAffine\" 1.6 0.1" "SerialEstTrans should lower to the streamed image/manifest estimator."
+            Expect.stringContains code ">=> serialApplyTrans 0.0 None" "Serial apply should consume the streamed image/manifest pairs."
             Expect.isFalse (code.Contains("serialTransImage")) "Direct estimator-to-apply wiring should keep the pair stream intact."
 
         testCase "serial bounding box can feed serial apply geometry parameter" <| fun _ ->
@@ -413,8 +413,8 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "let SerialVolumeGeometry0 =" "Linked serial bounding box should be drained into a geometry binding."
-            Expect.stringContains code ">=> serialEstBoundingBox<float>" "SerialEstBoundingBox should lower to the Core reducer."
-            Expect.stringContains code ">=> serialApplyTrans<float> 0.0 (Some SerialVolumeGeometry0)" "SerialApplyTrans should receive the linked geometry binding."
+            Expect.stringContains code ">=> serialEstBoundingBox" "SerialEstBoundingBox should lower to the Core reducer."
+            Expect.stringContains code ">=> serialApplyTrans 0.0 (Some SerialVolumeGeometry0)" "SerialApplyTrans should receive the linked geometry binding."
 
         testCase "serial bounding box rejects reducer parameter fed from the same streaming branch" <| fun _ ->
             let read =
@@ -478,8 +478,8 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "|> readVolume<float32> (volumeFilePath \"sections.tif\" \".tiff\")" "The source should be Float32."
-            Expect.stringContains code ">=> serialEstTrans<float32> 4 \"dogAffine\" 1.6 0.1" "SerialEstTrans should use the connected image type."
-            Expect.stringContains code ">=> serialApplyTrans<float32> 0.0 None" "SerialApplyTrans should use the connected image type."
+            Expect.stringContains code ">=> serialEstTrans 4 \"dogAffine\" 1.6 0.1" "SerialEstTrans should use the connected image type."
+            Expect.stringContains code ">=> serialApplyTrans 0.0 None" "SerialApplyTrans should use the connected image type."
             Expect.isFalse (code.Contains("serialEstTrans<float>")) "Stale Float64 serial parameters must not leak into generated code."
 
         testCase "noise add-stage boxes lower to streaming filters" <| fun _ ->
@@ -506,9 +506,9 @@ let generatorSuite =
                       edge "speckle" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> addNormalNoise<float32> 1.0 0.25" "AddNormalNoise should lower with mean and std."
-            Expect.stringContains code ">=> addSaltAndPepperNoise<float32> 0.01 None None" "AddSaltAndPepperNoise should lower with probability and default pepper/salt values."
-            Expect.stringContains code ">=> addPoissonNoise<float32> 2.0" "AddPoissonNoise should lower with lambda."
+            Expect.stringContains code ">=> addNormalNoise 1.0 0.25" "AddNormalNoise should lower with mean and std."
+            Expect.stringContains code ">=> addSaltAndPepperNoise 0.01 None None" "AddSaltAndPepperNoise should lower with probability and default pepper/salt values."
+            Expect.stringContains code ">=> addPoissonNoise 2.0" "AddPoissonNoise should lower with lambda."
             Expect.stringContains code ">=> addSpeckleNoise 0.5" "AddSpeckleNoise should lower with std."
 
         testCase "slice read and chunk write boxes lower to chunk DSL functions" <| fun _ ->
@@ -788,8 +788,8 @@ let generatorSuite =
                       edge "resample" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code "|> resize<float32> 20u 21u 22u \"NearestNeighbor\"" "Resize should generate the explicit-size resampler."
-            Expect.stringContains code "|> resample<float32> 0.5 2.0 1.5 \"Linear\"" "Resample should generate the factor resampler."
+            Expect.stringContains code "|> resize 20u 21u 22u \"NearestNeighbor\"" "Resize should generate the explicit-size resampler."
+            Expect.stringContains code "|> resample 0.5 2.0 1.5 \"Linear\"" "Resample should generate the factor resampler."
 
         testCase "padding and crop boxes lower to streaming geometry DSL functions" <| fun _ ->
             let read =
@@ -859,7 +859,7 @@ let generatorSuite =
                       edge "mesh" "output" 0 "writeMesh" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> marchingCubes<uint8> 1.0" "MarchingCubes should generate a typed streaming mesh stage."
+            Expect.stringContains code ">=> marchingCubes 1.0" "MarchingCubes should generate a typed streaming mesh stage."
             Expect.stringContains code ">=> writeMesh \"surface\" \".obj\"" "WriteMesh should generate the mesh writer with the selected mesh format."
             Expect.stringContains code "|> sink" "Terminal WriteMesh should run the mesh writer."
 
@@ -925,7 +925,7 @@ let generatorSuite =
                       edge "sift" "output" 0 "writePoints" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains siftCode ">=> siftKeypoints<float> 0.5 1.2 4u 0.001 3u" "SiftKeypoints should generate a typed point detector."
+            Expect.stringContains siftCode ">=> siftKeypoints 0.5 1.2 4u 0.001 3u" "SiftKeypoints should generate a typed point detector."
 
             let logBlob =
                 node "log" "LogBlobKeypoints"
@@ -974,9 +974,9 @@ let generatorSuite =
                 |> fun code -> Expect.stringContains code expected message
 
             generated logBlob ">=> logBlobKeypoints<float> 1.5 0.02 2u" "LogBlobKeypoints should generate a typed local blob detector."
-            generated hessian ">=> hessianKeypoints<float> 1.5 \"Tube\" 0.02 2u" "HessianKeypoints should generate a typed local Hessian detector."
-            generated harris ">=> harris3DKeypoints<float> 1.0 1.5 0.04 0.02 2u" "Harris3DKeypoints should generate a typed local Harris detector."
-            generated forstner ">=> forstner3DKeypoints<float> 1.0 1.5 0.02 2u" "Forstner3DKeypoints should generate a typed local Förstner detector."
+            generated hessian ">=> hessianKeypoints 1.5 \"Tube\" 0.02 2u" "HessianKeypoints should generate a typed local Hessian detector."
+            generated harris ">=> harris3DKeypoints 1.0 1.5 0.04 0.02 2u" "Harris3DKeypoints should generate a typed local Harris detector."
+            generated forstner ">=> forstner3DKeypoints 1.0 1.5 0.02 2u" "Forstner3DKeypoints should generate a typed local Förstner detector."
             generated phase ">=> phaseCongruencyKeypoints<float> 1.5 0.02 2u" "PhaseCongruencyKeypoints should generate a typed local phase detector."
 
             let readPoints =
@@ -1110,7 +1110,7 @@ let generatorSuite =
                       edge "paint" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> streamConnectedObjects<uint8> ObjectConnectivity.TwentySix" "StreamConnectedObjects should generate the connectivity-aware object streamer."
+            Expect.stringContains code ">=> streamConnectedObjects ObjectConnectivity.TwentySix" "StreamConnectedObjects should generate the connectivity-aware object streamer."
             Expect.stringContains code ">=> paintObjects 64u 48u" "PaintObjects should generate the UInt8 mask painter."
             Expect.stringContains code ">=> write \"mask\" \".tiff\"" "Painted masks should connect to normal image writing."
 
@@ -1759,7 +1759,7 @@ let generatorSuite =
                       edge "edge" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> clamp<float> 0.0 1.0" "Clamp should lower with type and bounds."
+            Expect.stringContains code ">=> clamp 0.0 1.0" "Clamp should lower with type and bounds."
             Expect.stringContains code ">=> smoothWMedian<float> 1u (Some 3u)" "smoothWMedian should lower with radius and window size."
             Expect.stringContains code ">=> smoothWBilateral<float> 2.0 10.0 (Some 5u)" "smoothWBilateral should lower with sigmas and window size."
             Expect.stringContains code ">=> smoothWGauss 1.0 None None None" "smoothWGauss should lower with explicit options."
@@ -1792,7 +1792,7 @@ let generatorSuite =
                       edge "projection" "output" 0 "show" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> sumProjection<uint16> \"Log1pAbs\"" "SumProjection should lower with input pixel type and pre-sum transform."
+            Expect.stringContains code ">=> sumProjection \"Log1pAbs\"" "SumProjection should lower with input pixel type and pre-sum transform."
             Expect.stringContains code ">=> show (showImageWithLabels \"Greys\" \"Projection\" \"x\" \"y\")" "The projection output should be connectable to showImage with chart options."
 
         testCase "comparison boxes lower to pair stages" <| fun _ ->

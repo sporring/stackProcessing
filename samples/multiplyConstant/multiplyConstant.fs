@@ -25,7 +25,7 @@ let main arg =
         |> zero<uint8> width height depth
 
     (imageMaker, maskMaker) ||> zip
-    >=> mulPair<uint8>
+    >=> mulPair
     >=> write output ".tiff"
     |> sink
 

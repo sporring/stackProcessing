@@ -13,8 +13,8 @@ let main args =
 
     src
     |> zero<float32> 64u 64u 64u
-    >=> addNormalNoise<float32> 128.0 50.0
-    >=> gaussianFilter<float32> 3.0 None // kernel size is default, here ceil (2.0*3.0+1.0) = 7.0
+    >=> addNormalNoise 128.0 50.0
+    >=> gaussianFilter 3.0 None // kernel size is default, here ceil (2.0*3.0+1.0) = 7.0
     >=> cast<_, uint8>
     >=> write output ".tiff"
     |> sink

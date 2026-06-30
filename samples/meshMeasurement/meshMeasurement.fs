@@ -14,14 +14,14 @@ let main args =
     let voxelVolume =
         src
         |> read<uint8> input ".tiff"
-        >=> thresholdRange<uint8> 1 255
+        >=> thresholdRange 1 255
         >=> volume 1.0 1.0 1.0
         |> drain
 
     let area =
         src
         |> read<uint8> input ".tiff"
-        >=> marchingCubes<uint8> 127.5
+        >=> marchingCubes 127.5
         >=> surfaceArea 1.0 1.0 1.0
         |> drain
 

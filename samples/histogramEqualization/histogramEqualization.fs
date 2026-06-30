@@ -15,12 +15,12 @@ let main args =
     let histogram =
         src
         |> readRandom<uint8> 8u input ".tiff"
-        >=> imageHistogramDense<uint8> ()
+        >=> imageHistogramDense ()
         |> drain
 
     src
     |> read<uint8> input ".tiff"
-    >=> histogramEqualization<uint8> (histogram :> obj)
+    >=> histogramEqualization histogram
     >=> write output ".tiff"
     |> sink
 

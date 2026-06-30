@@ -14,7 +14,7 @@ let main args =
     let histogram =
         src
         |> readRandom<uint8> 16u input ".tiff"
-        >=> imageHistogram<uint8> ()
+        >=> imageHistogram ()
         |> drain
 
     printfn "Sampled histogram bins: %d" histogram.Counts.Count

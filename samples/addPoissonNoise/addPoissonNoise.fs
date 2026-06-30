@@ -14,7 +14,7 @@ let main args =
     // Generate a Poisson noise stack as double and with mean 128.0, cast to uint8, and save.
     src
     |> zero<float> 64u 64u 64u
-    >=> addPoissonNoise<float> 128.0
+    >=> addPoissonNoise 128.0
     >=> cast<_, uint8>
     >=> write output ".tiff"
     |> sink

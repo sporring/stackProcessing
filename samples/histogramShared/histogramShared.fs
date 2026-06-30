@@ -25,7 +25,7 @@ let main arg =
     let histogramMaker = 
         src
         |> read<uint8> input ".tiff"
-        >=> imageHistogram<uint8> () --> histogram2pairs --> pairs2floats
+        >=> imageHistogram () --> histogram2pairs --> pairs2floats
     histogramMaker
     >=>> (print (),plot plt)
     //>=>> (tap "left", tap "right")

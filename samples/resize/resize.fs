@@ -14,7 +14,7 @@ let main args =
 
     src
     |> read<uint8> input ".tiff"
-    |> resize<uint8> 96u 96u 96u "Linear"
+    |> resize 96u 96u 96u "Linear"
     >=> write output ".tiff"
     |> sink
 

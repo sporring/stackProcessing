@@ -127,14 +127,14 @@ let private cast<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: stru
                           and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
     ChunkFunctions.castChunk<'S, 'T>
 
-let private addNormalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    StackProcessing.addNormalNoise<'T>
+let private addNormalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> mean std =
+    StackProcessing.addNormalNoise<'T> mean std
 
-let private addSaltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    StackProcessing.addSaltAndPepperNoise<'T>
+let private addSaltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> probability pepper salt =
+    StackProcessing.addSaltAndPepperNoise<'T> probability pepper salt
 
-let private addPoissonNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    StackProcessing.addPoissonNoise<'T>
+let private addPoissonNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> lambda =
+    StackProcessing.addPoissonNoise<'T> lambda
 
 let private threshold<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (lower: double) (upper: double) =
     thresholdRange<'T> lower upper
@@ -148,8 +148,8 @@ let private imageMulScalar value =
 let private intensityStretch =
     StackProcessing.intensityStretch
 
-let private computeStats<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    StackProcessing.computeStats<'T>
+let private computeStats<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> () =
+    StackProcessing.computeStats<'T> ()
 
 let private sumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
     StackProcessing.sumProjection<'T>
@@ -221,17 +221,17 @@ let private resample<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: stru
 let private normalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> width height depth mean std pl =
     pl
     |> zero<'T> width height depth
-    >=> addNormalNoise<'T> mean std
+    >=> addNormalNoise mean std
 
 let private saltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> width height depth probability pl =
     pl
     |> zero<'T> width height depth
-    >=> addSaltAndPepperNoise<'T> probability None None
+    >=> addSaltAndPepperNoise probability None None
 
 let private poissonNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> width height depth lambda pl =
     pl
     |> zero<'T> width height depth
-    >=> addPoissonNoise<'T> lambda
+    >=> addPoissonNoise lambda
 
 // Workflow-shape inspiration for realistic boilerplate probes:
 // - Robert Haase et al., Bio-image Analysis Notebooks
@@ -3056,7 +3056,7 @@ let main args =
                                  (fun () ->
                                      source availableMemory
                                      |> read<uint8> inputDir ".tiff"
-                                     >=> sumProjection<uint8> "Identity"
+                                     >=> sumProjection "Identity"
                                      >=> intensityStretch 0.0 255.0 0.0 255.0
                                      >=> cast<_, uint8>
                                      >=> write (outputDir size "bio-projection-inspection-uint8-write") ".tiff")
@@ -3088,7 +3088,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<float32> inputDir ".tiff"
-                                         >=> computeStats<float32> ())
+                                         >=> computeStats ())
 
                            yield runSinkProbe
                                      $"add-salt-and-pepper-uint8-write-{suffix}"
@@ -3298,7 +3298,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<uint8> inputDir ".tiff"
-                                         |> resize<uint8> 96u 96u 96u "Linear"
+                                         |> resize 96u 96u 96u "Linear"
                                          >=> write (outputDir size "resize-uint8-write") ".tiff")
 
                            yield runSinkProbe
@@ -3310,7 +3310,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<uint8> inputDir ".tiff"
-                                         |> resize<uint8> 64u 64u 64u "Linear"
+                                         |> resize 64u 64u 64u "Linear"
                                          >=> write (outputDir size "resize64-uint8-write") ".tiff")
 
                            yield runSinkProbe
@@ -3322,7 +3322,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> normalNoise<float32> size.Width size.Height size.Depth 128.0 25.0
-                                         |> resample<float32> 1.5 1.5 1.5 "Linear"
+                                         |> resample 1.5 1.5 1.5 "Linear"
                                          >=> cast<_, uint8>
                                          >=> write (outputDir size "resample-float32-write") ".tiff")
 

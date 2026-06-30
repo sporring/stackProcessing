@@ -21,9 +21,9 @@ let main arg =
 
     readMaker 
     >=> tap "For >=>>"
-    >=>> (addScalar 1.0, gaussianFilter<float32> 3.0 (Some 7u))
+    >=>> (addScalar 1.0, gaussianFilter 3.0 (Some 7u))
     >=> tap "For >>=>"
-    >=> mulPair<float32>
+    >=> mulPair
     >=> tap "For cast"
     >=> cast<_, int8>
     >=> tap "For write"

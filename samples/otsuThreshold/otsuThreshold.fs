@@ -15,13 +15,13 @@ let main args =
     let thresholdValue =
         src
         |> readRandom<uint8> 16u input ".tiff"
-        >=> imageHistogram<uint8> ()
+        >=> imageHistogram ()
         |> drain
         |> otsuThresholdFromHistogram
 
     src
     |> read<uint8> input ".tiff"
-    >=> thresholdRange<uint8> thresholdValue 255.0
+    >=> thresholdRange thresholdValue 255.0
     >=> write output ".tiff"
     |> sink
 

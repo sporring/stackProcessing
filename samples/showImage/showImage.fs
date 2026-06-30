@@ -15,7 +15,7 @@ let main arg =
 
     src
     |> readRandom<uint8> 1u input ".tiff"
-    >=> show (fun chunk -> showChunkWithLabels<uint8> "Viridis" "An Image" "" "" chunk)
+    >=> show (fun chunk -> showChunkWithLabels "Viridis" "An Image" "" "" chunk)
     |> sink
 
     0

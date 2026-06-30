@@ -696,14 +696,14 @@ let stackProcessingSupportSuite =
                 let triangleSets =
                     source (2UL * 1024UL * 1024UL * 1024UL)
                     |> read<uint8> inputDir suffix
-                    >=> marchingCubes<uint8> 0.5
+                    >=> marchingCubes 0.5
                     |> drainList
 
                 Expect.isTrue (triangleSets |> List.exists (fun triangleSet -> not triangleSet.Triangles.IsEmpty)) "marchingCubes should emit at least one triangle set for a crossing surface."
 
                 source (2UL * 1024UL * 1024UL * 1024UL)
                 |> read<uint8> inputDir suffix
-                >=> marchingCubes<uint8> 0.5
+                >=> marchingCubes 0.5
                 >=> writeMesh outputPath "auto"
                 |> drain
 
@@ -725,7 +725,7 @@ let stackProcessingSupportSuite =
                 let stlPath = Path.Combine(outputDir, "surface.stl")
                 source (2UL * 1024UL * 1024UL * 1024UL)
                 |> read<uint8> inputDir suffix
-                >=> marchingCubes<uint8> 0.5
+                >=> marchingCubes 0.5
                 >=> writeMesh stlPath "auto"
                 |> drain
 
@@ -737,7 +737,7 @@ let stackProcessingSupportSuite =
                 let boundarySlice = Image<uint8>.ofArray2D(Array2D.create 2 2 1uy, "boundary", 0)
                 let boundaryTriangles =
                     imagePlan [ boundarySlice ]
-                    >=> marchingCubes<uint8> 0.5
+                    >=> marchingCubes 0.5
                     |> drainList
                     |> List.collect _.Triangles
 
@@ -885,7 +885,7 @@ let stackProcessingSupportSuite =
             try
                 let pointSets =
                     imagePlan slices
-                    >=> siftKeypoints<uint8> 0.5 1.2 4u 0.0001 1u
+                    >=> siftKeypoints 0.5 1.2 4u 0.0001 1u
                     |> drainList
 
                 let points = pointSets |> List.collect _.Points
@@ -907,9 +907,9 @@ let stackProcessingSupportSuite =
 
             let detectorCases =
                 [ "logBlobKeypoints", logBlobKeypoints<uint8> 0.5 0.0 1u, true
-                  "hessianKeypoints", hessianKeypoints<uint8> 0.5 "Blob" 0.0 1u, true
-                  "harris3DKeypoints", harris3DKeypoints<uint8> 0.5 0.75 0.04 -1.0e9 1u, false
-                  "forstner3DKeypoints", forstner3DKeypoints<uint8> 0.5 0.75 0.0 1u, true
+                  "hessianKeypoints", hessianKeypoints 0.5 "Blob" 0.0 1u, true
+                  "harris3DKeypoints", harris3DKeypoints 0.5 0.75 0.04 -1.0e9 1u, false
+                  "forstner3DKeypoints", forstner3DKeypoints 0.5 0.75 0.0 1u, true
                   "phaseCongruencyKeypoints", phaseCongruencyKeypoints<uint8> 0.5 0.0 1u, true ]
 
             for name, detector, shouldEmit in detectorCases do
@@ -967,7 +967,7 @@ let stackProcessingSupportSuite =
             let model =
                 try
                     imagePlan sampled
-                    >=> fitBiasModel<float> 1
+                    >=> fitBiasModel 1
                     |> drain
                 finally
                     disposeImages sampled
@@ -976,7 +976,7 @@ let stackProcessingSupportSuite =
             let corrected =
                 try
                     imagePlan full
-                    >=> correctBias<float> model
+                    >=> correctBias model
                     |> drainList
                 finally
                     disposeImages full
@@ -1002,7 +1002,7 @@ let stackProcessingSupportSuite =
             let corrected =
                 try
                     imagePlan slices
-                    >=> serialPolynomialBiasCorrect<float> 1
+                    >=> serialPolynomialBiasCorrect 1
                     |> drainList
                 finally
                     disposeImages slices
@@ -1028,7 +1028,7 @@ let stackProcessingSupportSuite =
             let corrected =
                 try
                     imagePlan slices
-                    >=> serialPolynomialBiasCorrect<float32> 1
+                    >=> serialPolynomialBiasCorrect 1
                     |> drainList
                 finally
                     disposeImages slices
@@ -1054,7 +1054,7 @@ let stackProcessingSupportSuite =
             let estimated =
                 try
                     imagePlan sampled
-                    >=> serialEstTrans<float> 2 "SSDAffine" 0.5 0.1
+                    >=> serialEstTrans 2 "SSDAffine" 0.5 0.1
                     |> drainList
                 finally
                     disposeImages sampled
@@ -1070,8 +1070,8 @@ let stackProcessingSupportSuite =
             let transformed =
                 try
                     imagePlan input
-                    >=> serialEstTrans<float> 2 "SSDAffine" 0.5 0.1
-                    >=> serialApplyTrans<float> 0.0 None
+                    >=> serialEstTrans 2 "SSDAffine" 0.5 0.1
+                    >=> serialApplyTrans 0.0 None
                     |> drainList
                 finally
                     disposeImages input
@@ -1094,7 +1094,7 @@ let stackProcessingSupportSuite =
             let estimated =
                 try
                     imagePlan sampled
-                    >=> serialEstTrans<float> 2 "SSDAffine" 0.5 0.1
+                    >=> serialEstTrans 2 "SSDAffine" 0.5 0.1
                     |> drainList
                 finally
                     disposeImages sampled
@@ -1122,7 +1122,7 @@ let stackProcessingSupportSuite =
             let estimated =
                 try
                     imagePlan sampled
-                    >=> serialEstTrans<float> 6 "SSDAffine" 2.0 0.25
+                    >=> serialEstTrans 6 "SSDAffine" 2.0 0.25
                     |> drainList
                 finally
                     disposeImages sampled
@@ -1145,8 +1145,8 @@ let stackProcessingSupportSuite =
             let geometry =
                 try
                     imagePlan geometryInput
-                    >=> serialEstTrans<float> 2 "SSDAffine" 0.5 0.1
-                    >=> serialEstBoundingBox<float>
+                    >=> serialEstTrans 2 "SSDAffine" 0.5 0.1
+                    >=> serialEstBoundingBox
                     |> drain
                 finally
                     disposeImages geometryInput
@@ -1159,8 +1159,8 @@ let stackProcessingSupportSuite =
             let transformed =
                 try
                     imagePlan input
-                    >=> serialEstTrans<float> 2 "SSDAffine" 0.5 0.1
-                    >=> serialApplyTrans<float> 0.0 (Some geometry)
+                    >=> serialEstTrans 2 "SSDAffine" 0.5 0.1
+                    >=> serialApplyTrans 0.0 (Some geometry)
                     |> drainList
                 finally
                     disposeImages input
@@ -1825,7 +1825,7 @@ let stackProcessingSupportSuite =
             try
                 let batches =
                     imagePlan slices
-                    >=> streamConnectedObjects<uint8> ObjectConnectivity.Six
+                    >=> streamConnectedObjects ObjectConnectivity.Six
                     |> drainList
 
                 Expect.equal (batches |> List.map List.length) [ 0; 1; 0; 1 ] "Objects should be emitted when the next slice proves they no longer continue."
@@ -1855,13 +1855,13 @@ let stackProcessingSupportSuite =
             try
                 let sixObjects =
                     imagePlan slices
-                    >=> streamConnectedObjects<uint8> ObjectConnectivity.Six
+                    >=> streamConnectedObjects ObjectConnectivity.Six
                     |> drainList
                     |> List.collect id
 
                 let twentySixObjects =
                     imagePlan slices
-                    >=> streamConnectedObjects<uint8> ObjectConnectivity.TwentySix
+                    >=> streamConnectedObjects ObjectConnectivity.TwentySix
                     |> drainList
                     |> List.collect id
 
@@ -2418,7 +2418,7 @@ let stackProcessingSupportSuite =
                 resized <-
                     source (2UL * 1024UL * 1024UL * 1024UL)
                     |> read<uint16> inputDir suffix
-                    |> resize<uint16> 5u 4u 5u "NearestNeighbor"
+                    |> resize 5u 4u 5u "NearestNeighbor"
                     |> drainList
 
                 Expect.equal resized.Length 5 "resize should emit the requested z size."
@@ -2445,7 +2445,7 @@ let stackProcessingSupportSuite =
                 resampled <-
                     source (2UL * 1024UL * 1024UL * 1024UL)
                     |> read<float32> inputDir suffix
-                    |> resample<float32> 0.5 2.0 2.0 "Linear"
+                    |> resample 0.5 2.0 2.0 "Linear"
                     |> drainList
 
                 Expect.equal resampled.Length 6 "resample should scale the z size by the z factor."
@@ -2731,7 +2731,7 @@ let stackProcessingSupportSuite =
             try
                 projections <-
                     imagePlan slices
-                    >=> sumProjection<int16> "Abs"
+                    >=> sumProjection "Abs"
                     |> drainList
 
                 Expect.equal projections.Length 1 "sumProjection should emit one projection image."
@@ -3371,7 +3371,7 @@ let stackProcessingSupportSuite =
                     disposeImages actual
 
             try
-                let clampStage : Stage<Image<float32>, Image<float32>> = StackProcessing.clamp<float32> 0.0 120.0
+                let clampStage : Stage<Image<float32>, Image<float32>> = StackProcessing.clamp 0.0 120.0
                 let shiftScaleStage : Stage<Image<float32>, Image<float32>> = StackProcessing.shiftScale<float32> 1.0 2.0
                 let stretchStage : Stage<Image<float32>, Image<float32>> = StackProcessing.intensityStretch 0.0 200.0 0.0 1.0
                 let medianStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.smoothWMedian<uint8> 1u (Some 3u)

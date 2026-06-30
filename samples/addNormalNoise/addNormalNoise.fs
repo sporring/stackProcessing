@@ -18,7 +18,7 @@ let main arg =
     // Create a zero image and add normal distributed noise to it in the unsigned integer 8 bit co-domain
     src
     |> zero<uint8> width height depth
-    >=> addNormalNoise<uint8> 128.0 50.0
+    >=> addNormalNoise 128.0 50.0
     >=> write output ".tiff"
     |> sink
 

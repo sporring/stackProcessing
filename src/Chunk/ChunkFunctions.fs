@@ -28,9 +28,10 @@ module ChunkFunctions =
             match value.Trim().ToLowerInvariant().Replace("_", "").Replace("-", "").Replace(" ", "") with
             | "nearest"
             | "nearestneighbor"
+            | "nearestneighbour"
             | "nn" -> NearestNeighbor
             | "linear" -> Linear
-            | _ -> failwith $"Unknown chunk resampling interpolation '{value}'. Use NearestNeighbor or Linear."
+            | _ -> failwith $"Unknown chunk resampling interpolation '{value}'. Use NearestNeighbor, nearest neighbour, or Linear."
 
         let toNative = function
             | NearestNeighbor -> 0

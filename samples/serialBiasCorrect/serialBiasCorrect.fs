@@ -14,7 +14,7 @@ let main args =
 
     src
     |> read<float32> input ".tiff"
-    >=> serialPolynomialBiasCorrect<float32> 2
+    >=> serialPolynomialBiasCorrect 2
     >=> write output ".tiff"
     |> sink
 

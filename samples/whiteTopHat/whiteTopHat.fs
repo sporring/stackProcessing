@@ -14,7 +14,7 @@ let main args =
 
     src
     |> read<uint8> input ".tiff"
-    >=> thresholdRange<uint8> 1 255
+    >=> thresholdRange 1 255
     >=> binaryWhiteTopHat 3u
     >=> write output ".tiff"
     |> sink

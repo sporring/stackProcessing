@@ -15,12 +15,12 @@ let main args =
     // Fourier transform a random image, then shift the zero frequency to the center and save.
     src
     |> zero<float32> 64u 64u 64u
-    >=> addNormalNoise<float32> 128.0 25.0
+    >=> addNormalNoise 128.0 25.0
     >=> fft
     >=> fftShift3D
     >=> length
     >=> addScalar 1.0
-    >=> log<float32>
+    >=> log
     >=> intensityStretch 0.0 (Math.Log(128.0 * 64.0 * 64.0 * 64.0 + 1.0)) 0.0 255.0
     >=> cast<_,uint8>
     >=> write output ".tiff"

@@ -827,11 +827,11 @@ let stackProcessingCorrectnessSuite =
             let volume = makeStrictPositiveFloat32Volume 8
 
             let cases : (string * Stage<Image<float32>, Image<float32>> * (Image<float32> -> Image<float32>)) list =
-                [ "image-add-scalar", imageAddScalar 2.25f, fun input -> ImageFunctions.imageAddScalar input 2.25f
-                  "image-sub-scalar", imageSubScalar 0.75f, fun input -> ImageFunctions.imageSubScalar input 0.75f
-                  "scalar-sub-image", scalarSubImage 5.0f, fun input -> ImageFunctions.scalarSubImage 5.0f input
-                  "image-mul-scalar", imageMulScalar 2.5f, fun input -> ImageFunctions.imageMulScalar input 2.5f
-                  "scalar-div-image", scalarDivImage 4.0f, fun input -> ImageFunctions.scalarDivImage 4.0f input ]
+                [ "image-add-scalar", addScalar 2.25, fun input -> ImageFunctions.imageAddScalar input 2.25f
+                  "image-sub-scalar", subScalar 0.75, fun input -> ImageFunctions.imageSubScalar input 0.75f
+                  "scalar-sub-image", scalarSub 5.0, fun input -> ImageFunctions.scalarSubImage 5.0f input
+                  "image-mul-scalar", mulScalar 2.5, fun input -> ImageFunctions.imageMulScalar input 2.5f
+                  "scalar-div-image", scalarDiv 4.0, fun input -> ImageFunctions.scalarDivImage 4.0f input ]
 
             try
                 for name, stage, direct in cases do
@@ -844,9 +844,9 @@ let stackProcessingCorrectnessSuite =
             let volume = makeStrictPositiveFloat32Volume 8
 
             let cases : (string * Stage<Image<float32>, Image<float32>> * (Image<float32> -> Image<float32>)) list =
-                [ "scalar-add-image", scalarAddImage 1.5f, fun input -> ImageFunctions.scalarAddImage 1.5f input
-                  "scalar-mul-image", scalarMulImage 1.75f, fun input -> ImageFunctions.scalarMulImage 1.75f input
-                  "image-div-scalar", imageDivScalar 2.0f, fun input -> ImageFunctions.imageDivScalar input 2.0f ]
+                [ "scalar-add-image", scalarAdd 1.5, fun input -> ImageFunctions.scalarAddImage 1.5f input
+                  "scalar-mul-image", scalarMul 1.75, fun input -> ImageFunctions.scalarMulImage 1.75f input
+                  "image-div-scalar", divScalar 2.0, fun input -> ImageFunctions.imageDivScalar input 2.0f ]
 
             try
                 for name, stage, direct in cases do

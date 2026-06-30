@@ -16,7 +16,7 @@ let main arg =
 
     src
     |> read<float32> input ".tiff"
-    >=> gaussianFilter<float32> sigma (Some 7u)
+    >=> gaussianFilter sigma (Some 7u)
     >=> cast<_, uint8>
     >=> write output ".tiff"
     //>=> ignoreImages ()

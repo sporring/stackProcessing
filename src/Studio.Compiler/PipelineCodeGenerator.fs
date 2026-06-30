@@ -359,8 +359,8 @@ module PipelineCodeGenerator =
 
     let private unaryImageStageFunctionName (node: SavedNode) =
         match unaryImageFunctionName node with
-        | "abs" -> "abs<float32>"
-        | "sqrt" -> "sqrt<float32>"
+        | "abs" -> "abs"
+        | "sqrt" -> "sqrt"
         | "square" -> "squareFloat32"
         | name -> name
 
@@ -1055,10 +1055,10 @@ module PipelineCodeGenerator =
                 let lastLeftEdge = parameterValue "lastLeftEdge"
                 let bins = parameterValue "bins"
                 let pixelType = pipelinePixelType "Float32"
-                $">=> imageHistogramFixedBins<{pixelType}> ({firstLeftEdge}) ({lastLeftEdge}) ({bins})"
+                $">=> imageHistogramFixedBins ({firstLeftEdge}) ({lastLeftEdge}) ({bins})"
             else
                 let pixelType = pipelinePixelType "Float32"
-                $">=> imageHistogram<{pixelType}> ()"
+                $">=> imageHistogram ()"
 
         match node.FunctionId with
         | "Empty" ->
@@ -1109,7 +1109,7 @@ module PipelineCodeGenerator =
             let depth = parameterValue "depth"
             let mean = parameterValue "mean"
             let std = parameterValue "std"
-            $"|> zero<{pixelType}> {width} {height} {depth}{Environment.NewLine}>=> addNormalNoise<{pixelType}> {mean} {std}" |> sourcePrefix availableMemory
+            $"|> zero<{pixelType}> {width} {height} {depth}{Environment.NewLine}>=> addNormalNoise {mean} {std}" |> sourcePrefix availableMemory
         | "SaltAndPepperNoise" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
@@ -1119,7 +1119,7 @@ module PipelineCodeGenerator =
             let probability = parameterValue "probability"
             let pepper = parameterValueOrDefault "pepper" "None"
             let salt = parameterValueOrDefault "salt" "None"
-            $"|> zero<{pixelType}> {width} {height} {depth}{Environment.NewLine}>=> addSaltAndPepperNoise<{pixelType}> {probability} {pepper} {salt}" |> sourcePrefix availableMemory
+            $"|> zero<{pixelType}> {width} {height} {depth}{Environment.NewLine}>=> addSaltAndPepperNoise {probability} {pepper} {salt}" |> sourcePrefix availableMemory
         | "PoissonNoise" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
@@ -1127,7 +1127,7 @@ module PipelineCodeGenerator =
             let height = parameterValue "height"
             let depth = parameterValue "depth"
             let lambda = parameterValue "lambda"
-            $"|> zero<{pixelType}> {width} {height} {depth}{Environment.NewLine}>=> addPoissonNoise<{pixelType}> {lambda}" |> sourcePrefix availableMemory
+            $"|> zero<{pixelType}> {width} {height} {depth}{Environment.NewLine}>=> addPoissonNoise {lambda}" |> sourcePrefix availableMemory
         | "SpeckleNoise" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
@@ -1202,7 +1202,7 @@ module PipelineCodeGenerator =
             let slices = parameterValue "slices"
             let input = quotedParameter "input"
             let suffix = quotedParameter "suffix"
-            $"|> readRandom<{pixelType}> {slices} {input} {suffix}{Environment.NewLine}>=> imageHistogram<{pixelType}> ()" |> sourcePrefix availableMemory
+            $"|> readRandom<{pixelType}> {slices} {input} {suffix}{Environment.NewLine}>=> imageHistogram ()" |> sourcePrefix availableMemory
         | "ReadRange" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
@@ -1267,14 +1267,14 @@ module PipelineCodeGenerator =
             let height = parameterValue "height"
             let depth = parameterValue "depth"
             let interpolation = quotedParameter "interpolation"
-            $"|> resize<{pixelType}> {width} {height} {depth} {interpolation}"
+            $"|> resize {width} {height} {depth} {interpolation}"
         | "Resample" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let factorX = parameterValue "factorX"
             let factorY = parameterValue "factorY"
             let factorZ = parameterValue "factorZ"
             let interpolation = quotedParameter "interpolation"
-            $"|> resample<{pixelType}> {factorX} {factorY} {factorZ} {interpolation}"
+            $"|> resample {factorX} {factorY} {factorZ} {interpolation}"
         | "Repeat" ->
             let depth = parameterValue "depth"
             $">=> repeatStage {depth}"
@@ -1456,11 +1456,11 @@ module PipelineCodeGenerator =
             let title = quotedParameter "title"
             let xAxis = quotedParameter "xAxis"
             let yAxis = quotedParameter "yAxis"
-            $">=> show (showChunkWithLabels<{pixelType}> {colorMap} {title} {xAxis} {yAxis})"
+            $">=> show (showChunkWithLabels {colorMap} {title} {xAxis} {yAxis})"
         | "SumProjection" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let functionName = savedParamValue "function" node
-            $">=> sumProjection<{pixelType}> {quote functionName}"
+            $">=> sumProjection {quote functionName}"
         | "UnaryImageFunction" ->
             $">=> {unaryImageStageFunctionName node}"
         | "ComplexRe" ->
@@ -1533,7 +1533,7 @@ module PipelineCodeGenerator =
             let sigma = parameterValue "sigma"
             let pixelType = pipelinePixelType "Float32"
             let windowSize = parameterValue "windowSize" |> optionUInt
-            $">=> gaussianFilter<{pixelType}> {sigma} {windowSize}"
+            $">=> gaussianFilter {sigma} {windowSize}"
         | "Convolve" ->
             let kernel = parameterValue "kernel"
             let pixelType = pipelinePixelType "Float32"
@@ -1543,15 +1543,15 @@ module PipelineCodeGenerator =
             let order = parameterValue "order"
             let pixelType = pipelinePixelType "Float32"
             match direction.Trim().TrimEnd('u', 'U').ToLowerInvariant() with
-            | "0" | "x" -> $">=> finiteDiffX<{pixelType}> {order}"
-            | "1" | "y" -> $">=> finiteDiffY<{pixelType}> {order}"
-            | "2" | "z" -> $">=> finiteDiffZ<{pixelType}> {order}"
+            | "0" | "x" -> $">=> finiteDiffX {order}"
+            | "1" | "y" -> $">=> finiteDiffY {order}"
+            | "2" | "z" -> $">=> finiteDiffZ {order}"
             | _ -> $">=> finiteDiffX<{pixelType}> {order}"
         | "Clamp" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let lower = parameterValue "lower"
             let upper = parameterValue "upper"
-            $">=> clamp<{pixelType}> {lower} {upper}"
+            $">=> clamp {lower} {upper}"
         | "ShiftScale" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let shift = parameterValue "shift"
@@ -1571,7 +1571,7 @@ module PipelineCodeGenerator =
         | "HistogramEqualization" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let histogram = parameterValue "histogram"
-            $">=> histogramEqualization<{pixelType}> ({histogram} :> obj)"
+            $">=> histogramEqualization {histogram}"
         | "CreatePadding" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let beforeX = parameterValue "beforeX"
@@ -1709,30 +1709,30 @@ module PipelineCodeGenerator =
         | "FitBiasModel" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let order = parameterValue "order"
-            $">=> fitBiasModel<{pixelType}> {order}"
+            $">=> fitBiasModel {order}"
         | "FitBiasModelMasked" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let order = parameterValue "order"
-            $">=> fitBiasModelMasked<{pixelType}> {order}"
+            $">=> fitBiasModelMasked {order}"
         | "CorrectBias" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let model = parameterValue "model"
-            $">=> correctBias<{pixelType}> {model}"
+            $">=> correctBias {model}"
         | "CorrectBiasMasked" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let model = parameterValue "model"
-            $">=> correctBiasMasked<{pixelType}> {model}"
+            $">=> correctBiasMasked {model}"
         | "SerialPolynomialBiasCorrect" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let order = parameterValue "order"
-            $">=> serialPolynomialBiasCorrect<{pixelType}> {order}"
+            $">=> serialPolynomialBiasCorrect {order}"
         | "SerialEstTrans" ->
             let pixelType = pipelinePixelType "Float32"
             let searchRadius = parameterValue "searchRadius"
             let method = quotedParameter "method"
             let scale = parameterValue "scale"
             let pixelFraction = parameterValue "pixelFraction"
-            $">=> serialEstTrans<{pixelType}> {searchRadius} {method} {scale} {pixelFraction}"
+            $">=> serialEstTrans {searchRadius} {method} {scale} {pixelFraction}"
         | "SerialApplyTrans" ->
             let pixelType = pipelinePixelType "Float32"
             let background = parameterValue "background" |> numericLiteralForPixelType pixelType
@@ -1744,10 +1744,10 @@ module PipelineCodeGenerator =
                     "None"
                 else
                     geometryExpression.Value
-            $">=> serialApplyTrans<{pixelType}> {background} {geometry}"
+            $">=> serialApplyTrans {background} {geometry}"
         | "SerialEstBoundingBox" ->
             let pixelType = pipelinePixelType "Float32"
-            $">=> serialEstBoundingBox<{pixelType}>"
+            $">=> serialEstBoundingBox"
         | "SerialApplyManifestInBoundingBox" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let manifest = parameterValue "manifest"
@@ -1762,17 +1762,17 @@ module PipelineCodeGenerator =
             let pixelType = pipelinePixelType "Float32"
             let mean = parameterValue "mean"
             let std = parameterValue "std"
-            $">=> addNormalNoise<{pixelType}> {mean} {std}"
+            $">=> addNormalNoise {mean} {std}"
         | "AddSaltAndPepperNoise" ->
             let pixelType = pipelinePixelType "Float32"
             let probability = parameterValue "probability"
             let pepper = parameterValueOrDefault "pepper" "None"
             let salt = parameterValueOrDefault "salt" "None"
-            $">=> addSaltAndPepperNoise<{pixelType}> {probability} {pepper} {salt}"
+            $">=> addSaltAndPepperNoise {probability} {pepper} {salt}"
         | "AddPoissonNoise" ->
             let pixelType = pipelinePixelType "Float32"
             let lambda = parameterValue "lambda"
-            $">=> addPoissonNoise<{pixelType}> {lambda}"
+            $">=> addPoissonNoise {lambda}"
         | "AddSpeckleNoise" ->
             let std = parameterValue "std"
             $">=> addSpeckleNoise {std}"
@@ -1780,7 +1780,7 @@ module PipelineCodeGenerator =
             let pixelType = pipelinePixelType "Float32"
             let lower = parameterValue "lower"
             let upper = parameterValue "upper"
-            $">=> thresholdRange<{pixelType}> {lower} {upper}"
+            $">=> thresholdRange {lower} {upper}"
         | "Erode" ->
             let radius = parameterValue "radius"
             $">=> binaryErode {radius}"
@@ -1812,7 +1812,7 @@ module PipelineCodeGenerator =
         | "MarchingCubes" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let surfaceValue = parameterValue "surfaceValue"
-            $">=> marchingCubes<{pixelType}> {surfaceValue}"
+            $">=> marchingCubes {surfaceValue}"
         | "DogKeypoints" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let sigma0 = parameterValue "sigma0"
@@ -1828,7 +1828,7 @@ module PipelineCodeGenerator =
             let scaleLevels = parameterValue "scaleLevels"
             let contrastThreshold = parameterValue "contrastThreshold"
             let stride = parameterValue "stride"
-            $">=> siftKeypoints<{pixelType}> {sigma0} {scaleFactor} {scaleLevels} {contrastThreshold} {stride}"
+            $">=> siftKeypoints {sigma0} {scaleFactor} {scaleLevels} {contrastThreshold} {stride}"
         | "LogBlobKeypoints" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let sigma = parameterValue "sigma"
@@ -1841,7 +1841,7 @@ module PipelineCodeGenerator =
             let responseKind = quotedParameter "responseKind"
             let threshold = parameterValue "threshold"
             let stride = parameterValue "stride"
-            $">=> hessianKeypoints<{pixelType}> {sigma} {responseKind} {threshold} {stride}"
+            $">=> hessianKeypoints {sigma} {responseKind} {threshold} {stride}"
         | "Harris3DKeypoints" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let sigma = parameterValue "sigma"
@@ -1849,14 +1849,14 @@ module PipelineCodeGenerator =
             let k = parameterValue "k"
             let threshold = parameterValue "threshold"
             let stride = parameterValue "stride"
-            $">=> harris3DKeypoints<{pixelType}> {sigma} {rho} {k} {threshold} {stride}"
+            $">=> harris3DKeypoints {sigma} {rho} {k} {threshold} {stride}"
         | "Forstner3DKeypoints" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let sigma = parameterValue "sigma"
             let rho = parameterValue "rho"
             let threshold = parameterValue "threshold"
             let stride = parameterValue "stride"
-            $">=> forstner3DKeypoints<{pixelType}> {sigma} {rho} {threshold} {stride}"
+            $">=> forstner3DKeypoints {sigma} {rho} {threshold} {stride}"
         | "PhaseCongruencyKeypoints" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let sigma = parameterValue "sigma"
@@ -1865,7 +1865,7 @@ module PipelineCodeGenerator =
             $">=> phaseCongruencyKeypoints<{pixelType}> {sigma} {threshold} {stride}"
         | "StreamConnectedObjects" ->
             let connectivity = parameterValue "connectivity"
-            $">=> streamConnectedObjects<uint8> ObjectConnectivity.{connectivity}"
+            $">=> streamConnectedObjects ObjectConnectivity.{connectivity}"
         | "MeasureObjects" ->
             ">=> measureObjects"
         | "ObjectSizeStats" ->
@@ -2650,7 +2650,7 @@ module PipelineCodeGenerator =
 
                     { Name = name
                       Dependencies = parameterBindingDependencies node |> Set.remove name
-                      Text = $"let {name} = quantiles [{quantileValues}] ({histogram} :> obj)" })
+                      Text = $"let {name} = quantiles [{quantileValues}] {histogram}" })
 
             let imageInfoBindings =
                 let imageInfoProducerBindings =

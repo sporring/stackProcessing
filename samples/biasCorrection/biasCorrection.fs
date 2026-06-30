@@ -20,13 +20,13 @@ let main args =
     let model =
         sampledZ
         >=> readAtIndices<float32> input ".tiff"
-        >=> fitBiasModel<float32> 2
+        >=> fitBiasModel 2
         |> drain
 
     // Apply the bias model to the full image and write the result.
     src
     |> readRange<float32> 0u 1 255u input ".tiff"
-    >=> correctBias<float32> model
+    >=> correctBias model
     >=> cast<_, uint8>
     >=> write (outputRoot + "/unmasked") ".tiff"
     |> sink
@@ -35,7 +35,7 @@ let main args =
     let maskedModel =
         sampledZ
         >=>> (readAtIndices<float32> input ".tiff", readAtIndices<uint8> mask ".tiff")
-        >>=> fitBiasModelMasked<float32> 2
+        >>=> fitBiasModelMasked 2
         |> drain
 
     // Apply the bias model to the masked pixel values of the entire image.
@@ -45,7 +45,7 @@ let main args =
         src |> read<uint8> mask ".tiff"
 
     zip fullImage fullMask
-    >=> correctBiasMasked<float32> maskedModel
+    >=> correctBiasMasked maskedModel
     >=> cast<_, uint8>
     >=> write (outputRoot + "/masked") ".tiff"
     |> sink

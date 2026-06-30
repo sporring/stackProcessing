@@ -23,7 +23,7 @@ let main arg =
 
     src
     |> read<uint8> input ".tiff"
-    >=> imageHistogram<uint8> ()
+    >=> imageHistogram ()
     >=> histogram2pairs --> pairs2floats --> plot plt
     |> sink
 

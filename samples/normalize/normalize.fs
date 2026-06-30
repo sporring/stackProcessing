@@ -17,7 +17,7 @@ let main arg =
     let ImageStats0 =
         src
         |> readRandom<float32> 20u input ".tiff"
-        >=> computeStats<float32> ()
+        >=> computeStats ()
         |> drain
     let Float641 = (ImageStats0.Max - ImageStats0.Min)
     let Float642 = (Float640 / Float641)

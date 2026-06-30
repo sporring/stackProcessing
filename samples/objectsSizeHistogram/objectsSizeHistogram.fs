@@ -16,7 +16,7 @@ let main args =
     let measured =
         src
         |> read<uint8> input ".tiff"
-        >=> streamConnectedObjects<uint8> ObjectConnectivity.TwentySix
+        >=> streamConnectedObjects ObjectConnectivity.TwentySix
         >=> measureObjects
 
     let stats =

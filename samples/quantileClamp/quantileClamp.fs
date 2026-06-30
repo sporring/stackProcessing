@@ -15,15 +15,15 @@ let main args =
     let histogram =
         src
         |> readRandom<uint8> 24u input ".tiff"
-        >=> imageHistogramFixedBins<uint8> 0.0 255.0 256u
+        >=> imageHistogramFixedBins 0.0 255.0 256u
         |> drain
 
-    let limits = quantiles [0.01; 0.99] (histogram :> obj)
+    let limits = quantiles [0.01; 0.99] histogram
 
     src
     |> read<float32> input ".tiff"
     >=> intensityStretch limits[0] limits[1] 0.0 255.0
-    >=> clamp<float32> 0.0 255.0
+    >=> clamp 0.0 255.0
     >=> cast<_, uint8>
     >=> write output ".tiff"
     |> sink

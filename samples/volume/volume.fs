@@ -14,7 +14,7 @@ let main args =
     let voxelVolume =
         src
         |> readVolume<uint8> (volumeFilePath input ".tiff")
-        >=> thresholdRange<uint8> 1 255
+        >=> thresholdRange 1 255
         >=> volume 1.0 1.0 1.0
         |> drain
 
