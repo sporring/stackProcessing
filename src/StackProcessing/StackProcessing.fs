@@ -90,21 +90,6 @@ let getNexusInfo = StackIO.getNexusInfo
 let getChunkFilename = StackIO.getChunkFilename
 let deleteIfExists = StackIO.deleteIfExists
 
-let writeZarrComplex64InterleavedFloat32 = StackIO.writeZarrComplex64InterleavedFloat32
-let writeZarrComplex64InterleavedFloat32WithCompression = StackIO.writeZarrComplex64InterleavedFloat32WithCompression
-let writeZarrSpectralComplex64InterleavedFloat32 = StackIO.writeZarrSpectralComplex64InterleavedFloat32
-let writeZarrSpectralComplex64InterleavedFloat32WithCompression = StackIO.writeZarrSpectralComplex64InterleavedFloat32WithCompression
-let readZarrSpectralComplex64InterleavedFloat32Range = StackIO.readZarrSpectralComplex64InterleavedFloat32Range
-let fftZComplex64InterleavedZarrTiles = StackIO.fftZComplex64InterleavedZarrTiles
-let invFftZComplex64InterleavedZarrTiles = StackIO.invFftZComplex64InterleavedZarrTiles
-let fftZComplex64InterleavedZarrRawChunks = StackIO.fftZComplex64InterleavedZarrRawChunks
-let invFftZComplex64InterleavedZarrRawChunks = StackIO.invFftZComplex64InterleavedZarrRawChunks
-let fftZComplex64InterleavedZarrSubchunks = StackIO.fftZComplex64InterleavedZarrSubchunks
-let invFftZComplex64InterleavedZarrSubchunks = StackIO.invFftZComplex64InterleavedZarrSubchunks
-let fftRoundtripZComplex64InterleavedZarrSubchunks = StackIO.fftRoundtripZComplex64InterleavedZarrSubchunks
-let writeZarrSpectralComplex64InterleavedFloat32Tiled = StackIO.writeZarrSpectralComplex64InterleavedFloat32Tiled
-let readZarrSpectralComplex64InterleavedFloat32TiledRange = StackIO.readZarrSpectralComplex64InterleavedFloat32TiledRange
-
 let read<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readChunkSlices<'T>
 let readThick<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readChunkThick<'T>
 let readRandom<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readChunkSlicesRandom<'T>
@@ -112,10 +97,10 @@ let sliceIndicesRandom = StackIO.sliceIndicesRandom
 let sliceIndicesRange = StackIO.sliceIndicesRange
 let readAtIndices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readChunkSlicesAtIndices<'T>
 let readRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readChunkSlicesRange<'T>
-let readComplex64 = StackIO.readComplex64ChunkSlices
-let readComplex64Thick = StackIO.readComplex64ChunkThick
-let readComplex128 = StackIO.readComplex128ChunkSlices
-let readComplex128Thick = StackIO.readComplex128ChunkThick
+let readComplex = StackIO.readComplex64ChunkSlices
+let readComplexThick = StackIO.readComplex64ChunkThick
+let readTiffComplex = readComplex
+let readTiffComplexThick = readComplexThick
 let readVolume<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readChunkVolume<'T>
 let readColor = StackIO.readColorChunkSlices
 let readColorRandom = StackIO.readColorChunkSlicesRandom
@@ -124,16 +109,22 @@ let write<'T when 'T: equality> = StackIO.writeChunkSlices<'T>
 let writeTiffWithOptions<'T when 'T: equality> = StackIO.writeChunkSlicesWithOptions<'T>
 let writeThick<'T when 'T: equality> = StackIO.writeChunkThick<'T>
 let writeThickTiffWithOptions<'T when 'T: equality> = StackIO.writeChunkThickWithOptions<'T>
-let writeComplex64 = StackIO.writeComplex64ChunkSlices
-let writeComplex64Thick = StackIO.writeComplex64ChunkThick
-let writeComplex128 = StackIO.writeComplex128ChunkSlices
-let writeComplex128Thick = StackIO.writeComplex128ChunkThick
+let writeComplex = StackIO.writeComplex64ChunkSlices
+let writeComplexThick = StackIO.writeComplex64ChunkThick
+let writeTiffComplex = writeComplex
+let writeTiffComplexThick = writeComplexThick
 let writeColor = StackIO.writeColorChunkSlices
 let readZarrRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readZarrChunkSlicesRange<'T>
 let readZarrThick<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readZarrChunkThickRange<'T>
 let readZarrAlignedSlices<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readZarrChunkSlicesAlignedRange<'T>
 let readZarrChunks<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.readZarrLocatedChunks<'T>
 let readZarrEncodedChunks = StackIO.readZarrEncodedChunks
+let readZarrComplexHermitianRange = StackIO.readZarrSpectralComplex64InterleavedFloat32Range
+let readZarrComplexHermitian path multiscaleIndex datasetIndex timepoint channel maxParallelChunks =
+    readZarrComplexHermitianRange 0u 1 UInt32.MaxValue path multiscaleIndex datasetIndex timepoint channel maxParallelChunks
+let readZarrComplexHermitianTiledRange = StackIO.readZarrSpectralComplex64InterleavedFloat32TiledRange
+let readZarrComplexHermitianTiled path multiscaleIndex datasetIndex timepoint channel maxParallelChunks =
+    readZarrComplexHermitianTiledRange 0u 1 UInt32.MaxValue path multiscaleIndex datasetIndex timepoint channel maxParallelChunks
 let writeZarr<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.writeZarrChunkSlices<'T>
 let writeZarrWithCompression<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.writeZarrChunkSlicesWithCompression<'T>
 let writeZarrThick<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.writeZarrChunkThick<'T>
@@ -144,6 +135,12 @@ let writeZarrChunks<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struc
 let writeZarrChunksWithCompression<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackIO.writeZarrLocatedChunksWithCompression<'T>
 let writeZarrEncodedChunks = StackIO.writeZarrEncodedChunks
 let writeZarrEncodedChunksWithCompression = StackIO.writeZarrEncodedChunksWithCompression
+let writeZarrComplex = StackIO.writeZarrComplex64InterleavedFloat32
+let writeZarrComplexWithCompression = StackIO.writeZarrComplex64InterleavedFloat32WithCompression
+let writeZarrComplexHermitian = StackIO.writeZarrSpectralComplex64InterleavedFloat32
+let writeZarrComplexHermitianWithCompression = StackIO.writeZarrSpectralComplex64InterleavedFloat32WithCompression
+let writeZarrComplexHermitianTiled = StackIO.writeZarrSpectralComplex64InterleavedFloat32Tiled
+
 
 type Position3D<'T> = StackPoints.Position3D<'T>
 type CoordinatePoint = StackPoints.CoordinatePoint
@@ -281,13 +278,15 @@ let symmetricMatrixEigenvalues () =
 let symmetricMatrixEigenvector eigenIndex =
     ChunkFunctions.symmetricMatrixEigenvectorFloat32 stackProcessingWorkers eigenIndex
 let selectGroupedVectorOutput = ChunkFunctions.selectGroupedVectorOutput
-let toComplex64 = ChunkFunctions.toComplex64
-let polarToComplex64 = ChunkFunctions.polarToComplex64
-let complex64Real = ChunkFunctions.complex64Real
-let complex64Imag = ChunkFunctions.complex64Imag
-let complex64Modulus = ChunkFunctions.complex64Modulus
-let complex64Argument = ChunkFunctions.complex64Argument
-let complex64Conjugate = ChunkFunctions.complex64Conjugate
+let toComplex = ChunkFunctions.toComplex64
+let polarToComplex = ChunkFunctions.polarToComplex64
+let real = ChunkFunctions.complex64Real
+let imag = ChunkFunctions.complex64Imag
+let modulus = ChunkFunctions.complex64Modulus
+let length = modulus
+let argument = ChunkFunctions.complex64Argument
+let angle = argument
+let conjugate = ChunkFunctions.complex64Conjugate
 let fft = ChunkFunctions.fftXYFloat32ToComplex64Interleaved
 let fftRealXY = ChunkFunctions.fftRealXYFloat32ToHermitianPackedComplex64Interleaved
 let fft3D = ChunkFunctions.fft3DFloat32ToComplex64Interleaved
@@ -431,8 +430,40 @@ let finiteDiffKernel1D = ChunkFunctions.finiteDiffKernel1D
 let thresholdRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (lower: double) (upper: double) =
     ChunkFunctions.thresholdRange<'T> lower upper
 let thresholdZarrChunksUInt8 = ChunkFunctions.thresholdLocatedNativeUInt8
-let sqrtFloat32 = ChunkFunctions.sqrtFloat32
-let absFloat32 = ChunkFunctions.absFloat32
+let sqrt<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<'T>, Chunk<'T>> =
+    if typeof<'T> = typeof<float32> then
+        unbox (box ChunkFunctions.sqrtFloat32)
+    elif typeof<'T> = typeof<float> then
+        unbox (box ChunkFunctions.sqrtFloat)
+    else
+        invalidArg "T" $"sqrt<'T> supports float32 and float chunks, got {typeof<'T>.Name}."
+let abs<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<'T>, Chunk<'T>> =
+    if typeof<'T> = typeof<float32> then
+        unbox (box ChunkFunctions.absFloat32)
+    elif typeof<'T> = typeof<float> then
+        unbox (box ChunkFunctions.absFloat)
+    elif typeof<'T> = typeof<int8> then
+        unbox (box (ChunkFunctions.map "chunkAbs.Int8" (fun (value: int8) -> Math.Abs value)))
+    elif typeof<'T> = typeof<int16> then
+        unbox (box (ChunkFunctions.map "chunkAbs.Int16" (fun (value: int16) -> Math.Abs value)))
+    elif typeof<'T> = typeof<int32> then
+        unbox (box (ChunkFunctions.map "chunkAbs.Int32" (fun (value: int32) -> Math.Abs value)))
+    elif typeof<'T> = typeof<int64> then
+        unbox (box (ChunkFunctions.map "chunkAbs.Int64" (fun (value: int64) -> Math.Abs value)))
+    elif typeof<'T> = typeof<uint8>
+      || typeof<'T> = typeof<uint16>
+      || typeof<'T> = typeof<uint32>
+      || typeof<'T> = typeof<uint64> then
+        identity<Chunk<'T>>
+    else
+        invalidArg "T" $"abs<'T> supports real numeric chunks, got {typeof<'T>.Name}."
+let log<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<'T>, Chunk<'T>> =
+    if typeof<'T> = typeof<float32> then
+        unbox (box ChunkFunctions.logFloat32)
+    elif typeof<'T> = typeof<float> then
+        unbox (box ChunkFunctions.logFloat)
+    else
+        invalidArg "T" $"log<'T> supports float32 and float chunks, got {typeof<'T>.Name}."
 let squareFloat32 = ChunkFunctions.squareFloat32
 let clamp<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.clamp<'T>
 let shiftScale<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.shiftScale<'T>
@@ -440,14 +471,107 @@ let intensityStretch = ChunkFunctions.intensityStretch
 let cast<'S, 'T when 'S: equality and 'S: (new: unit -> 'S) and 'S: struct and 'S :> ValueType
                      and 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> : Stage<Chunk<'S>, Chunk<'T>> =
     ChunkFunctions.castChunk<'S, 'T>
-let inline addScalar value = ChunkFunctions.addScalar value
-let inline subScalar value = ChunkFunctions.subScalar value
-let inline mulScalar value = ChunkFunctions.mulScalar value
-let inline divScalar value = ChunkFunctions.divScalar value
-let inline scalarAdd value = ChunkFunctions.scalarAdd value
-let inline scalarSub value = ChunkFunctions.scalarSub value
-let inline scalarMul value = ChunkFunctions.scalarMul value
-let inline scalarDiv value = ChunkFunctions.scalarDiv value
+
+let private unsupportedScalarArithmetic<'T when 'T: equality> () : Stage<Chunk<'T>, Chunk<'T>> =
+    invalidArg "T" $"Scalar image arithmetic supports real numeric chunks, got {typeof<'T>.Name}."
+
+let private scalarStage<'T when 'T: equality> (stage: obj) : Stage<Chunk<'T>, Chunk<'T>> =
+    unbox stage
+
+let private addScalarFromDouble<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: double) : Stage<Chunk<'T>, Chunk<'T>> =
+    if typeof<'T> = typeof<uint8> then scalarStage<'T> (box (ChunkFunctions.addScalar (uint8 value) : Stage<Chunk<uint8>, Chunk<uint8>>))
+    elif typeof<'T> = typeof<int8> then scalarStage<'T> (box (ChunkFunctions.addScalar (int8 value) : Stage<Chunk<int8>, Chunk<int8>>))
+    elif typeof<'T> = typeof<uint16> then scalarStage<'T> (box (ChunkFunctions.addScalar (uint16 value) : Stage<Chunk<uint16>, Chunk<uint16>>))
+    elif typeof<'T> = typeof<int16> then scalarStage<'T> (box (ChunkFunctions.addScalar (int16 value) : Stage<Chunk<int16>, Chunk<int16>>))
+    elif typeof<'T> = typeof<uint32> then scalarStage<'T> (box (ChunkFunctions.addScalar (uint32 value) : Stage<Chunk<uint32>, Chunk<uint32>>))
+    elif typeof<'T> = typeof<int32> then scalarStage<'T> (box (ChunkFunctions.addScalar (int32 value) : Stage<Chunk<int32>, Chunk<int32>>))
+    elif typeof<'T> = typeof<uint64> then scalarStage<'T> (box (ChunkFunctions.addScalar (uint64 value) : Stage<Chunk<uint64>, Chunk<uint64>>))
+    elif typeof<'T> = typeof<int64> then scalarStage<'T> (box (ChunkFunctions.addScalar (int64 value) : Stage<Chunk<int64>, Chunk<int64>>))
+    elif typeof<'T> = typeof<float32> then scalarStage<'T> (box (ChunkFunctions.addScalar (float32 value) : Stage<Chunk<float32>, Chunk<float32>>))
+    elif typeof<'T> = typeof<float> then scalarStage<'T> (box (ChunkFunctions.addScalar value : Stage<Chunk<float>, Chunk<float>>))
+    else unsupportedScalarArithmetic<'T> ()
+
+let private subScalarFromDouble<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: double) : Stage<Chunk<'T>, Chunk<'T>> =
+    if typeof<'T> = typeof<uint8> then scalarStage<'T> (box (ChunkFunctions.subScalar (uint8 value) : Stage<Chunk<uint8>, Chunk<uint8>>))
+    elif typeof<'T> = typeof<int8> then scalarStage<'T> (box (ChunkFunctions.subScalar (int8 value) : Stage<Chunk<int8>, Chunk<int8>>))
+    elif typeof<'T> = typeof<uint16> then scalarStage<'T> (box (ChunkFunctions.subScalar (uint16 value) : Stage<Chunk<uint16>, Chunk<uint16>>))
+    elif typeof<'T> = typeof<int16> then scalarStage<'T> (box (ChunkFunctions.subScalar (int16 value) : Stage<Chunk<int16>, Chunk<int16>>))
+    elif typeof<'T> = typeof<uint32> then scalarStage<'T> (box (ChunkFunctions.subScalar (uint32 value) : Stage<Chunk<uint32>, Chunk<uint32>>))
+    elif typeof<'T> = typeof<int32> then scalarStage<'T> (box (ChunkFunctions.subScalar (int32 value) : Stage<Chunk<int32>, Chunk<int32>>))
+    elif typeof<'T> = typeof<uint64> then scalarStage<'T> (box (ChunkFunctions.subScalar (uint64 value) : Stage<Chunk<uint64>, Chunk<uint64>>))
+    elif typeof<'T> = typeof<int64> then scalarStage<'T> (box (ChunkFunctions.subScalar (int64 value) : Stage<Chunk<int64>, Chunk<int64>>))
+    elif typeof<'T> = typeof<float32> then scalarStage<'T> (box (ChunkFunctions.subScalar (float32 value) : Stage<Chunk<float32>, Chunk<float32>>))
+    elif typeof<'T> = typeof<float> then scalarStage<'T> (box (ChunkFunctions.subScalar value : Stage<Chunk<float>, Chunk<float>>))
+    else unsupportedScalarArithmetic<'T> ()
+
+let private mulScalarFromDouble<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: double) : Stage<Chunk<'T>, Chunk<'T>> =
+    if typeof<'T> = typeof<uint8> then scalarStage<'T> (box (ChunkFunctions.mulScalar (uint8 value) : Stage<Chunk<uint8>, Chunk<uint8>>))
+    elif typeof<'T> = typeof<int8> then scalarStage<'T> (box (ChunkFunctions.mulScalar (int8 value) : Stage<Chunk<int8>, Chunk<int8>>))
+    elif typeof<'T> = typeof<uint16> then scalarStage<'T> (box (ChunkFunctions.mulScalar (uint16 value) : Stage<Chunk<uint16>, Chunk<uint16>>))
+    elif typeof<'T> = typeof<int16> then scalarStage<'T> (box (ChunkFunctions.mulScalar (int16 value) : Stage<Chunk<int16>, Chunk<int16>>))
+    elif typeof<'T> = typeof<uint32> then scalarStage<'T> (box (ChunkFunctions.mulScalar (uint32 value) : Stage<Chunk<uint32>, Chunk<uint32>>))
+    elif typeof<'T> = typeof<int32> then scalarStage<'T> (box (ChunkFunctions.mulScalar (int32 value) : Stage<Chunk<int32>, Chunk<int32>>))
+    elif typeof<'T> = typeof<uint64> then scalarStage<'T> (box (ChunkFunctions.mulScalar (uint64 value) : Stage<Chunk<uint64>, Chunk<uint64>>))
+    elif typeof<'T> = typeof<int64> then scalarStage<'T> (box (ChunkFunctions.mulScalar (int64 value) : Stage<Chunk<int64>, Chunk<int64>>))
+    elif typeof<'T> = typeof<float32> then scalarStage<'T> (box (ChunkFunctions.mulScalar (float32 value) : Stage<Chunk<float32>, Chunk<float32>>))
+    elif typeof<'T> = typeof<float> then scalarStage<'T> (box (ChunkFunctions.mulScalar value : Stage<Chunk<float>, Chunk<float>>))
+    else unsupportedScalarArithmetic<'T> ()
+
+let private divScalarFromDouble<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: double) : Stage<Chunk<'T>, Chunk<'T>> =
+    if typeof<'T> = typeof<uint8> then scalarStage<'T> (box (ChunkFunctions.divScalar (uint8 value) : Stage<Chunk<uint8>, Chunk<uint8>>))
+    elif typeof<'T> = typeof<int8> then scalarStage<'T> (box (ChunkFunctions.divScalar (int8 value) : Stage<Chunk<int8>, Chunk<int8>>))
+    elif typeof<'T> = typeof<uint16> then scalarStage<'T> (box (ChunkFunctions.divScalar (uint16 value) : Stage<Chunk<uint16>, Chunk<uint16>>))
+    elif typeof<'T> = typeof<int16> then scalarStage<'T> (box (ChunkFunctions.divScalar (int16 value) : Stage<Chunk<int16>, Chunk<int16>>))
+    elif typeof<'T> = typeof<uint32> then scalarStage<'T> (box (ChunkFunctions.divScalar (uint32 value) : Stage<Chunk<uint32>, Chunk<uint32>>))
+    elif typeof<'T> = typeof<int32> then scalarStage<'T> (box (ChunkFunctions.divScalar (int32 value) : Stage<Chunk<int32>, Chunk<int32>>))
+    elif typeof<'T> = typeof<uint64> then scalarStage<'T> (box (ChunkFunctions.divScalar (uint64 value) : Stage<Chunk<uint64>, Chunk<uint64>>))
+    elif typeof<'T> = typeof<int64> then scalarStage<'T> (box (ChunkFunctions.divScalar (int64 value) : Stage<Chunk<int64>, Chunk<int64>>))
+    elif typeof<'T> = typeof<float32> then scalarStage<'T> (box (ChunkFunctions.divScalar (float32 value) : Stage<Chunk<float32>, Chunk<float32>>))
+    elif typeof<'T> = typeof<float> then scalarStage<'T> (box (ChunkFunctions.divScalar value : Stage<Chunk<float>, Chunk<float>>))
+    else unsupportedScalarArithmetic<'T> ()
+
+let private scalarSubFromDouble<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: double) : Stage<Chunk<'T>, Chunk<'T>> =
+    if typeof<'T> = typeof<uint8> then scalarStage<'T> (box (ChunkFunctions.scalarSub (uint8 value) : Stage<Chunk<uint8>, Chunk<uint8>>))
+    elif typeof<'T> = typeof<int8> then scalarStage<'T> (box (ChunkFunctions.scalarSub (int8 value) : Stage<Chunk<int8>, Chunk<int8>>))
+    elif typeof<'T> = typeof<uint16> then scalarStage<'T> (box (ChunkFunctions.scalarSub (uint16 value) : Stage<Chunk<uint16>, Chunk<uint16>>))
+    elif typeof<'T> = typeof<int16> then scalarStage<'T> (box (ChunkFunctions.scalarSub (int16 value) : Stage<Chunk<int16>, Chunk<int16>>))
+    elif typeof<'T> = typeof<uint32> then scalarStage<'T> (box (ChunkFunctions.scalarSub (uint32 value) : Stage<Chunk<uint32>, Chunk<uint32>>))
+    elif typeof<'T> = typeof<int32> then scalarStage<'T> (box (ChunkFunctions.scalarSub (int32 value) : Stage<Chunk<int32>, Chunk<int32>>))
+    elif typeof<'T> = typeof<uint64> then scalarStage<'T> (box (ChunkFunctions.scalarSub (uint64 value) : Stage<Chunk<uint64>, Chunk<uint64>>))
+    elif typeof<'T> = typeof<int64> then scalarStage<'T> (box (ChunkFunctions.scalarSub (int64 value) : Stage<Chunk<int64>, Chunk<int64>>))
+    elif typeof<'T> = typeof<float32> then scalarStage<'T> (box (ChunkFunctions.scalarSub (float32 value) : Stage<Chunk<float32>, Chunk<float32>>))
+    elif typeof<'T> = typeof<float> then scalarStage<'T> (box (ChunkFunctions.scalarSub value : Stage<Chunk<float>, Chunk<float>>))
+    else unsupportedScalarArithmetic<'T> ()
+
+let private scalarDivFromDouble<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: double) : Stage<Chunk<'T>, Chunk<'T>> =
+    if typeof<'T> = typeof<uint8> then scalarStage<'T> (box (ChunkFunctions.scalarDiv (uint8 value) : Stage<Chunk<uint8>, Chunk<uint8>>))
+    elif typeof<'T> = typeof<int8> then scalarStage<'T> (box (ChunkFunctions.scalarDiv (int8 value) : Stage<Chunk<int8>, Chunk<int8>>))
+    elif typeof<'T> = typeof<uint16> then scalarStage<'T> (box (ChunkFunctions.scalarDiv (uint16 value) : Stage<Chunk<uint16>, Chunk<uint16>>))
+    elif typeof<'T> = typeof<int16> then scalarStage<'T> (box (ChunkFunctions.scalarDiv (int16 value) : Stage<Chunk<int16>, Chunk<int16>>))
+    elif typeof<'T> = typeof<uint32> then scalarStage<'T> (box (ChunkFunctions.scalarDiv (uint32 value) : Stage<Chunk<uint32>, Chunk<uint32>>))
+    elif typeof<'T> = typeof<int32> then scalarStage<'T> (box (ChunkFunctions.scalarDiv (int32 value) : Stage<Chunk<int32>, Chunk<int32>>))
+    elif typeof<'T> = typeof<uint64> then scalarStage<'T> (box (ChunkFunctions.scalarDiv (uint64 value) : Stage<Chunk<uint64>, Chunk<uint64>>))
+    elif typeof<'T> = typeof<int64> then scalarStage<'T> (box (ChunkFunctions.scalarDiv (int64 value) : Stage<Chunk<int64>, Chunk<int64>>))
+    elif typeof<'T> = typeof<float32> then scalarStage<'T> (box (ChunkFunctions.scalarDiv (float32 value) : Stage<Chunk<float32>, Chunk<float32>>))
+    elif typeof<'T> = typeof<float> then scalarStage<'T> (box (ChunkFunctions.scalarDiv value : Stage<Chunk<float>, Chunk<float>>))
+    else unsupportedScalarArithmetic<'T> ()
+
+let addScalar<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: double) : Stage<Chunk<'T>, Chunk<'T>> =
+    addScalarFromDouble<'T> value
+let subScalar<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: double) : Stage<Chunk<'T>, Chunk<'T>> =
+    subScalarFromDouble<'T> value
+let mulScalar<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: double) : Stage<Chunk<'T>, Chunk<'T>> =
+    mulScalarFromDouble<'T> value
+let divScalar<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: double) : Stage<Chunk<'T>, Chunk<'T>> =
+    divScalarFromDouble<'T> value
+let scalarAdd<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: double) : Stage<Chunk<'T>, Chunk<'T>> =
+    addScalarFromDouble<'T> value
+let scalarSub<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: double) : Stage<Chunk<'T>, Chunk<'T>> =
+    scalarSubFromDouble<'T> value
+let scalarMul<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: double) : Stage<Chunk<'T>, Chunk<'T>> =
+    mulScalarFromDouble<'T> value
+let scalarDiv<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: double) : Stage<Chunk<'T>, Chunk<'T>> =
+    scalarDivFromDouble<'T> value
 let inline addPair<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType and 'T: (static member ( + ) : 'T * 'T -> 'T)> = ChunkFunctions.add<'T>
 let inline subPair<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType and 'T: (static member ( - ) : 'T * 'T -> 'T)> = ChunkFunctions.subtract<'T>
 let inline mulPair<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType and 'T: (static member ( * ) : 'T * 'T -> 'T)> = ChunkFunctions.multiply<'T>
@@ -482,9 +606,32 @@ let separableConvolve<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: str
     ChunkFunctions.separableConvolveNativeParallelCollect<'T> xKernel yKernel zKernel stackProcessingWorkers
 let boxFilter<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> radiusX radiusY radiusZ =
     ChunkFunctions.boxFilterNativeParallelCollectXYZ<'T> radiusX radiusY radiusZ stackProcessingWorkers
-let gaussianFilter<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> sigma radius =
+let private defaultGaussianWindowSize sigma =
+    if sigma <= 0.0 then
+        invalidArg "sigma" $"Gaussian filter expects positive sigma, got {sigma}."
+    let raw = int (Math.Ceiling(2.0 * sigma + 1.0))
+    if raw % 2 = 0 then raw + 1 else raw
+
+let private radiusFromOddWindowSize name (windowSize: uint) =
+    if windowSize > uint Int32.MaxValue then
+        invalidArg name $"Gaussian filter window size is too large: {windowSize}."
+    let windowSize = int windowSize
+    if windowSize <= 0 then
+        invalidArg name $"Gaussian filter expects a positive odd window size, got {windowSize}."
+    if windowSize % 2 = 0 then
+        invalidArg name $"Gaussian filter expects an odd window size, got {windowSize}."
+    windowSize / 2
+
+let private gaussianWindowSizeOrDefault sigma windowSize =
+    windowSize |> Option.defaultWith (fun () -> uint (defaultGaussianWindowSize sigma))
+
+let gaussianFilter<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> sigma windowSize =
+    let radius = windowSize |> gaussianWindowSizeOrDefault sigma |> radiusFromOddWindowSize "windowSize"
     ChunkFunctions.gaussianFilterNativeParallelCollect<'T> sigma radius stackProcessingWorkers
-let gaussianFilterXYZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> sigmaX radiusX sigmaY radiusY sigmaZ radiusZ =
+let gaussianFilterXYZ<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> sigmaX windowSizeX sigmaY windowSizeY sigmaZ windowSizeZ =
+    let radiusX = windowSizeX |> gaussianWindowSizeOrDefault sigmaX |> radiusFromOddWindowSize "windowSizeX"
+    let radiusY = windowSizeY |> gaussianWindowSizeOrDefault sigmaY |> radiusFromOddWindowSize "windowSizeY"
+    let radiusZ = windowSizeZ |> gaussianWindowSizeOrDefault sigmaZ |> radiusFromOddWindowSize "windowSizeZ"
     ChunkFunctions.gaussianFilterNativeParallelCollectXYZ<'T> sigmaX radiusX sigmaY radiusY sigmaZ radiusZ stackProcessingWorkers
 let gradientVector sigma radius =
     ChunkFunctions.gradientVectorNativeParallelCollect stackProcessingWorkers sigma radius
@@ -520,7 +667,7 @@ let medianFloat32 radius =
     ChunkFunctions.medianNativeNthElementFloat32ParallelCollect radius stackProcessingWorkers
 let addNormalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.addNormalNoise<'T>
 let addSaltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.addSaltAndPepperNoise<'T>
-let addShotNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.addShotNoise<'T>
+let addPoissonNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = ChunkFunctions.addPoissonNoise<'T>
 let binaryDilate = ChunkFunctions.binaryDilateZonohedral
 let binaryErode = ChunkFunctions.binaryErodeZonohedral
 let binaryOpening = ChunkFunctions.binaryOpeningZonohedral

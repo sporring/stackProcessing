@@ -29,7 +29,7 @@ errors or shelved capabilities.
   `intensityStretchFloat32`, and `invertIntensityFloat32`
 - same-type intensity wrappers: `shiftScale`, `clamp`, `intensityStretch`, and
   `invertIntensity`
-- normal, salt-and-pepper, and shot noise
+- normal, salt-and-pepper, and Poisson noise
 - padding, crop, squeeze, concatenate along an axis, and axis permutation
 - native-backed 2D resampling and Euler 2D transform/rotation stages for Chunk
   slices
@@ -146,7 +146,7 @@ Chunk-backed DSL samples include:
 - `samples/showImage`
 - `samples/polygonMask`
 - `samples/noise`
-- `samples/shotNoise`
+- `samples/poissonNoise`
 - `samples/saltAndPepperNoise`
 - `samples/addSaltAndPepperNoise`
 - `samples/harris3DKeypoints`

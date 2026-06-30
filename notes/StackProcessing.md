@@ -66,7 +66,7 @@ open StackProcessing
 
 source availableMemory
 |> read<float32> "input" ".tiff"
->=> gaussianFilter<float32> 1.5 3 4
+>=> gaussianFilter<float32> 1.5 (Some 7u)
 >=> cast<_, uint8>
 >=> write "output" ".tiff"
 |> sink

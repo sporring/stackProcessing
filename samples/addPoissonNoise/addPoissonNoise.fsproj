@@ -4,5 +4,5 @@
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))"></ItemGroup>
   <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))"></ItemGroup>
   <ItemGroup><ProjectReference Include="../../src/StackProcessing/StackProcessing.fsproj" /></ItemGroup>
-  <ItemGroup><Compile Include="saltAndPepperNoise.fs" /></ItemGroup>
+  <ItemGroup><Compile Include="addPoissonNoise.fs" /></ItemGroup>
 </Project>

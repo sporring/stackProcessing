@@ -500,7 +500,7 @@ module private SourceImageNode =
         readSourceFunctionIds |> Set.contains functionId
 
     let private syntheticSourceFunctionIds =
-        Set.ofList [ "Zero"; "PolygonMask"; "NormalNoise"; "SaltAndPepperNoise"; "ShotNoise"; "SpeckleNoise"; "CreateByEuler2DTransform" ]
+        Set.ofList [ "Zero"; "PolygonMask"; "NormalNoise"; "SaltAndPepperNoise"; "PoissonNoise"; "SpeckleNoise"; "CreateByEuler2DTransform" ]
 
     let isSyntheticSource functionId =
         syntheticSourceFunctionIds |> Set.contains functionId
@@ -934,7 +934,7 @@ module private ScalarImageOperationNode =
         || functionId = "ScalarOpImage"
         || functionId = "AddNormalNoise"
         || functionId = "AddSaltAndPepperNoise"
-        || functionId = "AddShotNoise"
+        || functionId = "AddPoissonNoise"
         || functionId = "AddSpeckleNoise"
 
     let selectedType (state: PipelineNodeState) =
@@ -1429,7 +1429,7 @@ type PipelineNodeViewModel(
         | "Zero"
         | "NormalNoise"
         | "SaltAndPepperNoise"
-        | "ShotNoise"
+        | "PoissonNoise"
         | "SpeckleNoise"
         | "CreateByEuler2DTransform" -> state.Definition.Inputs, [ SourceImageNode.outputPort state ]
         | "Write" ->
@@ -1614,7 +1614,7 @@ type PipelineNodeViewModel(
                     state.Title <- ScalarImageOperationNode.title state
                     this.Name <- state.Title
                     markGraphDirty()
-                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "EstimateHistogram" || state.Definition.Id = "ReadRange" || state.Definition.Id = "Zero" || state.Definition.Id = "NormalNoise" || state.Definition.Id = "SaltAndPepperNoise" || state.Definition.Id = "ShotNoise" || state.Definition.Id = "SpeckleNoise" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "Resize" || state.Definition.Id = "Resample" || state.Definition.Id = "ResampleAffine" || HighValueFilterNode.typedImageFunctionIds.Contains state.Definition.Id || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
+                elif (state.Definition.Id = "Scalar" || state.Definition.Id = "ScalarOp" || state.Definition.Id = "Read" || state.Definition.Id = "ReadRandom" || state.Definition.Id = "EstimateHistogram" || state.Definition.Id = "ReadRange" || state.Definition.Id = "Zero" || state.Definition.Id = "NormalNoise" || state.Definition.Id = "SaltAndPepperNoise" || state.Definition.Id = "PoissonNoise" || state.Definition.Id = "SpeckleNoise" || state.Definition.Id = "CreateByEuler2DTransform" || state.Definition.Id = "Threshold" || state.Definition.Id = "ImageOpImage" || state.Definition.Id = "Resize" || state.Definition.Id = "Resample" || state.Definition.Id = "ResampleAffine" || HighValueFilterNode.typedImageFunctionIds.Contains state.Definition.Id || ScalarImageOperationNode.isOperation state.Definition.Id) && parameter.Key = "type" && args.PropertyName = nameof parameter.Value then
                     if state.Definition.Id = "Scalar" then
                         ScalarNode.ensureValueMatchesType state
                         state.Title <- ScalarNode.title state
@@ -1629,7 +1629,7 @@ type PipelineNodeViewModel(
                     if state.Definition.Id = "Zero"
                        || state.Definition.Id = "NormalNoise"
                        || state.Definition.Id = "SaltAndPepperNoise"
-                       || state.Definition.Id = "ShotNoise"
+                       || state.Definition.Id = "PoissonNoise"
                        || state.Definition.Id = "SpeckleNoise"
                        || state.Definition.Id = "CreateByEuler2DTransform" then
                         state.Parameters
@@ -2677,7 +2677,7 @@ type MainWindowViewModel() as this =
             || node.State.Definition.Id = "Zero"
             || node.State.Definition.Id = "NormalNoise"
             || node.State.Definition.Id = "SaltAndPepperNoise"
-            || node.State.Definition.Id = "ShotNoise"
+            || node.State.Definition.Id = "PoissonNoise"
             || node.State.Definition.Id = "SpeckleNoise"
             || node.State.Definition.Id = "CreateByEuler2DTransform")
         |> Seq.iter (fun node ->

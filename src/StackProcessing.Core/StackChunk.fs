@@ -642,11 +642,18 @@ let invFftXYComplex64InterleavedToFloat32ParallelCollect workers = StackFFT.invF
 let fftShift3DComplex64Interleaved = StackFFT.fftShift3DComplex64Interleaved
 let toComplex64 = StackFFT.toComplex64
 let polarToComplex64 = StackFFT.polarToComplex64
+let toComplex128 = StackFFT.toComplex128
+let polarToComplex128 = StackFFT.polarToComplex128
 let complex64Real = StackFFT.complex64Real
 let complex64Imag = StackFFT.complex64Imag
 let complex64Modulus = StackFFT.complex64Modulus
 let complex64Argument = StackFFT.complex64Argument
+let complex128Real = StackFFT.complex128Real
+let complex128Imag = StackFFT.complex128Imag
+let complex128Modulus = StackFFT.complex128Modulus
+let complex128Argument = StackFFT.complex128Argument
 let complex64Conjugate = StackFFT.complex64Conjugate
+let complex128Conjugate = StackFFT.complex128Conjugate
 
 let toVectorImage<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     : Stage<Chunk<'T> * Chunk<'T>, VectorChunk<'T>> =
@@ -2034,8 +2041,20 @@ let chunkSumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: st
 let absFloat32 : Stage<Chunk<float32>, Chunk<float32>> =
     float32UnaryStage "chunkAbsFloat32" abs (fun v -> Vector.Abs(v))
 
+let absFloat : Stage<Chunk<float>, Chunk<float>> =
+    map "chunkAbsFloat" Math.Abs
+
 let sqrtFloat32 : Stage<Chunk<float32>, Chunk<float32>> =
     float32UnaryStage "chunkSqrtFloat32" sqrt (fun v -> Vector.SquareRoot(v))
+
+let sqrtFloat : Stage<Chunk<float>, Chunk<float>> =
+    map "chunkSqrtFloat" Math.Sqrt
+
+let logFloat32 : Stage<Chunk<float32>, Chunk<float32>> =
+    map "chunkLogFloat32" MathF.Log
+
+let logFloat : Stage<Chunk<float>, Chunk<float>> =
+    map "chunkLogFloat" Math.Log
 
 let squareFloat32 : Stage<Chunk<float32>, Chunk<float32>> =
     float32UnaryStage "chunkSquareFloat32" (fun x -> x * x) (fun (v: Vector<float32>) -> v * v)
@@ -2297,13 +2316,13 @@ let addNormalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct
     let memoryNeed n = 2UL * chunkMemoryNeed<'T> n
     releaseUnaryChunk $"chunkAddNormalNoise.{typeof<'T>.Name}" (ChunkKernel.addNormalNoiseChunk<'T> mean stddev) memoryNeed
 
-let addSaltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> probability : Stage<Chunk<'T>, Chunk<'T>> =
+let addSaltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> probability pepper salt : Stage<Chunk<'T>, Chunk<'T>> =
     let memoryNeed n = 2UL * chunkMemoryNeed<'T> n
-    releaseUnaryChunk $"chunkAddSaltAndPepperNoise.{typeof<'T>.Name}" (ChunkKernel.addSaltAndPepperNoiseChunk<'T> probability) memoryNeed
+    releaseUnaryChunk $"chunkAddSaltAndPepperNoise.{typeof<'T>.Name}" (ChunkKernel.addSaltAndPepperNoiseChunk<'T> probability pepper salt) memoryNeed
 
-let addShotNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> scale : Stage<Chunk<'T>, Chunk<'T>> =
+let addPoissonNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> lambda : Stage<Chunk<'T>, Chunk<'T>> =
     let memoryNeed n = 2UL * chunkMemoryNeed<'T> n
-    releaseUnaryChunk $"chunkAddShotNoise.{typeof<'T>.Name}" (ChunkKernel.addShotNoiseChunk<'T> scale) memoryNeed
+    releaseUnaryChunk $"chunkAddPoissonNoise.{typeof<'T>.Name}" (ChunkKernel.addPoissonNoiseChunk<'T> lambda) memoryNeed
 
 type DenseHistogram = ChunkKernel.DenseHistogram
 type LeftEdgeHistogram = ChunkKernel.LeftEdgeHistogram

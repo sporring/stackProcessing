@@ -22,7 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="noise.fs" />
+    <Compile Include="randomGaussianField.fs" />
   </ItemGroup>
 
 </Project>

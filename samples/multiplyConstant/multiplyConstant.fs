@@ -17,8 +17,8 @@ let main arg =
     let maskMaker = 
         src
         |> zero<uint8> width height depth
-        >=> addScalar 1uy
-        >=> mulScalar 2uy
+        >=> addScalar 1.0
+        >=> mulScalar 2.0
 
     let imageMaker =
         src

@@ -359,8 +359,8 @@ module PipelineCodeGenerator =
 
     let private unaryImageStageFunctionName (node: SavedNode) =
         match unaryImageFunctionName node with
-        | "abs" -> "absFloat32"
-        | "sqrt" -> "sqrtFloat32"
+        | "abs" -> "abs<float32>"
+        | "sqrt" -> "sqrt<float32>"
         | "square" -> "squareFloat32"
         | name -> name
 
@@ -733,7 +733,7 @@ module PipelineCodeGenerator =
             | "ScalarFunction", "a" ->
                 Some(BasicType.Numeric Float64)
             | id, "value" when isScalarImageFunction id ->
-                configuredNumericType ()
+                Some(BasicType.Numeric Float64)
             | _ ->
                 BuiltInCatalog.tryFind targetNode.FunctionId
                 |> Option.bind (fun definition ->
@@ -1117,15 +1117,17 @@ module PipelineCodeGenerator =
             let height = parameterValue "height"
             let depth = parameterValue "depth"
             let probability = parameterValue "probability"
-            $"|> zero<{pixelType}> {width} {height} {depth}{Environment.NewLine}>=> addSaltAndPepperNoise<{pixelType}> {probability}" |> sourcePrefix availableMemory
-        | "ShotNoise" ->
+            let pepper = parameterValueOrDefault "pepper" "None"
+            let salt = parameterValueOrDefault "salt" "None"
+            $"|> zero<{pixelType}> {width} {height} {depth}{Environment.NewLine}>=> addSaltAndPepperNoise<{pixelType}> {probability} {pepper} {salt}" |> sourcePrefix availableMemory
+        | "PoissonNoise" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let width = parameterValue "width"
             let height = parameterValue "height"
             let depth = parameterValue "depth"
-            let scale = parameterValue "scale"
-            $"|> zero<{pixelType}> {width} {height} {depth}{Environment.NewLine}>=> addShotNoise<{pixelType}> {scale}" |> sourcePrefix availableMemory
+            let lambda = parameterValue "lambda"
+            $"|> zero<{pixelType}> {width} {height} {depth}{Environment.NewLine}>=> addPoissonNoise<{pixelType}> {lambda}" |> sourcePrefix availableMemory
         | "SpeckleNoise" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
@@ -1530,11 +1532,8 @@ module PipelineCodeGenerator =
         | "SmoothWGauss" ->
             let sigma = parameterValue "sigma"
             let pixelType = pipelinePixelType "Float32"
-            let radius =
-                match parameterValue "windowSize" |> optionUInt with
-                | "None" -> $"(int (System.Math.Ceiling(3.0 * ({sigma}))))"
-                | someWindow -> $"(int ((Option.get {someWindow} - 1u) / 2u))"
-            $">=> gaussianFilter<{pixelType}> {sigma} {radius}"
+            let windowSize = parameterValue "windowSize" |> optionUInt
+            $">=> gaussianFilter<{pixelType}> {sigma} {windowSize}"
         | "Convolve" ->
             let kernel = parameterValue "kernel"
             let pixelType = pipelinePixelType "Float32"
@@ -1767,11 +1766,13 @@ module PipelineCodeGenerator =
         | "AddSaltAndPepperNoise" ->
             let pixelType = pipelinePixelType "Float32"
             let probability = parameterValue "probability"
-            $">=> addSaltAndPepperNoise<{pixelType}> {probability}"
-        | "AddShotNoise" ->
+            let pepper = parameterValueOrDefault "pepper" "None"
+            let salt = parameterValueOrDefault "salt" "None"
+            $">=> addSaltAndPepperNoise<{pixelType}> {probability} {pepper} {salt}"
+        | "AddPoissonNoise" ->
             let pixelType = pipelinePixelType "Float32"
-            let scale = parameterValue "scale"
-            $">=> addShotNoise<{pixelType}> {scale}"
+            let lambda = parameterValue "lambda"
+            $">=> addPoissonNoise<{pixelType}> {lambda}"
         | "AddSpeckleNoise" ->
             let std = parameterValue "std"
             $">=> addSpeckleNoise {std}"

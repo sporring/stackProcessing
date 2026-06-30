@@ -8,6 +8,7 @@ let main arg =
 
     let src, arg = commandLineSource availableMemory arg
 
+    // Demonstration of an empty pipeline. 
     src |> sink
 
     0

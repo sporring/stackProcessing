@@ -171,7 +171,8 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "debug 1u (optimizerEnabled ()) 2048UL" "NormalNoise should generate a debug source with available memory."
-            Expect.stringContains code "|> normalNoise<float32> 12u 13u 4u 5.0 0.25" "NormalNoise should generate typed dimensions and distribution parameters."
+            Expect.stringContains code "|> zero<float32> 12u 13u 4u" "NormalNoise should generate a typed zero source."
+            Expect.stringContains code ">=> addNormalNoise<float32> 5.0 0.25" "NormalNoise should generate typed distribution parameters."
 
             let saltCode =
                 graph
@@ -188,15 +189,15 @@ let generatorSuite =
 
             let shotCode =
                 graph
-                    [ node "shot" "ShotNoise"
+                    [ node "poisson" "PoissonNoise"
                         [ p "availableMemory" "2048" false
                           p "type" "Float32" false
                           p "width" "12" false
                           p "height" "13" false
                           p "depth" "4" false
-                          p "scale" "2.0" false ]
+                          p "lambda" "2.0" false ]
                       write ]
-                    [ edge "shot" "output" 0 "write" "input" 0 ]
+                    [ edge "poisson" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
             let speckleCode =
@@ -212,8 +213,10 @@ let generatorSuite =
                     [ edge "speckle" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains saltCode "|> saltAndPepperNoise<float32> 12u 13u 4u 0.01" "SaltAndPepperNoise should lower with probability."
-            Expect.stringContains shotCode "|> shotNoise<float32> 12u 13u 4u 2.0" "ShotNoise should lower with scale."
+            Expect.stringContains saltCode "|> zero<float32> 12u 13u 4u" "SaltAndPepperNoise should generate a typed zero source."
+            Expect.stringContains saltCode ">=> addSaltAndPepperNoise<float32> 0.01 None None" "SaltAndPepperNoise should default pepper and salt values."
+            Expect.stringContains shotCode "|> zero<float32> 12u 13u 4u" "PoissonNoise should generate a typed zero source."
+            Expect.stringContains shotCode ">=> addPoissonNoise<float32> 2.0" "PoissonNoise should lower with lambda."
             Expect.stringContains speckleCode "|> speckleNoise<float32> 12u 13u 4u 0.5" "SpeckleNoise should lower with std."
 
         testCase "coordinate sources lower to Float64 coordinate image streams" <| fun _ ->
@@ -489,7 +492,7 @@ let generatorSuite =
 
             let normal = node "normal" "AddNormalNoise" [ p "type" "Float32" false; p "mean" "1.0" false; p "std" "0.25" false ]
             let salt = node "salt" "AddSaltAndPepperNoise" [ p "type" "Float32" false; p "probability" "0.01" false ]
-            let shot = node "shot" "AddShotNoise" [ p "type" "Float32" false; p "scale" "2.0" false ]
+            let shot = node "poisson" "AddPoissonNoise" [ p "type" "Float32" false; p "lambda" "2.0" false ]
             let speckle = node "speckle" "AddSpeckleNoise" [ p "type" "Float32" false; p "std" "0.5" false ]
             let write = node "write" "Write" [ p "output" "noise" false; p "suffix" ".tiff" false ]
 
@@ -498,14 +501,14 @@ let generatorSuite =
                     [ read; normal; salt; shot; speckle; write ]
                     [ edge "read" "output" 0 "normal" "input" 0
                       edge "normal" "output" 0 "salt" "input" 0
-                      edge "salt" "output" 0 "shot" "input" 0
-                      edge "shot" "output" 0 "speckle" "input" 0
+                      edge "salt" "output" 0 "poisson" "input" 0
+                      edge "poisson" "output" 0 "speckle" "input" 0
                       edge "speckle" "output" 0 "write" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> addNormalNoise 1.0 0.25" "AddNormalNoise should lower with mean and std."
-            Expect.stringContains code ">=> addSaltAndPepperNoise 0.01" "AddSaltAndPepperNoise should lower with probability."
-            Expect.stringContains code ">=> addShotNoise 2.0" "AddShotNoise should lower with scale."
+            Expect.stringContains code ">=> addNormalNoise<float32> 1.0 0.25" "AddNormalNoise should lower with mean and std."
+            Expect.stringContains code ">=> addSaltAndPepperNoise<float32> 0.01 None None" "AddSaltAndPepperNoise should lower with probability and default pepper/salt values."
+            Expect.stringContains code ">=> addPoissonNoise<float32> 2.0" "AddPoissonNoise should lower with lambda."
             Expect.stringContains code ">=> addSpeckleNoise 0.5" "AddSpeckleNoise should lower with std."
 
         testCase "slice read and chunk write boxes lower to chunk DSL functions" <| fun _ ->
@@ -2535,7 +2538,7 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code ">=> intensityStretch 0.0 255.0 0.0 1.0" "Float parameters should never emit trailing-dot literals."
-            Expect.stringContains code ">=> scalarSubImage 1uy" "Integer typed scalar parameters should accept decimal-looking whole numbers."
+            Expect.stringContains code ">=> scalarSub (1.0)" "Scalar image parameters should stay as DSL doubles; StackProcessing converts once to the streamed pixel type."
 
         testCase "finiteDiff lowers direction and derivative order parameters" <| fun _ ->
             let read =

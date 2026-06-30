@@ -12,9 +12,11 @@ let main args =
         | [| input |] -> input, "../tmp/dilate"
         | _ -> "../data/rotatingBoxes", "../tmp/dilate"
 
+    // Dilate a binary image with a sphere of radius 2. Stretch intensities for easy viewing.
     src
     |> read<uint8> input ".tiff"
     >=> binaryDilate 2u
+    >=> intensityStretch 0.0 1.0 0.0 255.0
     >=> write output ".tiff"
     |> sink
 

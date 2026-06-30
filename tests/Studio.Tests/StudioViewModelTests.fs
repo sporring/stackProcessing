@@ -138,14 +138,14 @@ let viewModelSuite =
                 @ match functionId with
                   | "NormalNoise" -> [ p "mean" "0.0" false; p "std" "1.0" false ]
                   | "SaltAndPepperNoise" -> [ p "probability" "0.01" false ]
-                  | "ShotNoise" -> [ p "scale" "1.0" false ]
+                  | "PoissonNoise" -> [ p "lambda" "1.0" false ]
                   | "SpeckleNoise" -> [ p "std" "1.0" false ]
                   | "CreateByEuler2DTransform" ->
                       [ p "polygon" "[ { X = 16.0; Y = 16.0 }; { X = 48.0; Y = 16.0 }; { X = 48.0; Y = 48.0 }; { X = 16.0; Y = 48.0 } ]" false
                         p "transform" "Diagonal" false ]
                   | _ -> []
 
-            for functionId in [ "Zero"; "NormalNoise"; "SaltAndPepperNoise"; "ShotNoise"; "SpeckleNoise"; "CreateByEuler2DTransform" ] do
+            for functionId in [ "Zero"; "NormalNoise"; "SaltAndPepperNoise"; "PoissonNoise"; "SpeckleNoise"; "CreateByEuler2DTransform" ] do
                 let vm = MainWindowViewModel()
                 vm.SetDrawingSize(2000.0, 2000.0)
 
@@ -229,7 +229,7 @@ let viewModelSuite =
                   "ScalarOpImage"
                   "AddNormalNoise"
                   "AddSaltAndPepperNoise"
-                  "AddShotNoise"
+                  "AddPoissonNoise"
                   "AddSpeckleNoise" ]
 
             for functionId in sameTypeBoxes do
@@ -312,7 +312,7 @@ let viewModelSuite =
                   "Zero"
                   "NormalNoise"
                   "SaltAndPepperNoise"
-                  "ShotNoise"
+                  "PoissonNoise"
                   "SpeckleNoise"
                   "CreateByEuler2DTransform" ]
 

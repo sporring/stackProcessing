@@ -133,8 +133,8 @@ let private addNormalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T
 let private addSaltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
     StackProcessing.addSaltAndPepperNoise<'T>
 
-let private addShotNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-    StackProcessing.addShotNoise<'T>
+let private addPoissonNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
+    StackProcessing.addPoissonNoise<'T>
 
 let private threshold<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (lower: double) (upper: double) =
     thresholdRange<'T> lower upper
@@ -155,11 +155,7 @@ let private sumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T:
     StackProcessing.sumProjection<'T>
 
 let private smoothWGauss<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> sigma _outputRegionMode _boundaryCondition windowSize =
-    let radius =
-        windowSize
-        |> Option.map (fun w -> int ((w - 1u) / 2u))
-        |> Option.defaultValue (int (Math.Ceiling(3.0 * sigma)))
-    gaussianFilter<'T> sigma radius
+    gaussianFilter<'T> sigma windowSize
 
 let private gradientMagnitude<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> windowSize =
     let radius = windowSize |> Option.map (fun w -> int ((w - 1u) / 2u)) |> Option.defaultValue 3
@@ -230,12 +226,12 @@ let private normalNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: s
 let private saltAndPepperNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> width height depth probability pl =
     pl
     |> zero<'T> width height depth
-    >=> addSaltAndPepperNoise<'T> probability
+    >=> addSaltAndPepperNoise<'T> probability None None
 
-let private shotNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> width height depth scale pl =
+let private poissonNoise<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> width height depth lambda pl =
     pl
     |> zero<'T> width height depth
-    >=> addShotNoise<'T> scale
+    >=> addPoissonNoise<'T> lambda
 
 // Workflow-shape inspiration for realistic boilerplate probes:
 // - Robert Haase et al., Bio-image Analysis Notebooks
@@ -512,8 +508,8 @@ let private sampleCompatibleProbeFeatures (probe: ProbeResultJson) =
             yield $"SaltAndPepperNoise:type={capitalizedType}:width={width}:height={height}:depth={depth}:probability=0.02"
             yield writeFeature
             yield writeFeatureWithAxes
-        | "shot-noise-write" ->
-            yield $"ShotNoise:type={capitalizedType}:width={width}:height={height}:depth={depth}:scale=2.0"
+        | "poisson-noise-write" ->
+            yield $"PoissonNoise:type={capitalizedType}:width={width}:height={height}:depth={depth}:lambda=2.0"
             yield "Cast:sourceType=Float32:targetType=UInt8"
             yield writeFeature
             yield writeFeatureWithAxes
@@ -522,9 +518,9 @@ let private sampleCompatibleProbeFeatures (probe: ProbeResultJson) =
             yield "Cast:sourceType=Float32:targetType=UInt8"
             yield writeFeature
             yield writeFeatureWithAxes
-        | "add-shot-speckle-write" ->
+        | "add-poisson-speckle-write" ->
             yield zeroFeature
-            yield "AddShotNoise:type=Float32:scale=2.0"
+            yield "AddPoissonNoise:type=Float32:lambda=2.0"
             yield "AddSpeckleNoise:type=Float32:std=0.5"
             yield "Cast:sourceType=Float32:targetType=UInt8"
             yield writeFeature
@@ -1738,14 +1734,14 @@ let private bottomUpGraphTemplates config =
                [ "noise", "SaltAndPepperNoise", [ "availableMemory", string availableMemory + "UL"; "type", "UInt8"; "width", sizeText; "height", heightText; "depth", depthText; "probability", "0.02" ] ]
            yield
                ignoreTemplate
-               $"bottomup-16-shotNoise-source-ignore-{sizeSuffix}"
-               "Float32 shotNoise source consumed without writing."
-               [ "noise", "ShotNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float32"; "width", sizeText; "height", heightText; "depth", depthText; "scale", "2.0" ] ]
+               $"bottomup-16-poissonNoise-source-ignore-{sizeSuffix}"
+               "Float32 poissonNoise source consumed without writing."
+               [ "noise", "PoissonNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float32"; "width", sizeText; "height", heightText; "depth", depthText; "lambda", "2.0" ] ]
            yield
                writeUInt8Template
-               $"bottomup-17-shotNoise-source-write-{sizeSuffix}"
-               "Float32 shotNoise source cast and written."
-               [ "noise", "ShotNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float32"; "width", sizeText; "height", heightText; "depth", depthText; "scale", "2.0" ] ]
+               $"bottomup-17-poissonNoise-source-write-{sizeSuffix}"
+               "Float32 poissonNoise source cast and written."
+               [ "noise", "PoissonNoise", [ "availableMemory", string availableMemory + "UL"; "type", "Float32"; "width", sizeText; "height", heightText; "depth", depthText; "lambda", "2.0" ] ]
                "Float32"
            yield
                ignoreTemplate
@@ -1918,13 +1914,13 @@ let private bottomUpGraphTemplates config =
                "UInt8 read plus addSaltAndPepperNoise written."
                [ readUInt8; "noise", "AddSaltAndPepperNoise", [ "type", "UInt8"; "probability", "0.02" ] ]
            ignoreTemplate
-               $"bottomup-42-addShotNoise-float32-ignore-{sizeSuffix}"
-               "Float32 read plus addShotNoise consumed without writing."
-               [ readFloat32; "noise", "AddShotNoise", [ "type", "Float32"; "scale", "2.0" ] ]
+               $"bottomup-42-addPoissonNoise-float32-ignore-{sizeSuffix}"
+               "Float32 read plus addPoissonNoise consumed without writing."
+               [ readFloat32; "noise", "AddPoissonNoise", [ "type", "Float32"; "lambda", "2.0" ] ]
            writeUInt8Template
-               $"bottomup-43-addShotNoise-float32-write-{sizeSuffix}"
-               "Float32 read plus addShotNoise cast and written."
-               [ readFloat32; "noise", "AddShotNoise", [ "type", "Float32"; "scale", "2.0" ] ]
+               $"bottomup-43-addPoissonNoise-float32-write-{sizeSuffix}"
+               "Float32 read plus addPoissonNoise cast and written."
+               [ readFloat32; "noise", "AddPoissonNoise", [ "type", "Float32"; "lambda", "2.0" ] ]
                "Float32"
            ignoreTemplate
                $"bottomup-44-addSpeckleNoise-float32-ignore-{sizeSuffix}"
@@ -2436,11 +2432,11 @@ let private operationGraph (probe: ProbeResultJson) =
                     "height", probeParameter "height" probe
                     "depth", probeParameter "depth" probe
                     "probability", "0.02" ] ])
-    | "shot-noise-write" ->
+    | "poisson-noise-write" ->
         Some(
             withWrite
                 [ "noise",
-                  "ShotNoise",
+                  "PoissonNoise",
                   [ "availableMemory", string availableMemory + "UL"
                     "type", "Float32"
                     "width", probeParameter "width" probe
@@ -2460,11 +2456,11 @@ let private operationGraph (probe: ProbeResultJson) =
                     "depth", probeParameter "depth" probe
                     "std", "0.5" ]
                   castNode "Float32" "UInt8" ])
-    | "add-shot-speckle-write" ->
+    | "add-poisson-speckle-write" ->
         Some(
             withWrite
                 [ source
-                  "shot", "AddShotNoise", [ "type", "Float32"; "scale", "2.0" ]
+                  "poisson", "AddPoissonNoise", [ "type", "Float32"; "lambda", "2.0" ]
                   "speckle", "AddSpeckleNoise", [ "type", "Float32"; "std", "0.5" ]
                   castNode "Float32" "UInt8" ])
     | "threshold-write" ->
@@ -3080,7 +3076,7 @@ let main args =
                                          |> zero<float32> size.Width size.Height size.Depth
                                          >=> addNormalNoise 128.0 50.0
                                          >=> threshold<float32> 128.0 infinity
-                                         >=> imageMulScalar 255uy
+                                         >=> imageMulScalar 255.0
                                          >=> write (outputDir size "threshold-float32-write") ".tiff")
 
                            yield runDrainProbe
@@ -3103,7 +3099,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> zero<uint8> size.Width size.Height size.Depth
-                                         >=> addSaltAndPepperNoise 0.02
+                                         >=> addSaltAndPepperNoise 0.02 None None
                                          >=> write (outputDir size "add-salt-and-pepper-uint8-write") ".tiff")
 
                            yield runSinkProbe
@@ -3118,16 +3114,16 @@ let main args =
                                          >=> write (outputDir size "salt-and-pepper-uint8-write") ".tiff")
 
                            yield runSinkProbe
-                                     $"shot-noise-float-write-{suffix}"
-                                     $"Synthetic Float32 {suffix} shot noise source, cast to UInt8, write."
+                                     $"poisson-noise-float-write-{suffix}"
+                                     $"Synthetic Float32 {suffix} Poisson noise source, cast to UInt8, write."
                                      (let p = defaultImageParameters size "float32" 1u
-                                      p["operation"] <- "shot-noise-write"
+                                      p["operation"] <- "poisson-noise-write"
                                       p)
                                      (fun () ->
                                          source availableMemory
-                                         |> shotNoise<float32> size.Width size.Height size.Depth 2.0
+                                         |> poissonNoise<float32> size.Width size.Height size.Depth 2.0
                                          >=> cast<_, uint8>
-                                         >=> write (outputDir size "shot-noise-float-write") ".tiff")
+                                         >=> write (outputDir size "poisson-noise-float-write") ".tiff")
 
                            yield runSinkProbe
                                      $"fill-small-holes-uint8-write-{suffix}"
@@ -3372,7 +3368,7 @@ let main args =
                                  (fun () ->
                                      source availableMemory
                                      |> zero<float32> size.Width size.Height size.Depth
-                                     >=> imageAddScalar 4.0f
+                                     >=> imageAddScalar 4.0
                                      >=> ignoreSingles ())
 
                        yield runSinkProbe
@@ -3386,7 +3382,7 @@ let main args =
                                  (fun () ->
                                      source availableMemory
                                      |> zero<float32> size.Width size.Height size.Depth
-                                     >=> imageAddScalar 4.0f
+                                     >=> imageAddScalar 4.0
                                      >=> sqrt<float32>
                                      >=> ignoreSingles ())
 
@@ -3399,7 +3395,7 @@ let main args =
                                  (fun () ->
                                      source availableMemory
                                      |> zero<float32> size.Width size.Height size.Depth
-                                     >=> imageAddScalar 4.0f
+                                     >=> imageAddScalar 4.0
                                      >=> sqrt<float32>
                                      >=> cast<_, uint8>
                                      >=> write (outputDir size "sqrt-float-write") ".tiff")
@@ -3416,7 +3412,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> zero<float32> size.Width size.Height size.Depth
-                                         >=> imageAddScalar 4.0f
+                                         >=> imageAddScalar 4.0
                                          >=> sqrtWindowed<float32> windowSize
                                          >=> ignoreSingles ())
 
@@ -3429,7 +3425,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> zero<float32> size.Width size.Height size.Depth
-                                         >=> imageAddScalar 4.0f
+                                         >=> imageAddScalar 4.0
                                          >=> sqrtWindowed<float32> windowSize
                                          >=> cast<_, uint8>
                                          >=> write (outputDir size $"sqrt-windowed-float-write-win-{windowSize}") ".tiff")

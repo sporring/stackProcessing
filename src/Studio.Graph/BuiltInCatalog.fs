@@ -557,7 +557,7 @@ module BuiltInCatalog =
       DisplayName = "saltAndPepperNoise"
       Category = "Sources / Sinks"
       Summary = "Create a synthetic salt-and-pepper noise stack."
-      Description = "Creates a synthetic image stack by applying SimpleITK's salt-and-pepper noise filter to zero-valued slices. Probability controls how often pixels are replaced by salt or pepper values."
+      Description = "Creates a synthetic image stack by adding salt-and-pepper impulse noise to zero-valued slices. Probability controls how often pixels are replaced by pepper or salt values. Leave pepper and salt as None to use pixel-type extrema."
       Aliases = [ "noise"; "random"; "salt"; "pepper"; "impulse"; "synthetic"; "source"; "UInt8"; "Float64"; "type" ]
       Inputs = []
       Outputs = [ makePort "Float64" imageFloat64 ]
@@ -567,15 +567,17 @@ module BuiltInCatalog =
             makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
             makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
             makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32)
-            makeParameter "probability" "Probability" "0.01" (BasicType.Numeric Float64) ] }
+            makeParameter "probability" "Probability" "0.01" (BasicType.Numeric Float64)
+            makeParameter "pepper" "Pepper" "None" BasicType.String
+            makeParameter "salt" "Salt" "None" BasicType.String ] }
 
-  let makeGenericShotNoise () =
-    { Id = "ShotNoise"
-      DisplayName = "shotNoise"
+  let makeGenericPoissonNoise () =
+    { Id = "PoissonNoise"
+      DisplayName = "poissonNoise"
       Category = "Sources / Sinks"
-      Summary = "Create a synthetic shot-noise stack."
-      Description = "Creates a synthetic image stack by applying SimpleITK's shot-noise filter to zero-valued slices. Scale controls the shot-noise scale used by the native filter."
-      Aliases = [ "noise"; "random"; "shot"; "poisson"; "synthetic"; "source"; "UInt8"; "Float64"; "type" ]
+      Summary = "Create a synthetic Poisson-noise stack."
+      Description = "Creates a synthetic image stack by applying Poisson noise to zero-valued slices. Lambda is the mean of the Poisson distribution."
+      Aliases = [ "noise"; "random"; "poisson"; "synthetic"; "source"; "UInt8"; "Float64"; "type" ]
       Inputs = []
       Outputs = [ makePort "Float64" imageFloat64 ]
       Parameters =
@@ -584,7 +586,7 @@ module BuiltInCatalog =
             makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
             makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
             makeParameter "depth" "Depth" "1" (BasicType.Numeric UInt32)
-            makeParameter "scale" "Scale" "1.0" (BasicType.Numeric Float64) ] }
+            makeParameter "lambda" "Lambda" "1.0" (BasicType.Numeric Float64) ] }
 
   let makeGenericSpeckleNoise () =
     { Id = "SpeckleNoise"
@@ -654,26 +656,28 @@ module BuiltInCatalog =
       DisplayName = "addSaltAndPepperNoise"
       Category = "Statistics"
       Summary = "Add salt-and-pepper noise to each image."
-      Description = "Applies SimpleITK's salt-and-pepper noise filter to each image slice. Probability controls how often pixels are replaced by salt or pepper values."
+      Description = "Adds salt-and-pepper impulse noise to each image slice. Probability controls how often pixels are replaced by pepper or salt values. Leave pepper and salt as None to use pixel-type extrema."
       Aliases = [ "noise"; "random"; "salt"; "pepper"; "impulse"; "statistics"; "UInt8"; "Float64"; "type" ]
       Inputs = [ makePort "Float64" imageFloat64 ]
       Outputs = [ makePort "Float64" imageFloat64 ]
       Parameters =
           [ makeParameter "type" "Type" "Float64" BasicType.String
-            makeParameter "probability" "Probability" "0.01" (BasicType.Numeric Float64) ] }
+            makeParameter "probability" "Probability" "0.01" (BasicType.Numeric Float64)
+            makeParameter "pepper" "Pepper" "None" BasicType.String
+            makeParameter "salt" "Salt" "None" BasicType.String ] }
 
-  let makeGenericAddShotNoise () =
-    { Id = "AddShotNoise"
-      DisplayName = "addShotNoise"
+  let makeGenericAddPoissonNoise () =
+    { Id = "AddPoissonNoise"
+      DisplayName = "addPoissonNoise"
       Category = "Statistics"
-      Summary = "Add shot noise to each image."
-      Description = "Applies SimpleITK's shot-noise filter to each image slice. Scale controls the shot-noise scale used by the native filter."
-      Aliases = [ "noise"; "random"; "shot"; "poisson"; "statistics"; "UInt8"; "Float64"; "type" ]
+      Summary = "Add Poisson noise to each image."
+      Description = "Adds Poisson-distributed noise to each image slice. Lambda is the mean of the Poisson distribution."
+      Aliases = [ "noise"; "random"; "poisson"; "statistics"; "UInt8"; "Float64"; "type" ]
       Inputs = [ makePort "Float64" imageFloat64 ]
       Outputs = [ makePort "Float64" imageFloat64 ]
       Parameters =
           [ makeParameter "type" "Type" "Float64" BasicType.String
-            makeParameter "scale" "Scale" "1.0" (BasicType.Numeric Float64) ] }
+            makeParameter "lambda" "Lambda" "1.0" (BasicType.Numeric Float64) ] }
 
   let makeGenericAddSpeckleNoise () =
     { Id = "AddSpeckleNoise"
@@ -780,7 +784,7 @@ module BuiltInCatalog =
 
         makeGenericSaltAndPepperNoise()
 
-        makeGenericShotNoise()
+        makeGenericPoissonNoise()
 
         makeGenericSpeckleNoise()
 
@@ -1272,7 +1276,7 @@ module BuiltInCatalog =
 
         makeGenericAddSaltAndPepperNoise()
 
-        makeGenericAddShotNoise()
+        makeGenericAddPoissonNoise()
 
         makeGenericAddSpeckleNoise()
 

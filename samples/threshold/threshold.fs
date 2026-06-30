@@ -19,7 +19,7 @@ let main arg =
     |> zero<float32> width height depth
     >=> addNormalNoise<float32> 128.0 50.0
     >=> thresholdRange<float32> 128.0 infinity
-    >=> mulScalar 255uy
+    >=> mulScalar 255.0
     //>=> ignoreImages ()
     >=> write output ".tiff"
     |> sink

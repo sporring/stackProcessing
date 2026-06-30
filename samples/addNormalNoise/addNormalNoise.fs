@@ -11,10 +11,11 @@ let main arg =
     let width, height, depth, output = 
         if arg.Length > 0 then
             let n = (int arg[0]) / 3 |> pown 2 |> uint 
-            n, n, n, "../tmp/random"
+            n, n, n, "../tmp/addNormalNoise"
         else
-            64u, 64u, 64u, "../tmp/random"
+            64u, 64u, 64u, "../tmp/addNormalNoise"
             
+    // Create a zero image and add normal distributed noise to it in the unsigned integer 8 bit co-domain
     src
     |> zero<uint8> width height depth
     >=> addNormalNoise<uint8> 128.0 50.0

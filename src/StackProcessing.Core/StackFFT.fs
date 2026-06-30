@@ -45,6 +45,14 @@ let private validateComplex64Interleaved name (chunk: Chunk<float32>) =
         invalidArg "chunk" $"{name} expects even interleaved width, got {chunk.Size}."
     int (width / 2UL), int height
 
+let private validateComplex128Interleaved name (chunk: Chunk<float>) =
+    let width, height, depth = chunk.Size
+    if depth <> 1UL then
+        invalidArg "chunk" $"{name} expects 2D complex128-interleaved chunks with depth 1, got {chunk.Size}."
+    if width % 2UL <> 0UL then
+        invalidArg "chunk" $"{name} expects even interleaved width, got {chunk.Size}."
+    int (width / 2UL), int height
+
 let private complex64FromRealImag (real: Chunk<float>) (imag: Chunk<float>) =
     validateSameSize "chunkToComplex64" real imag
     let width, height, depth = real.Size
@@ -60,6 +68,28 @@ let private complex64FromRealImag (real: Chunk<float>) (imag: Chunk<float>) =
         for i in 0 .. realPixels.Length - 1 do
             outputPixels[j] <- float32 realPixels[i]
             outputPixels[j + 1] <- float32 imagPixels[i]
+            j <- j + 2
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
+let private complex128FromRealImag (real: Chunk<float>) (imag: Chunk<float>) =
+    validateSameSize "chunkToComplex128" real imag
+    let width, height, depth = real.Size
+    if depth <> 1UL then
+        invalidArg "real" $"chunkToComplex128 expects 2D slice chunks with depth 1, got {real.Size}."
+
+    let output = Chunk.create<float> (2UL * width, height, 1UL)
+    try
+        let realPixels = Chunk.span real
+        let imagPixels = Chunk.span imag
+        let outputPixels = Chunk.span output
+        let mutable j = 0
+        for i in 0 .. realPixels.Length - 1 do
+            outputPixels[j] <- realPixels[i]
+            outputPixels[j + 1] <- imagPixels[i]
             j <- j + 2
         output
     with
@@ -91,14 +121,60 @@ let private complex64FromPolar (modulus: Chunk<float>) (argument: Chunk<float>) 
         Chunk.decRef output
         reraise()
 
+let private complex128FromPolar (modulus: Chunk<float>) (argument: Chunk<float>) =
+    validateSameSize "chunkPolarToComplex128" modulus argument
+    let width, height, depth = modulus.Size
+    if depth <> 1UL then
+        invalidArg "modulus" $"chunkPolarToComplex128 expects 2D slice chunks with depth 1, got {modulus.Size}."
+
+    let output = Chunk.create<float> (2UL * width, height, 1UL)
+    try
+        let modulusPixels = Chunk.span modulus
+        let argumentPixels = Chunk.span argument
+        let outputPixels = Chunk.span output
+        let mutable j = 0
+        for i in 0 .. modulusPixels.Length - 1 do
+            let r = modulusPixels[i]
+            let theta = argumentPixels[i]
+            outputPixels[j] <- r * Math.Cos theta
+            outputPixels[j + 1] <- r * Math.Sin theta
+            j <- j + 2
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
 let toComplex64 : Stage<Chunk<float> * Chunk<float>, Chunk<float32>> =
     releaseBinaryChunk "chunkToComplex64" complex64FromRealImag (fun n -> n * uint64 (2 * sizeof<float> + 2 * sizeof<float32>))
 
 let polarToComplex64 : Stage<Chunk<float> * Chunk<float>, Chunk<float32>> =
     releaseBinaryChunk "chunkPolarToComplex64" complex64FromPolar (fun n -> n * uint64 (2 * sizeof<float> + 2 * sizeof<float32>))
 
+let toComplex128 : Stage<Chunk<float> * Chunk<float>, Chunk<float>> =
+    releaseBinaryChunk "chunkToComplex128" complex128FromRealImag (fun n -> n * uint64 (4 * sizeof<float>))
+
+let polarToComplex128 : Stage<Chunk<float> * Chunk<float>, Chunk<float>> =
+    releaseBinaryChunk "chunkPolarToComplex128" complex128FromPolar (fun n -> n * uint64 (4 * sizeof<float>))
+
 let private complex64Part name selector (chunk: Chunk<float32>) =
     let logicalWidth, height = validateComplex64Interleaved name chunk
+    let output = Chunk.create<float32> (uint64 logicalWidth, uint64 height, 1UL)
+    try
+        let inputPixels = Chunk.span chunk
+        let outputPixels = Chunk.span output
+        let mutable j = 0
+        for i in 0 .. outputPixels.Length - 1 do
+            outputPixels[i] <- selector inputPixels[j] inputPixels[j + 1]
+            j <- j + 2
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
+let private complex128Part name selector (chunk: Chunk<float>) =
+    let logicalWidth, height = validateComplex128Interleaved name chunk
     let output = Chunk.create<float> (uint64 logicalWidth, uint64 height, 1UL)
     try
         let inputPixels = Chunk.span chunk
@@ -113,17 +189,29 @@ let private complex64Part name selector (chunk: Chunk<float32>) =
         Chunk.decRef output
         reraise()
 
-let complex64Real : Stage<Chunk<float32>, Chunk<float>> =
-    releaseUnaryChunk "chunkComplex64Real" (complex64Part "chunkComplex64Real" (fun re _im -> float re)) (fun n -> n * uint64 (2 * sizeof<float32> + sizeof<float>))
+let complex64Real : Stage<Chunk<float32>, Chunk<float32>> =
+    releaseUnaryChunk "chunkComplex64Real" (complex64Part "chunkComplex64Real" (fun re _im -> re)) (fun n -> n * uint64 (3 * sizeof<float32>))
 
-let complex64Imag : Stage<Chunk<float32>, Chunk<float>> =
-    releaseUnaryChunk "chunkComplex64Imag" (complex64Part "chunkComplex64Imag" (fun _re im -> float im)) (fun n -> n * uint64 (2 * sizeof<float32> + sizeof<float>))
+let complex64Imag : Stage<Chunk<float32>, Chunk<float32>> =
+    releaseUnaryChunk "chunkComplex64Imag" (complex64Part "chunkComplex64Imag" (fun _re im -> im)) (fun n -> n * uint64 (3 * sizeof<float32>))
 
-let complex64Modulus : Stage<Chunk<float32>, Chunk<float>> =
-    releaseUnaryChunk "chunkComplex64Modulus" (complex64Part "chunkComplex64Modulus" (fun re im -> Math.Sqrt(float re * float re + float im * float im))) (fun n -> n * uint64 (2 * sizeof<float32> + sizeof<float>))
+let complex128Real : Stage<Chunk<float>, Chunk<float>> =
+    releaseUnaryChunk "chunkComplex128Real" (complex128Part "chunkComplex128Real" (fun re _im -> re)) (fun n -> n * uint64 (3 * sizeof<float>))
 
-let complex64Argument : Stage<Chunk<float32>, Chunk<float>> =
-    releaseUnaryChunk "chunkComplex64Argument" (complex64Part "chunkComplex64Argument" (fun re im -> Math.Atan2(float im, float re))) (fun n -> n * uint64 (2 * sizeof<float32> + sizeof<float>))
+let complex128Imag : Stage<Chunk<float>, Chunk<float>> =
+    releaseUnaryChunk "chunkComplex128Imag" (complex128Part "chunkComplex128Imag" (fun _re im -> im)) (fun n -> n * uint64 (3 * sizeof<float>))
+
+let complex64Modulus : Stage<Chunk<float32>, Chunk<float32>> =
+    releaseUnaryChunk "chunkComplex64Modulus" (complex64Part "chunkComplex64Modulus" (fun re im -> sqrt (re * re + im * im))) (fun n -> n * uint64 (3 * sizeof<float32>))
+
+let complex64Argument : Stage<Chunk<float32>, Chunk<float32>> =
+    releaseUnaryChunk "chunkComplex64Argument" (complex64Part "chunkComplex64Argument" (fun re im -> float32 (Math.Atan2(float im, float re)))) (fun n -> n * uint64 (3 * sizeof<float32>))
+
+let complex128Modulus : Stage<Chunk<float>, Chunk<float>> =
+    releaseUnaryChunk "chunkComplex128Modulus" (complex128Part "chunkComplex128Modulus" (fun re im -> Math.Sqrt(re * re + im * im))) (fun n -> n * uint64 (3 * sizeof<float>))
+
+let complex128Argument : Stage<Chunk<float>, Chunk<float>> =
+    releaseUnaryChunk "chunkComplex128Argument" (complex128Part "chunkComplex128Argument" (fun re im -> Math.Atan2(im, re))) (fun n -> n * uint64 (3 * sizeof<float>))
 
 let private complex64ConjugateChunk (chunk: Chunk<float32>) =
     let logicalWidth, height = validateComplex64Interleaved "chunkComplex64Conjugate" chunk
@@ -144,6 +232,26 @@ let private complex64ConjugateChunk (chunk: Chunk<float32>) =
 
 let complex64Conjugate : Stage<Chunk<float32>, Chunk<float32>> =
     releaseUnaryChunk "chunkComplex64Conjugate" complex64ConjugateChunk (fun n -> n * uint64 (4 * sizeof<float32>))
+
+let private complex128ConjugateChunk (chunk: Chunk<float>) =
+    let logicalWidth, height = validateComplex128Interleaved "chunkComplex128Conjugate" chunk
+    let output = Chunk.create<float> (uint64 (2 * logicalWidth), uint64 height, 1UL)
+    try
+        let inputPixels = Chunk.span chunk
+        let outputPixels = Chunk.span output
+        let mutable j = 0
+        while j < inputPixels.Length do
+            outputPixels[j] <- inputPixels[j]
+            outputPixels[j + 1] <- -inputPixels[j + 1]
+            j <- j + 2
+        output
+    with
+    | _ ->
+        Chunk.decRef output
+        reraise()
+
+let complex128Conjugate : Stage<Chunk<float>, Chunk<float>> =
+    releaseUnaryChunk "chunkComplex128Conjugate" complex128ConjugateChunk (fun n -> n * uint64 (4 * sizeof<float>))
 
 let fftShiftXYComplex64Interleaved : Stage<Chunk<float32>, Chunk<float32>> =
     releaseUnaryChunk

@@ -2504,93 +2504,24 @@ module ChunkFunctions =
                 Chunk.decRef output
                 reraise()
 
-    let private writeFloatToTypedOutput<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
-        (output: Chunk<'T>)
-        index
-        value
-        =
-        let t = typeof<'T>
-        if t = typeof<float32> then
-            let outputPixels = MemoryMarshal.Cast<byte, float32>(output.Bytes.AsSpan(0, output.ByteLength))
-            outputPixels[index] <- value
-        elif t = typeof<uint8> then
-            output.Bytes[index] <- clampRoundToByte value
-        elif t = typeof<int8> then
-            let outputPixels = MemoryMarshal.Cast<byte, sbyte>(output.Bytes.AsSpan(0, output.ByteLength))
-            outputPixels[index] <- clampRoundToSByte value
-        elif t = typeof<uint16> then
-            let outputPixels = MemoryMarshal.Cast<byte, uint16>(output.Bytes.AsSpan(0, output.ByteLength))
-            outputPixels[index] <- clampRoundToUInt16 value
-        elif t = typeof<int16> then
-            let outputPixels = MemoryMarshal.Cast<byte, int16>(output.Bytes.AsSpan(0, output.ByteLength))
-            outputPixels[index] <- clampRoundToInt16 value
-        elif t = typeof<int32> then
-            let outputPixels = MemoryMarshal.Cast<byte, int32>(output.Bytes.AsSpan(0, output.ByteLength))
-            outputPixels[index] <- clampRoundToInt32 value
-        else
-            invalidArg "T" $"ChunkFunctions noise supports Int8, UInt8, Int16, UInt16, Int32, and Float32 chunks, got {t.Name}."
-
     let private copyTypedValue<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
         (input: Chunk<'T>)
         (output: Chunk<'T>)
         index
         =
-        let t = typeof<'T>
-        if t = typeof<float32> then
-            let inputPixels = MemoryMarshal.Cast<byte, float32>(input.Bytes.AsSpan(0, input.ByteLength))
-            writeFloatToTypedOutput output index inputPixels[index]
-        elif t = typeof<uint8> then
-            output.Bytes[index] <- input.Bytes[index]
-        elif t = typeof<int8> then
-            let inputPixels = MemoryMarshal.Cast<byte, sbyte>(input.Bytes.AsSpan(0, input.ByteLength))
-            writeFloatToTypedOutput output index (float32 inputPixels[index])
-        elif t = typeof<uint16> then
-            let inputPixels = MemoryMarshal.Cast<byte, uint16>(input.Bytes.AsSpan(0, input.ByteLength))
-            writeFloatToTypedOutput output index (float32 inputPixels[index])
-        elif t = typeof<int16> then
-            let inputPixels = MemoryMarshal.Cast<byte, int16>(input.Bytes.AsSpan(0, input.ByteLength))
-            writeFloatToTypedOutput output index (float32 inputPixels[index])
-        elif t = typeof<int32> then
-            let inputPixels = MemoryMarshal.Cast<byte, int32>(input.Bytes.AsSpan(0, input.ByteLength))
-            writeFloatToTypedOutput output index (float32 inputPixels[index])
-        else
-            invalidArg "T" $"ChunkFunctions noise supports Int8, UInt8, Int16, UInt16, Int32, and Float32 chunks, got {t.Name}."
+        writeNumericValue output index (readRealAsDouble input index)
 
-    let private typedValueAsFloat<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
-        (chunk: Chunk<'T>)
-        index
-        =
+    let private defaultSaltAndPepperValues<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
         let t = typeof<'T>
-        if t = typeof<float32> then
-            let pixels = MemoryMarshal.Cast<byte, float32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
-            pixels[index]
-        elif t = typeof<uint8> then
-            float32 chunk.Bytes[index]
-        elif t = typeof<int8> then
-            let pixels = MemoryMarshal.Cast<byte, sbyte>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
-            float32 pixels[index]
-        elif t = typeof<uint16> then
-            let pixels = MemoryMarshal.Cast<byte, uint16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
-            float32 pixels[index]
-        elif t = typeof<int16> then
-            let pixels = MemoryMarshal.Cast<byte, int16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
-            float32 pixels[index]
-        elif t = typeof<int32> then
-            let pixels = MemoryMarshal.Cast<byte, int32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
-            float32 pixels[index]
+        if t = typeof<float32> then double -Single.MaxValue, double Single.MaxValue
+        elif t = typeof<float> then -Double.MaxValue, Double.MaxValue
+        elif t = typeof<uint8> then 0.0, 255.0
+        elif t = typeof<int8> then double SByte.MinValue, double SByte.MaxValue
+        elif t = typeof<uint16> then 0.0, 65535.0
+        elif t = typeof<int16> then double Int16.MinValue, double Int16.MaxValue
+        elif t = typeof<int32> then double Int32.MinValue, double Int32.MaxValue
         else
-            invalidArg "T" $"ChunkFunctions noise supports Int8, UInt8, Int16, UInt16, Int32, and Float32 chunks, got {t.Name}."
-
-    let private saltAndPepperValues<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
-        let t = typeof<'T>
-        if t = typeof<float32> then 0.0f, 1.0f
-        elif t = typeof<uint8> then 0.0f, 255.0f
-        elif t = typeof<int8> then float32 SByte.MinValue, float32 SByte.MaxValue
-        elif t = typeof<uint16> then 0.0f, 65535.0f
-        elif t = typeof<int16> then float32 Int16.MinValue, float32 Int16.MaxValue
-        elif t = typeof<int32> then float32 Int32.MinValue, float32 Int32.MaxValue
-        else
-            invalidArg "T" $"ChunkFunctions salt-and-pepper noise supports Int8, UInt8, Int16, UInt16, Int32, and Float32 chunks, got {t.Name}."
+            invalidArg "T" $"ChunkFunctions salt-and-pepper noise supports Int8, UInt8, Int16, UInt16, Int32, Float32, and Float64 chunks, got {t.Name}."
 
     let addNormalNoiseChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
         mean
@@ -2605,8 +2536,8 @@ module ChunkFunctions =
                 let rng = Random.Shared
                 let count = chunk.ByteLength / Marshal.SizeOf<'T>()
                 for i in 0 .. count - 1 do
-                    let value = typedValueAsFloat chunk i + float32 (nextGaussian rng mean stddev)
-                    writeFloatToTypedOutput output i value
+                    let value = readRealAsDouble chunk i + nextGaussian rng mean stddev
+                    writeNumericValue output i value
                 output
             with
             | _ ->
@@ -2615,13 +2546,17 @@ module ChunkFunctions =
 
     let addSaltAndPepperNoiseChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
         probability
+        pepper
+        salt
         (chunk: Chunk<'T>)
         =
         if probability <= 0.0 then
             copyChunk chunk
         else
             let probability = min 1.0 probability
-            let pepper, salt = saltAndPepperValues<'T>
+            let defaultPepper, defaultSalt = defaultSaltAndPepperValues<'T>
+            let pepper = pepper |> Option.defaultValue defaultPepper
+            let salt = salt |> Option.defaultValue defaultSalt
             let output = Chunk.create<'T> chunk.Size
             try
                 let rng = Random.Shared
@@ -2630,7 +2565,7 @@ module ChunkFunctions =
                     let sample = rng.NextDouble()
                     if sample < probability then
                         let value = if rng.NextDouble() < 0.5 then pepper else salt
-                        writeFloatToTypedOutput output i value
+                        writeNumericValue output i value
                     else
                         copyTypedValue chunk output i
                 output
@@ -2639,11 +2574,11 @@ module ChunkFunctions =
                 Chunk.decRef output
                 reraise()
 
-    let addShotNoiseChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
-        scale
+    let addPoissonNoiseChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        lambda
         (chunk: Chunk<'T>)
         =
-        if scale <= 0.0 then
+        if lambda <= 0.0 then
             copyChunk chunk
         else
             let output = Chunk.create<'T> chunk.Size
@@ -2651,10 +2586,9 @@ module ChunkFunctions =
                 let rng = Random.Shared
                 let count = chunk.ByteLength / Marshal.SizeOf<'T>()
                 for i in 0 .. count - 1 do
-                    let value = typedValueAsFloat chunk i
-                    let lambda = max 0.0 (double value / scale)
-                    let noisy = float32 (nextPoisson rng lambda * scale)
-                    writeFloatToTypedOutput output i noisy
+                    let value = readRealAsDouble chunk i
+                    let noisy = value + nextPoisson rng lambda
+                    writeNumericValue output i noisy
                 output
             with
             | _ ->

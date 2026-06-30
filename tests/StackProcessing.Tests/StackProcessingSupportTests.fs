@@ -513,10 +513,10 @@ let stackProcessingSupportSuite =
                     |> StackProcessing.saltAndPepperNoise<float> 4u 3u 2u 0.0)
 
             expectNoiseSource
-                "shotNoise"
+                "poissonNoise"
                 (fun () ->
                     source (2UL * 1024UL * 1024UL * 1024UL)
-                    |> StackProcessing.shotNoise<float> 4u 3u 2u 0.0)
+                    |> StackProcessing.poissonNoise<float> 4u 3u 2u 0.0)
 
             expectNoiseSource
                 "speckleNoise"
@@ -2897,14 +2897,14 @@ let stackProcessingSupportSuite =
                 value
 
             try
-                expectFloat32Close (run (StackProcessing.scalarAddImage<float32> 3.0f)) 5.0f "scalarAddImage should add scalar on the left."
-                expectFloat32Close (run (StackProcessing.imageAddScalar<float32> 3.0f)) 5.0f "imageAddScalar should add scalar on the right."
-                expectFloat32Close (run (StackProcessing.scalarSubImage<float32> 10.0f)) 8.0f "scalarSubImage should subtract the image from the scalar."
-                expectFloat32Close (run (StackProcessing.imageSubScalar<float32> 1.0f)) 1.0f "imageSubScalar should subtract the scalar from the image."
-                expectFloat32Close (run (StackProcessing.scalarMulImage<float32> 4.0f)) 8.0f "scalarMulImage should multiply."
-                expectFloat32Close (run (StackProcessing.imageMulScalar<float32> 4.0f)) 8.0f "imageMulScalar should multiply."
-                expectFloat32Close (run (StackProcessing.scalarDivImage<float32> 8.0f)) 4.0f "scalarDivImage should divide scalar by image."
-                expectFloat32Close (run (StackProcessing.imageDivScalar<float32> 2.0f)) 1.0f "imageDivScalar should divide image by scalar."
+                expectFloat32Close (run (StackProcessing.scalarAdd<float32> 3.0)) 5.0f "scalarAdd should add scalar on the left."
+                expectFloat32Close (run (StackProcessing.addScalar<float32> 3.0)) 5.0f "addScalar should add scalar on the right."
+                expectFloat32Close (run (StackProcessing.scalarSub<float32> 10.0)) 8.0f "scalarSub should subtract the image from the scalar."
+                expectFloat32Close (run (StackProcessing.subScalar<float32> 1.0)) 1.0f "subScalar should subtract the scalar from the image."
+                expectFloat32Close (run (StackProcessing.scalarMul<float32> 4.0)) 8.0f "scalarMul should multiply."
+                expectFloat32Close (run (StackProcessing.mulScalar<float32> 4.0)) 8.0f "mulScalar should multiply."
+                expectFloat32Close (run (StackProcessing.scalarDiv<float32> 8.0)) 4.0f "scalarDiv should divide scalar by image."
+                expectFloat32Close (run (StackProcessing.divScalar<float32> 2.0)) 1.0f "divScalar should divide image by scalar."
             finally
                 image.decRefCount()
 
@@ -3389,8 +3389,8 @@ let stackProcessingSupportSuite =
                 let binaryMedianStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.binaryMedian 1u (Some 3u)
                 let labelContourStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.labelContour<uint8> false (Some 3u)
                 let changeLabelStage : Stage<Image<uint8>, Image<uint8>> = StackProcessing.changeLabel<uint8> 255.0 128.0
-                let saltAndPepperStage : Stage<Image<float32>, Image<float32>> = StackProcessing.addSaltAndPepperNoise 0.0
-                let shotStage : Stage<Image<float32>, Image<float32>> = StackProcessing.addShotNoise 0.0
+                let saltAndPepperStage : Stage<Image<float32>, Image<float32>> = StackProcessing.addSaltAndPepperNoise 0.0 None None
+                let shotStage : Stage<Image<float32>, Image<float32>> = StackProcessing.addPoissonNoise 0.0
                 let speckleStage : Stage<Image<float32>, Image<float32>> = StackProcessing.addSpeckleNoise 0.0
 
                 expectSameShapeFloat32 "clamp" floatSlices clampStage
@@ -3412,7 +3412,7 @@ let stackProcessingSupportSuite =
                 expectSameShapeUint8 "labelContour" binarySlices labelContourStage
                 expectSameShapeUint8 "changeLabel" binarySlices changeLabelStage
                 expectSameShapeFloat32 "addSaltAndPepperNoise" floatSlices saltAndPepperStage
-                expectSameShapeFloat32 "addShotNoise" floatSlices shotStage
+                expectSameShapeFloat32 "addPoissonNoise" floatSlices shotStage
                 expectSameShapeFloat32 "addSpeckleNoise" floatSlices speckleStage
             finally
                 disposeImages floatSlices

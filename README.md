@@ -141,7 +141,7 @@ let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
 
 source availableMemory
 |> read<float32> "../data/volume" ".tiff"
->=> gaussianFilter<float32> 1.0 3 4
+>=> gaussianFilter<float32> 1.0 (Some 7u)
 >=> cast<float32,uint8>
 >=> write "../tmp/smoothedVolume" ".tiff"
 |> sink

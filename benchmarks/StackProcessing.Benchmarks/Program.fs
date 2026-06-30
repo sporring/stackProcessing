@@ -3237,7 +3237,7 @@ let private runChunkFftXYFloat32Zarr opts =
     src
     |> read<float32> input ".tiff"
     >=> ChunkFunctions.fftXYFloat32ToComplex64InterleavedParallelCollect workers
-    >=> writeZarrComplex64InterleavedFloat32 output "fft_xy" shape.Width shape.Height shape.Depth chunkSize chunkSize chunkSize 1.0 1.0 1.0 0
+    >=> writeZarrComplex output "fft_xy" shape.Width shape.Height shape.Depth chunkSize chunkSize chunkSize 1.0 1.0 1.0 0
     |> sink
 
     stopwatch.Stop()
@@ -3253,7 +3253,7 @@ let private runChunkFftZComplex64Zarr opts =
     ensureCleanDirectory output
     let stopwatch = Stopwatch.StartNew()
 
-    fftZComplex64InterleavedZarrTiles
+    StackIO.fftZComplex64InterleavedZarrTiles
         input
         output
         "fft"
@@ -3292,10 +3292,10 @@ let private runChunkFftNativeFloat32Zarr opts =
         src
         |> read<float32> input ".tiff"
         >=> ChunkFunctions.fftXYFloat32ToComplex64InterleavedParallelCollect workers
-        >=> writeZarrComplex64InterleavedFloat32 tempXY "fft_xy" shape.Width shape.Height shape.Depth chunkSize chunkSize chunkSize 1.0 1.0 1.0 0
+        >=> writeZarrComplex tempXY "fft_xy" shape.Width shape.Height shape.Depth chunkSize chunkSize chunkSize 1.0 1.0 1.0 0
         |> sink
 
-        fftZComplex64InterleavedZarrTiles
+        StackIO.fftZComplex64InterleavedZarrTiles
             tempXY
             output
             "fft"
@@ -3926,7 +3926,7 @@ let private runChunkFft3DSpectralZarr opts =
         let spectral =
             (fft3DRealXY depth).Build().Apply false (AsyncSeq.ofSeq input)
         let writer =
-            writeZarrSpectralComplex64InterleavedFloat32
+            writeZarrComplexHermitian
                 output
                 "fft_real_xy"
                 shape.Width
@@ -3984,7 +3984,7 @@ let private runChunkFft3DSpectralZarr opts =
                 |> List.toArray
 
             let writer =
-                writeZarrSpectralComplex64InterleavedFloat32
+                writeZarrComplexHermitian
                     output
                     "fft_real_xy"
                     shape.Width
@@ -4007,14 +4007,14 @@ let private runChunkFft3DSpectralZarr opts =
         | ChunkFft3DSpectralZarrRead ->
             stopwatch.Start()
             benchmarkSource availableMemory
-            |> readZarrSpectralComplex64InterleavedFloat32Range 0u 1 (shape.Depth - 1u) output 0 0 0 0 0
+            |> readZarrComplexHermitianRange 0u 1 (shape.Depth - 1u) output 0 0 0 0 0
             >=> releaseSpectral
             |> sink
             stopwatch.Stop()
         | ChunkFft3DSpectralZarrRoundTrip ->
             stopwatch.Start()
             benchmarkSource availableMemory
-            |> readZarrSpectralComplex64InterleavedFloat32Range 0u 1 (shape.Depth - 1u) output 0 0 0 0 0
+            |> readZarrComplexHermitianRange 0u 1 (shape.Depth - 1u) output 0 0 0 0 0
             >=> invFft3DRealXY depth
             >=> releaseFloat32
             |> sink
@@ -4078,7 +4078,7 @@ let private runChunkFft3DZarrRoundtripIo opts =
         |> read<float32> input ".tiff"
         >=> fftRealXY
         >=> setSpectralDepth
-        >=> writeZarrSpectralComplex64InterleavedFloat32
+        >=> writeZarrComplexHermitian
                 tempXY
                 "fft_real_xy"
                 shape.Width
@@ -4093,7 +4093,7 @@ let private runChunkFft3DZarrRoundtripIo opts =
                 0
         |> sink
 
-        fftZComplex64InterleavedZarrRawChunks
+        StackIO.fftZComplex64InterleavedZarrRawChunks
             tempXY
             tempZ
             "fft_z"
@@ -4106,7 +4106,7 @@ let private runChunkFft3DZarrRoundtripIo opts =
             1.0
             0
 
-        invFftZComplex64InterleavedZarrRawChunks
+        StackIO.invFftZComplex64InterleavedZarrRawChunks
             tempZ
             tempInvZ
             "inv_fft_z"
@@ -4120,7 +4120,7 @@ let private runChunkFft3DZarrRoundtripIo opts =
             0
 
         benchmarkSource availableMemory
-        |> readZarrSpectralComplex64InterleavedFloat32Range 0u 1 (shape.Depth - 1u) tempInvZ 0 0 0 0 0
+        |> readZarrComplexHermitianRange 0u 1 (shape.Depth - 1u) tempInvZ 0 0 0 0 0
         >=> setSpectralSliceDepth
         >=> invFftRealXY
         >=> write<float32> output ".tiff"
@@ -4185,7 +4185,7 @@ let private runChunkFft3DZarrSubchunkedRoundtripIo opts =
         |> read<float32> input ".tiff"
         >=> fftRealXY
         >=> setSpectralDepth
-        >=> writeZarrSpectralComplex64InterleavedFloat32Tiled
+        >=> writeZarrComplexHermitianTiled
                 tempXY
                 "fft_real_xy_tiled"
                 shape.Width
@@ -4200,7 +4200,7 @@ let private runChunkFft3DZarrSubchunkedRoundtripIo opts =
                 0
         |> sink
 
-        fftRoundtripZComplex64InterleavedZarrSubchunks
+        StackIO.fftRoundtripZComplex64InterleavedZarrSubchunks
             tempXY
             tempInvZ
             "fft_z_roundtrip_subchunked"
@@ -4216,7 +4216,7 @@ let private runChunkFft3DZarrSubchunkedRoundtripIo opts =
             0
 
         benchmarkSource availableMemory
-        |> readZarrSpectralComplex64InterleavedFloat32TiledRange 0u 1 (shape.Depth - 1u) tempInvZ 0 0 0 0 0
+        |> readZarrComplexHermitianTiledRange 0u 1 (shape.Depth - 1u) tempInvZ 0 0 0 0 0
         >=> setSpectralSliceDepth
         >=> invFftRealXY
         >=> write<float32> output ".tiff"

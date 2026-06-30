@@ -1634,16 +1634,46 @@ let chunkSuite =
                     outputs |> List.iter Chunk.decRef
 
             expectNoOp "chunkAddNormalNoise" (ChunkFunctions.addNormalNoise<float32> 0.0 0.0)
-            expectNoOp "chunkAddSaltAndPepperNoise" (ChunkFunctions.addSaltAndPepperNoise<float32> 0.0)
-            expectNoOp "chunkAddShotNoise" (ChunkFunctions.addShotNoise<float32> 0.0)
+            expectNoOp "chunkAddSaltAndPepperNoise" (ChunkFunctions.addSaltAndPepperNoise<float32> 0.0 None None)
+            expectNoOp "chunkAddPoissonNoise" (ChunkFunctions.addPoissonNoise<float32> 0.0)
 
             let saltInput = chunkFromFloat32Pixels 3 2 pixels
-            let saltOutputs = runStageList (ChunkFunctions.addSaltAndPepperNoise<float32> 1.0) [ saltInput ]
+            let saltOutputs = runStageList (ChunkFunctions.addSaltAndPepperNoise<float32> 1.0 (Some 0.0) (Some 1.0)) [ saltInput ]
             try
                 let values = (Chunk.span<float32> saltOutputs.[0]).ToArray()
                 Expect.isTrue (values |> Array.forall (fun value -> value = 0.0f || value = 1.0f)) "Probability-one Float32 salt-and-pepper noise should emit only 0/1 values."
             finally
                 saltOutputs |> List.iter Chunk.decRef
+
+            let floatPixels = [| 10.0; 20.0; 30.0; 40.0; 50.0; 60.0 |]
+
+            let floatNormalInput = chunkFromFloat64Pixels 3 2 floatPixels
+            let floatNormalOutputs = runStageList (ChunkFunctions.addNormalNoise<float> 0.0 0.5) [ floatNormalInput ]
+            try
+                Expect.equal floatNormalOutputs.Length 1 "Float64 normal noise should emit one output."
+                Expect.equal floatNormalOutputs.[0].Size (3UL, 2UL, 1UL) "Float64 normal noise should preserve chunk size."
+                let values = (Chunk.span<float> floatNormalOutputs.[0]).ToArray()
+                Expect.isTrue (values |> Array.forall Double.IsFinite) "Float64 normal noise should emit finite values."
+            finally
+                floatNormalOutputs |> List.iter Chunk.decRef
+
+            let floatShotInput = chunkFromFloat64Pixels 3 2 floatPixels
+            let floatShotOutputs = runStageList (ChunkFunctions.addPoissonNoise<float> 2.0) [ floatShotInput ]
+            try
+                Expect.equal floatShotOutputs.Length 1 "Float64 Poisson noise should emit one output."
+                Expect.equal floatShotOutputs.[0].Size (3UL, 2UL, 1UL) "Float64 Poisson noise should preserve chunk size."
+                let values = (Chunk.span<float> floatShotOutputs.[0]).ToArray()
+                Expect.isTrue (values |> Array.forall (fun value -> Double.IsFinite value && value >= 0.0)) "Float64 Poisson noise should emit finite non-negative values for non-negative input."
+            finally
+                floatShotOutputs |> List.iter Chunk.decRef
+
+            let floatSaltInput = chunkFromFloat64Pixels 3 2 floatPixels
+            let floatSaltOutputs = runStageList (ChunkFunctions.addSaltAndPepperNoise<float> 1.0 (Some -1.0) (Some 2.0)) [ floatSaltInput ]
+            try
+                let values = (Chunk.span<float> floatSaltOutputs.[0]).ToArray()
+                Expect.isTrue (values |> Array.forall (fun value -> value = -1.0 || value = 2.0)) "Probability-one Float64 salt-and-pepper noise should emit the requested pepper/salt values."
+            finally
+                floatSaltOutputs |> List.iter Chunk.decRef
 
         testCase "Chunk affine resampler samples a linear volume" <| fun _ ->
             let width = 5

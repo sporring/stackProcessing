@@ -22,7 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="random.fs" />
+    <Compile Include="addNormalNoise.fs" />
   </ItemGroup>
 
 </Project>
