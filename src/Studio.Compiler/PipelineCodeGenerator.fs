@@ -1235,6 +1235,11 @@ module PipelineCodeGenerator =
             let availableMemory = parameterValue "availableMemory"
             let input = quotedParameter "input"
             $"|> readPointSet {input}" |> sourcePrefix availableMemory
+        | "ReadObjects" ->
+            let availableMemory = parameterValue "availableMemory"
+            let input = quotedParameter "input"
+            let suffix = quotedParameterOrDefault "suffix" ".csv"
+            $"|> readObjects<uint8> {input} {suffix}" |> sourcePrefix availableMemory
         | "Read" ->
             let availableMemory = parameterValue "availableMemory"
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
@@ -1325,6 +1330,10 @@ module PipelineCodeGenerator =
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
             $">=> writePointSet {output} {suffix}"
+        | "WriteObjects" ->
+            let output = quotedParameter "output"
+            let suffix = quotedParameter "suffix"
+            $">=> writeObjects {output} {suffix}"
         | "WriteMatrix" ->
             let output = quotedParameter "output"
             let suffix = quotedParameter "suffix"
@@ -1683,7 +1692,9 @@ module PipelineCodeGenerator =
         | "FillSmallHoles" ->
             let maximumVolume = parameterValue "maximumVolume"
             let connectivity = parameterValue "connectivity"
-            $">=> fillSmallHoles {maximumVolume} ObjectConnectivity.{connectivity}"
+            let background = parameterValueOrDefault "background" "None" |> optionInt
+            let foreground = parameterValueOrDefault "foreground" "None" |> optionInt
+            $">=> fillSmallHoles {maximumVolume} ObjectConnectivity.{connectivity} {background} {foreground}"
         | "LabelContour" ->
             let pixelType = pixelTypeNameFromParameter "type" "UInt64" node
             let fullyConnected = parameterValue "fullyConnected"
@@ -1875,7 +1886,10 @@ module PipelineCodeGenerator =
         | "PaintObjects" ->
             let width = parameterValue "width"
             let height = parameterValue "height"
-            $">=> paintObjects {width} {height}"
+            let depth = parameterValue "depth"
+            let background = savedParamValue "background" node |> optionInt
+            let foreground = savedParamValue "foreground" node |> optionInt
+            $">=> paintObjects {width} {height} {depth} {background} {foreground}"
         | "PaintObjectsCropped" ->
             $">=> paintObjectsCropped"
         | "SignedDistanceBand" ->

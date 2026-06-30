@@ -36,7 +36,7 @@ type ChunkInfo = { chunks: int list; size: uint64 list; topLeftInfo: FileInfo}
 type ImageInfo =
     { format: string
       dimensions: uint
-      size: uint64 list
+      size: uint list
       componentType: string
       numberOfComponents: uint
       chunks: int list }
@@ -1253,10 +1253,15 @@ let getStackInfo (inputDir: string) (suffix: string) : FileInfo =
     let fi = getFileInfo(files[0])
     {fi with dimensions = fi.dimensions+1u; size = fi.size @ [depth]}
 
+let private checkedUInt32 name (value: uint64) =
+    if value > uint64 UInt32.MaxValue then
+        invalidOp $"{name} value {value} exceeds UInt32.MaxValue."
+    uint value
+
 let private imageInfoOfFileInfo format chunks (info: FileInfo) : ImageInfo =
     { format = format
       dimensions = info.dimensions
-      size = info.size
+      size = info.size |> List.mapi (fun i value -> checkedUInt32 $"{format} dimension {i}" value)
       componentType = info.componentType
       numberOfComponents = info.numberOfComponents
       chunks = chunks }
@@ -2462,7 +2467,7 @@ let getZarrInfo (path: string) (multiscaleIndex: int) (datasetIndex: int) : Imag
 
     { format = "OME-Zarr"
       dimensions = 3u
-      size = [ uint64 sizeX; uint64 sizeY; uint64 sizeZ ]
+      size = [ checkedUInt32 "OME-Zarr sizeX" (uint64 sizeX); checkedUInt32 "OME-Zarr sizeY" (uint64 sizeY); checkedUInt32 "OME-Zarr sizeZ" (uint64 sizeZ) ]
       componentType = level.DataType
       numberOfComponents = 1u
       chunks = chunks }
@@ -2490,7 +2495,7 @@ let getNexusInfo (path: string) (datasetPath: string) (frameAxis: int) (yAxis: i
 
     { format = "NeXus/HDF5"
       dimensions = 3u
-      size = [ uint64 dimensions[xAxis]; uint64 dimensions[yAxis]; uint64 dimensions[frameAxis] ]
+      size = [ checkedUInt32 "NeXus sizeX" (uint64 dimensions[xAxis]); checkedUInt32 "NeXus sizeY" (uint64 dimensions[yAxis]); checkedUInt32 "NeXus sizeZ" (uint64 dimensions[frameAxis]) ]
       componentType = dataset.Type.ToString()
       numberOfComponents = 1u
       chunks = [ chunkAt xAxis; chunkAt yAxis; chunkAt frameAxis ] }

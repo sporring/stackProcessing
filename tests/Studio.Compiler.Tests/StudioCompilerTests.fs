@@ -1096,7 +1096,10 @@ let generatorSuite =
             let paint =
                 node "paint" "PaintObjects"
                     [ p "width" "64" false
-                      p "height" "48" false ]
+                      p "height" "48" false
+                      p "depth" "16" false
+                      p "background" "None" false
+                      p "foreground" "None" false ]
 
             let write =
                 node "write" "Write"
@@ -1111,7 +1114,7 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code ">=> streamConnectedObjects ObjectConnectivity.TwentySix" "StreamConnectedObjects should generate the connectivity-aware object streamer."
-            Expect.stringContains code ">=> paintObjects 64u 48u" "PaintObjects should generate the UInt8 mask painter."
+            Expect.stringContains code ">=> paintObjects 64u 48u 16u None None" "PaintObjects should generate the UInt8 mask painter."
             Expect.stringContains code ">=> write \"mask\" \".tiff\"" "Painted masks should connect to normal image writing."
 
             let croppedPaint =
@@ -2148,7 +2151,7 @@ let generatorSuite =
             Expect.stringContains code ">=> grayscaleErode<float> 2u (Some 5u)" "Grayscale morphology should lower with type, radius, and window size."
             Expect.stringContains code ">=> chunkBinaryContourZonohedralParallel true 3" "Binary contour should lower to the Chunk zonohedral contour stage."
             Expect.stringContains code ">=> removeSmallObjects 11UL ObjectConnectivity.TwentySix" "removeSmallObjects should lower with maximum volume and connectivity."
-            Expect.stringContains code ">=> fillSmallHoles 13UL ObjectConnectivity.Six" "fillSmallHoles should lower with maximum volume and connectivity."
+            Expect.stringContains code ">=> fillSmallHoles 13UL ObjectConnectivity.Six None None" "fillSmallHoles should lower with maximum volume, connectivity, and binary convention."
 
         testCase "zonohedral dilation lowers to StackProcessing stage" <| fun _ ->
             let read =

@@ -2081,12 +2081,13 @@ let intensityStretchFloat32 (windowMinimum: double) (windowMaximum: double) (out
         else float32 outputMinimum + (x - float32 windowMinimum) * float32 scale
 
     let minV = Vector<float32>(float32 windowMinimum)
-    let maxV = Vector<float32>(float32 windowMaximum)
     let outMinV = Vector<float32>(float32 outputMinimum)
-    let outMaxV = Vector<float32>(float32 outputMaximum)
+    let outputLowerV = Vector<float32>(float32 (min outputMinimum outputMaximum))
+    let outputUpperV = Vector<float32>(float32 (max outputMinimum outputMaximum))
     let scaleV = Vector<float32>(float32 scale)
     let vector (v: Vector<float32>) =
-        Vector.Min(outMaxV, Vector.Max(outMinV, outMinV + (v - minV) * scaleV))
+        let stretched = outMinV + (v - minV) * scaleV
+        Vector.Min(outputUpperV, Vector.Max(outputLowerV, stretched))
 
     float32UnaryStage $"chunkIntensityStretchFloat32.{windowMinimum}.{windowMaximum}.{outputMinimum}.{outputMaximum}" scalar vector
 

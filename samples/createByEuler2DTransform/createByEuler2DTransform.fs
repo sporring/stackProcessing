@@ -9,9 +9,9 @@ let main arg =
     let width, height, depth, output = 
         if arg.Length > 0 then
             let n = (int arg[0]) / 3 |> pown 2 |> uint 
-            n, n, n, "../tmp/rotatingBoxes"
+            n, n, n, "../tmp/createByEuler2DTransform"
         else
-            64u, 64u, 64u, "../tmp/rotatingBoxes"
+            64u, 64u, 64u, "../tmp/createByEuler2DTransform"
 
     // Create square as a mask image from a polygon in the middle of a slice
     let polygon : Polygon2D =

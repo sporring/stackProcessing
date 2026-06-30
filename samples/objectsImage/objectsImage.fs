@@ -1,4 +1,4 @@
-// Repaint connected objects from a binary stack into an object-label image.
+// Stream connected objects from a binary stack to disk.
 open StackProcessing
 
 [<EntryPoint>]
@@ -12,11 +12,21 @@ let main args =
         | [| input |] -> input, "../tmp/objectsImage"
         | _ -> "../data/rotatingBoxes", "../tmp/objectsImage"
 
+    let info = getImageInfo input ".tiff"
+    let size = info.size
+    let width,height,depth = size[0],size[1],size[2]
+    let objectsDirectory = output + "/objects"
+    let imageDirectory = output + "/image"
     src
     |> read<uint8> input ".tiff"
     >=> streamConnectedObjects ObjectConnectivity.TwentySix
-    >=> paintObjects 512u 384u
-    >=> write output ".tiff"
+    >=> writeObjects objectsDirectory ".csv"
+    |> sink
+
+    src
+    |> readObjects<uint8> objectsDirectory ".csv"
+    >=> paintObjects width height depth None (Some 255.0)
+    >=> write imageDirectory ".tiff"
     |> sink
 
     0

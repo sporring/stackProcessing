@@ -2388,8 +2388,8 @@ type MainWindowViewModel() as this =
                         let path = pathWithSuffix input suffix |> resolvePath
 
                         if File.Exists path then
-                            let info = StackIO.getFileInfo path
-                            Some(Some info.componentType, false, sourceInfoSummary { format = "TIFF volume"; dimensions = info.dimensions; size = info.size; chunks = []; componentType = info.componentType; numberOfComponents = info.numberOfComponents })
+                            let info = StackIO.getImageFileInfo input suffix
+                            Some(Some info.componentType, false, sourceInfoSummary info)
                         else
                             Some(None, true, $"Source file does not exist: {path}")
                     | "OME-Zarr" ->

@@ -6,12 +6,14 @@
         { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
         { "key": "type", "value": "UInt8", "useInput": false },
         { "key": "format", "value": "Image stack", "useInput": false },
-        { "key": "input", "value": "../data/rotatingBoxes", "useInput": false },
+        { "key": "input", "value": "../data/fillSmallHoles", "useInput": false },
         { "key": "suffix", "value": ".tiff", "useInput": false } ] },
     { "id": "holes", "functionId": "FillSmallHoles", "x": 320.0, "y": 120.0,
       "parameters": [
-        { "key": "maximumVolume", "value": "128", "useInput": false },
-        { "key": "connectivity", "value": "TwentySix", "useInput": false } ] },
+        { "key": "maximumVolume", "value": "32", "useInput": false },
+        { "key": "connectivity", "value": "TwentySix", "useInput": false },
+        { "key": "background", "value": "None", "useInput": false },
+        { "key": "foreground", "value": "None", "useInput": false } ] },
     { "id": "write", "functionId": "Write", "x": 560.0, "y": 120.0,
       "parameters": [
         { "key": "format", "value": "Image stack", "useInput": false },

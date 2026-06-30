@@ -7,21 +7,24 @@ let main args =
     let availableMemory = 2UL * 1024UL * 1024UL * 1024UL
     let src, args = commandLineSource availableMemory args
 
-    let output =
+    let input, output =
         match args with
-        | [| output |] -> output
-        | _ -> "../tmp/fft"
+        | [| input; output |] -> input, output
+        | [| input |] -> input, "../tmp/fft"
+        | _ -> "../data/rotatingBoxes", "../tmp/fft"
+
+    // Runs a separable uniform filter on an input image
 
     // Fourier transform a random image, then shift the zero frequency to the center and save.
+
     src
-    |> zero<float32> 64u 64u 64u
-    >=> addNormalNoise 128.0 25.0
+    |> read<float32> input ".tiff"
     >=> fft
     >=> fftShift3D
     >=> length
     >=> addScalar 1.0
     >=> log
-    >=> intensityStretch 0.0 (Math.Log(128.0 * 64.0 * 64.0 * 64.0 + 1.0)) 0.0 255.0
+    >=> intensityStretch 0.0 (Math.Log(255.0 * 3.0 * 12.0 * 12.0 * 12.0 + 1.0)) 0.0 255.0
     >=> cast<_,uint8>
     >=> write output ".tiff"
     |> sink

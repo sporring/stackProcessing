@@ -3134,7 +3134,7 @@ let main args =
                                      (fun () ->
                                          source availableMemory
                                          |> read<uint8> inputDir ".tiff"
-                                         >=> fillSmallHoles 128UL ObjectConnectivity.TwentySix
+                                         >=> fillSmallHoles 128UL ObjectConnectivity.TwentySix None None
                                          >=> write (outputDir size "fill-small-holes-uint8-write") ".tiff")
 
                            yield runSinkProbe
@@ -3265,7 +3265,7 @@ let main args =
                                  "black-white-top-hat", "BlackTopHat:type=UInt8:radius=3:windowSize=7", blackTopHat<uint8> 3u (Some 7), "WhiteTopHat:type=UInt8:radius=3:windowSize=7", whiteTopHat<uint8> 3u (Some 7)
                                  "white-black-top-hat", "WhiteTopHat:type=UInt8:radius=3:windowSize=7", whiteTopHat<uint8> 3u (Some 7), "BlackTopHat:type=UInt8:radius=3:windowSize=7", blackTopHat<uint8> 3u (Some 7)
                                  "morph-gradient-contour", "MorphologicalGradient:type=UInt8:radius=3:windowSize=7", morphologicalGradient<uint8> 3u (Some 7), "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false (Some 7)
-                                 "fill-holes-contour", "FillSmallHoles:maximumVolume=128:connectivity=TwentySix", fillSmallHoles 128UL ObjectConnectivity.TwentySix, "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false (Some 7) ]
+                                 "fill-holes-contour", "FillSmallHoles:maximumVolume=128:connectivity=TwentySix", fillSmallHoles 128UL ObjectConnectivity.TwentySix None None, "BinaryContour:fullyConnected=false:windowSize=7", binaryContour false (Some 7) ]
 
                            for name, featureA, stageA, featureB, stageB in mixedPairs do
                                yield runSinkProbe

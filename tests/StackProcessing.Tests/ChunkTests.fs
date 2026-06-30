@@ -897,6 +897,14 @@ let chunkSuite =
             finally
                 windowed |> List.iter Chunk.decRef
 
+            let flippedInput = chunkFromFloat32Pixels 17 1 (Array.init 17 (fun i -> float32 i))
+            let flipped = runStageList (ChunkFunctions.intensityStretchFloat32 (0.0: double) (16.0: double) (255.0: double) (0.0: double)) [ flippedInput ]
+            try
+                let expected = Array.init 17 (fun i -> 255.0f - float32 i * (255.0f / 16.0f))
+                Expect.sequenceEqual ((Chunk.span<float32> flipped[0]).ToArray()) expected "intensityStretchFloat32 should support descending output ranges on the vector path."
+            finally
+                flipped |> List.iter Chunk.decRef
+
         testCase "histogram counts chunk values" <| fun _ ->
             let chunk = Chunk.create<uint8> (6UL, 1UL, 1UL)
             try

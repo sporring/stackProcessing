@@ -51,16 +51,16 @@ module BuiltInCatalog =
   let private imageInfoOutputs =
       [ makePort "Format: String" (Scalar BasicType.String)
         makePort "Dimensions: UInt32" (Scalar(BasicType.Numeric UInt32))
-        makePort "Size: UInt64 list" (Custom "UInt64List")
+        makePort "Size: UInt32 list" (Custom "UInt32List")
         makePort "ComponentType: String" (Scalar BasicType.String)
         makePort "NumberOfComponents: UInt32" (Scalar(BasicType.Numeric UInt32))
         makePort "Chunks: int list" intList
         makePort "ChunkX: Int32" (Scalar(BasicType.Numeric Int32))
         makePort "ChunkY: Int32" (Scalar(BasicType.Numeric Int32))
         makePort "ChunkZ: Int32" (Scalar(BasicType.Numeric Int32))
-        makePort "Width: UInt64" (Scalar(BasicType.Numeric UInt64))
-        makePort "Height: UInt64" (Scalar(BasicType.Numeric UInt64))
-        makePort "Depth: UInt64" (Scalar(BasicType.Numeric UInt64)) ]
+        makePort "Width: UInt32" (Scalar(BasicType.Numeric UInt32))
+        makePort "Height: UInt32" (Scalar(BasicType.Numeric UInt32))
+        makePort "Depth: UInt32" (Scalar(BasicType.Numeric UInt32)) ]
 
   let private chunkInfoOutputs =
       [ makePort "Chunks: int list" intList
@@ -225,7 +225,7 @@ module BuiltInCatalog =
       "Detects 3D keypoints with a bounded z-window local operator and emits x, y, z, scale, and response as a PointSet. These detectors are streaming-friendly: they never need the full stack in memory, but the selected scale controls the window padding."
 
   let private streamedObjectsDescription =
-      "Streams completed connected objects from a binary mask. Each input slice is inspected for non-zero foreground pixels, object fronts touching the advancing z-boundary are carried forward, and objects are emitted once the next slice proves they cannot continue. Six-connectivity uses face contacts only; TwentySix-connectivity also allows diagonal contacts. paintObjects converts the emitted integer positions back into UInt8 mask slices with value 1 at object pixels and 0 elsewhere."
+      "Streams completed connected objects from a binary mask. Each input slice is inspected for non-zero foreground pixels, object fronts touching the advancing z-boundary are carried forward, and objects are emitted once the next slice proves they cannot continue. Six-connectivity uses face contacts only; TwentySix-connectivity also allows diagonal contacts. paintObjects converts the emitted integer positions back into mask slices, using background 0 and foreground 1 by default or explicit values when supplied."
 
   let private thresholdDescription =
       "Turns a numeric image into a UInt8 binary mask.\n\nPixels between lower and upper, including the limits, become foreground; pixels outside the range become background. Use infinity as the upper limit when you want a simple lower-threshold operation.\n\nThresholds can be typed directly or linked from computeStats, quantiles, otsuThresholdFromHistogram, or momentsThresholdFromHistogram."
@@ -734,6 +734,20 @@ module BuiltInCatalog =
               [ availableMemoryParameter
                 makeParameter "input" "Input" "points.csv" BasicType.String ] }
 
+        { Id = "ReadObjects"
+          DisplayName = "readObjects"
+          Category = "Sources / Sinks"
+          Summary = "Read streamed connected objects from an object CSV directory."
+          Description =
+            "Reads one-object CSV files written by writeObjects. Filenames include the first and last z values, and the reader sorts objects by first z before streaming them onward. This makes the output suitable for stages that require first-z order, such as paintObjects."
+          Aliases = [ "objects"; "csv"; "coordinates"; "connected"; "components"; "read"; "source" ]
+          Inputs = []
+          Outputs = [ makePort "Objects" streamedObjects ]
+          Parameters =
+              [ availableMemoryParameter
+                makeParameter "input" "Input" "objects" BasicType.String
+                suffixParameter ".csv" ] }
+
         makeGenericZero()
 
         makePolygonMask()
@@ -988,6 +1002,19 @@ module BuiltInCatalog =
           Outputs = []
           Parameters =
               [ makeParameter "output" "Output" "points" BasicType.String
+                suffixParameter ".csv" ] }
+
+        { Id = "WriteObjects"
+          DisplayName = "writeObjects"
+          Category = "Sources / Sinks"
+          Summary = "Write streamed connected objects to a CSV file."
+          Description =
+            "Writes streamed connected objects as CSV rows without requiring global z-order. Each row contains an object label, one voxel coordinate, the object size, and the object bounds. This is the streaming-safe sink for streamConnectedObjects when a global painted image would require reordering or buffering."
+          Aliases = [ "objects"; "csv"; "coordinates"; "connected"; "components"; "write"; "save" ]
+          Inputs = [ makePort "Objects" streamedObjects ]
+          Outputs = []
+          Parameters =
+              [ makeParameter "output" "Output" "objects" BasicType.String
                 suffixParameter ".csv" ] }
 
         { Id = "PointPairDistances"
@@ -1934,13 +1961,15 @@ module BuiltInCatalog =
           Category = "Binary Morphology"
           Summary = "Fill enclosed background holes up to a maximum voxel count."
           Description =
-            "Streams a binary mask and fills completed background components whose voxel count is less than or equal to the requested maximum volume.\n\nBackground components touching the x-y border, the first z-slice, or the final z-slice are treated as exterior and are preserved. Other completed background components are holes and are painted to one when small enough. Six-connectivity uses face contacts only; TwentySix-connectivity also allows diagonal contacts.\n\nThis is the LMIP-oriented replacement for neighborhood voting hole filling when the desired operation is connected-hole cleanup by size."
+            "Streams a binary mask and fills completed background components whose voxel count is less than or equal to the requested maximum volume.\n\nBackground components touching the x-y border, the first z-slice, or the final z-slice are treated as exterior and are preserved. Other completed background components are holes and are painted to the foreground value when small enough. Six-connectivity uses face contact only; TwentySix-connectivity also allows diagonal contact.\n\nThe optional background and foreground parameters set the binary convention. With both left empty, the stage uses the compact 0/1 convention."
           Aliases = [ "morphology"; "binary"; "holes"; "fill"; "small"; "cleanup"; "mask" ]
           Inputs = [ makePort "UInt8" imageUInt8 ]
           Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters =
               [ makeParameter "maximumVolume" "Maximum volume" "64" (BasicType.Numeric UInt64)
-                makeParameter "connectivity" "Connectivity" "Six" BasicType.String ] }
+                makeParameter "connectivity" "Connectivity" "Six" BasicType.String
+                makeParameter "background" "Background" "None" BasicType.String
+                makeParameter "foreground" "Foreground" "None" BasicType.String ] }
 
         { Id = "Threshold"
           DisplayName = "threshold"
@@ -2104,7 +2133,10 @@ module BuiltInCatalog =
           Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters =
               [ makeParameter "width" "Width" "64" (BasicType.Numeric UInt32)
-                makeParameter "height" "Height" "64" (BasicType.Numeric UInt32) ] }
+                makeParameter "height" "Height" "64" (BasicType.Numeric UInt32)
+                makeParameter "depth" "Depth" "64" (BasicType.Numeric UInt32)
+                makeParameter "background" "Background" "None" BasicType.String
+                makeParameter "foreground" "Foreground" "None" BasicType.String ] }
 
         { Id = "PaintObjectsCropped"
           DisplayName = "paintObjectsCropped"

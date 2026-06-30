@@ -12,6 +12,10 @@ Questions to consider:
 
 - ChunkSimdOptimizationIdeas.md
 
+- medianFloat32 probably needs versions for other types
+
+- I'm worried about the many uses of unbox and box'ing. If it enters into hot loop, then that'll be costly: https://zetcode.com/fsharp/boxing-unboxing/
+
 ---
 
 Ignore anything below here:

@@ -1828,9 +1828,9 @@ let stackProcessingSupportSuite =
                     >=> streamConnectedObjects ObjectConnectivity.Six
                     |> drainList
 
-                Expect.equal (batches |> List.map List.length) [ 0; 1; 0; 1 ] "Objects should be emitted when the next slice proves they no longer continue."
+                Expect.equal (batches |> List.map (fun batch -> batch.Objects.Length)) [ 0; 1; 0; 1 ] "Objects should be emitted when the next slice proves they no longer continue."
 
-                let objects = batches |> List.collect id
+                let objects = batches |> List.collect _.Objects
                 Expect.equal objects.Length 2 "Both completed objects should be emitted."
                 Expect.equal objects[0].Size 1UL "The one-slice object should contain one pixel."
                 Expect.equal objects[0].Bounds.MinZ 0 "The first object should come from z=0."
@@ -1857,13 +1857,13 @@ let stackProcessingSupportSuite =
                     imagePlan slices
                     >=> streamConnectedObjects ObjectConnectivity.Six
                     |> drainList
-                    |> List.collect id
+                    |> List.collect _.Objects
 
                 let twentySixObjects =
                     imagePlan slices
                     >=> streamConnectedObjects ObjectConnectivity.TwentySix
                     |> drainList
-                    |> List.collect id
+                    |> List.collect _.Objects
 
                 Expect.equal sixObjects.Length 2 "Face connectivity should keep diagonal z-neighbors separate."
                 Expect.equal twentySixObjects.Length 1 "26-connectivity should merge diagonal z-neighbors."
@@ -1919,12 +1919,61 @@ let stackProcessingSupportSuite =
             try
                 filled <-
                     imagePlan slices
-                    >=> fillSmallHoles 1UL ObjectConnectivity.Six
+                    >=> fillSmallHoles 1UL ObjectConnectivity.Six None None
                     |> drainList
 
                 let z2 = filled |> List.find (fun image -> image.index = 2)
                 Expect.equal z2[3, 3] 1uy "The one-voxel enclosed hole should be filled."
                 Expect.equal z2[0, 3] 0uy "Background touching the x-y image border is exterior and should be preserved."
+            finally
+                disposeImages filled
+                disposeImages slices
+
+        testCase "fillSmallHoles fills z-spanning enclosed holes up to maximum volume" <| fun _ ->
+            let slices =
+                [ for z in 0 .. 5 ->
+                    let image =
+                        Array2D.init 7 7 (fun x y ->
+                            let enclosedHole = x = 3 && y = 3 && z >= 1 && z <= 4
+                            if enclosedHole then 0uy else 1uy)
+                        |> Image<uint8>.ofArray2D
+                    image.index <- z
+                    image ]
+            let mutable filled: Image<uint8> list = []
+
+            try
+                filled <-
+                    imagePlan slices
+                    >=> fillSmallHoles 4UL ObjectConnectivity.Six None None
+                    |> drainList
+
+                for z in 1 .. 4 do
+                    let image = filled |> List.find (fun image -> image.index = z)
+                    Expect.equal image[3, 3] 1uy $"The enclosed z-spanning hole should be filled on slice {z}."
+            finally
+                disposeImages filled
+                disposeImages slices
+
+        testCase "fillSmallHoles preserves UInt8 foreground value when filling holes" <| fun _ ->
+            let slices =
+                [ for z in 0 .. 4 ->
+                    let image =
+                        Array2D.init 7 7 (fun x y ->
+                            let enclosedHole = x = 3 && y = 3 && z = 2
+                            if enclosedHole then 0uy else 255uy)
+                        |> Image<uint8>.ofArray2D
+                    image.index <- z
+                    image ]
+            let mutable filled: Image<uint8> list = []
+
+            try
+                filled <-
+                    imagePlan slices
+                    >=> fillSmallHoles 1UL ObjectConnectivity.Six (Some 0.0) (Some 255.0)
+                    |> drainList
+
+                let z2 = filled |> List.find (fun image -> image.index = 2)
+                Expect.equal z2[3, 3] 255uy "The filled pixel should use the observed foreground value, not hard-coded 1."
             finally
                 disposeImages filled
                 disposeImages slices
@@ -1937,16 +1986,17 @@ let stackProcessingSupportSuite =
                     Size = 3UL } ]
 
             let painted =
-                scalarPlan [ objects ]
-                >=> paintObjects 5u 4u
+                scalarPlan [ ({ Objects = objects }: ObjectStream<uint8>) ]
+                >=> paintObjects 5u 4u 3u (Some 2.0) (Some 7.0)
                 |> drainList
 
             try
-                Expect.equal (painted |> List.map _.index) [ 0; 2 ] "Painting should emit only z slices that contain object positions."
-                Expect.equal (painted[0][1, 2]) 1uy "First painted position should be one."
-                Expect.equal (painted[0][3, 1]) 1uy "Second painted position should be one."
-                Expect.equal (painted[0][0, 0]) 0uy "Background should be zero."
-                Expect.equal (painted[1][2, 2]) 1uy "The z=2 position should be painted in the second emitted image."
+                Expect.equal (painted |> List.map _.index) [ 0; 1; 2 ] "Painting should emit empty slices for z gaps inside the object span."
+                Expect.equal (painted[0][1, 2]) 7uy "First painted position should use the foreground value."
+                Expect.equal (painted[0][3, 1]) 7uy "Second painted position should use the foreground value."
+                Expect.equal (painted[0][0, 0]) 2uy "Background should use the background value."
+                Expect.equal (painted[1][2, 2]) 2uy "The z=1 gap should be emitted as a background slice."
+                Expect.equal (painted[2][2, 2]) 7uy "The z=2 position should be painted in the third emitted image."
             finally
                 disposeImages painted
 
@@ -1958,7 +2008,7 @@ let stackProcessingSupportSuite =
                     Size = 3UL } ]
 
             let painted =
-                scalarPlan [ objects ]
+                scalarPlan [ ({ Objects = objects }: ObjectStream<uint8>) ]
                 >=> paintObjectsCropped
                 |> drainList
 
@@ -1972,6 +2022,39 @@ let stackProcessingSupportSuite =
                 Expect.equal (painted[1][1, 1]) 1uy "The z=11 point should appear in local z=1."
             finally
                 disposeImages painted
+
+        testCase "object CSV write and read returns objects ordered by first z" <| fun _ ->
+            let outputDir = tempDirectory "objects-csv"
+            let earlyObject =
+                { Label = 11UL
+                  Positions = [ { X = 1; Y = 2; Z = 3 }; { X = 2; Y = 2; Z = 4 } ]
+                  Bounds = { MinX = 1; MaxX = 2; MinY = 2; MaxY = 2; MinZ = 3; MaxZ = 4 }
+                  Size = 2UL }
+            let lateObject =
+                { Label = 12UL
+                  Positions = [ { X = 4; Y = 5; Z = 8 } ]
+                  Bounds = { MinX = 4; MaxX = 4; MinY = 5; MaxY = 5; MinZ = 8; MaxZ = 8 }
+                  Size = 1UL }
+
+            try
+                scalarPlan [ ({ Objects = [ lateObject ] }: ObjectStream<uint8>); ({ Objects = [ earlyObject ] }: ObjectStream<uint8>) ]
+                >=> writeObjects outputDir ".csv"
+                |> sink
+
+                let files = Directory.GetFiles(outputDir, "*.csv") |> Array.map Path.GetFileName |> Array.sort
+                Expect.equal files.Length 2 "writeObjects should write one CSV file per object."
+                Expect.stringContains files[0] "z0000000003_z0000000004" "Object file names should include first and last z."
+                Expect.stringContains files[1] "z0000000008_z0000000008" "Object file names should include first and last z."
+
+                let reread =
+                    source 1024UL
+                    |> readObjects<uint8> outputDir ".csv"
+                    |> drainList
+                    |> List.collect _.Objects
+
+                Expect.equal (reread |> List.map _.Label) [ 11UL; 12UL ] "readObjects should stream objects sorted by first z."
+            finally
+                deleteDirectory outputDir
 
         testCase "signedDistanceBand emits finite values near boundaries and NaN outside the band" <| fun _ ->
             let slices =
@@ -2059,7 +2142,7 @@ let stackProcessingSupportSuite =
                     Size = 4UL } ]
 
             let measurements =
-                scalarPlan [ firstBatch; secondBatch ]
+                scalarPlan [ ({ Objects = firstBatch }: ObjectStream<uint8>); ({ Objects = secondBatch }: ObjectStream<uint8>) ]
                 >=> measureObjects
                 |> drainList
 
@@ -2068,7 +2151,7 @@ let stackProcessingSupportSuite =
             Expect.equal (measurements.[1].[0].Depth) 1UL "Depth should be derived from z bounds."
 
             let stats =
-                scalarPlan [ firstBatch; secondBatch ]
+                scalarPlan [ ({ Objects = firstBatch }: ObjectStream<uint8>); ({ Objects = secondBatch }: ObjectStream<uint8>) ]
                 >=> measureObjects
                 >=> objectSizeStats
                 |> drain
@@ -2080,7 +2163,7 @@ let stackProcessingSupportSuite =
             Expect.equal stats.Maximum 4UL "Maximum size should be tracked."
 
             let histogram =
-                scalarPlan [ firstBatch; secondBatch ]
+                scalarPlan [ ({ Objects = firstBatch }: ObjectStream<uint8>); ({ Objects = secondBatch }: ObjectStream<uint8>) ]
                 >=> measureObjects
                 >=> objectSizes
                 >=> histogram 2UL
@@ -2153,7 +2236,7 @@ let stackProcessingSupportSuite =
                 |> sink
 
                 let info = getZarrInfo zarrPath 0 0
-                Expect.equal info.size [ 5UL; 4UL; 4UL ] "Zarr metadata should expose x/y/z image size."
+                Expect.equal info.size [ 5u; 4u; 4u ] "Zarr metadata should expose x/y/z image size."
                 Expect.equal info.componentType "uint8" "Zarr metadata should expose the dataset dtype."
 
                 rereadSlabs <-
@@ -2296,7 +2379,7 @@ let stackProcessingSupportSuite =
                 writeNexusStack nexusPath datasetPath data
 
                 let info = getNexusInfo nexusPath datasetPath 0 1 2
-                Expect.equal info.size [ 5UL; 3UL; 4UL ] "NeXus metadata should expose x/y/z image size according to the axis mapping."
+                Expect.equal info.size [ 5u; 3u; 4u ] "NeXus metadata should expose x/y/z image size according to the axis mapping."
 
                 rereadSlabs <-
                     source (2UL * 1024UL * 1024UL * 1024UL)
@@ -2351,7 +2434,7 @@ let stackProcessingSupportSuite =
                 |> sink
 
                 let info = getNexusInfo nexusPath datasetPath 0 1 2
-                Expect.equal info.size [ 5UL; 3UL; 4UL ] "writeNexus metadata should expose x/y/z image size."
+                Expect.equal info.size [ 5u; 3u; 4u ] "writeNexus metadata should expose x/y/z image size."
 
                 rereadSlices <-
                     source (2UL * 1024UL * 1024UL * 1024UL)
@@ -2387,7 +2470,7 @@ let stackProcessingSupportSuite =
                     |> drainList
 
                 let info = getNexusInfo outputPath datasetPath 0 1 2
-                Expect.equal info.size [ 5UL; 3UL; 4UL ] "writeNexusSlab metadata should expose x/y/z image size."
+                Expect.equal info.size [ 5u; 3u; 4u ] "writeNexusSlab metadata should expose x/y/z image size."
 
                 rereadSlices <-
                     source (2UL * 1024UL * 1024UL * 1024UL)

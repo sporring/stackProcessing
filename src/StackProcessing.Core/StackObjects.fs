@@ -2,6 +2,10 @@ module StackObjects
 
 open System
 open System.Collections.Generic
+open System.Globalization
+open System.IO
+open System.Runtime.InteropServices
+open System.Text
 open FSharp.Control
 open SlimPipeline
 open StackCore
@@ -25,6 +29,9 @@ type StreamedObject =
       Bounds: ObjectBounds
       Size: uint64 }
 
+type ObjectStream<'T> =
+    { Objects: StreamedObject list }
+
 type ObjectMeasurements =
     { Label: uint64
       Size: uint64
@@ -44,6 +51,42 @@ type ObjectSizeStats =
       Variance: float
       Minimum: uint64
       Maximum: uint64 }
+
+let private objectStream<'T> objects : ObjectStream<'T> =
+    { Objects = objects }
+
+let private convertFloat<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> value =
+    Convert.ChangeType(value, typeof<'T>) :?> 'T
+
+let objectSource<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (objects: StreamedObject list)
+    (template: Plan<unit, unit>)
+    : Plan<unit, ObjectStream<'T>> =
+    let sortedObjects =
+        objects
+        |> List.sortBy (fun object -> object.Bounds.MinZ)
+        |> List.toArray
+
+    let stage =
+        Stage.init
+            "objectSource"
+            (uint sortedObjects.Length)
+            (fun i -> objectStream<'T> [ sortedObjects[i] ])
+            (ProfileTransition.create Unit Streaming)
+            (fun _ -> 0UL)
+            id
+
+    { Plan.createWithOptimizer
+        (Some stage)
+        template.memAvail
+        0UL
+        1UL
+        (uint64 sortedObjects.Length)
+        template.debug
+        template.optimize with
+        debugLevel = template.debugLevel
+        costDiscrepancy = template.costDiscrepancy
+        costFlagPath = template.costFlagPath }
 
 type private SliceComponent =
     { Id: int
@@ -298,7 +341,7 @@ let private processChunkSlice<'T when 'T: equality and 'T: (new: unit -> 'T) and
 
 let streamConnectedObjectsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     connectivity
-    : Stage<Chunk<'T>, StreamedObject list> =
+    : Stage<Chunk<'T>, ObjectStream<uint8>> =
     let name = "streamConnectedObjectsChunk"
 
     let apply _debug (input: AsyncSeq<Chunk<'T>>) =
@@ -321,7 +364,7 @@ let streamConnectedObjectsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) a
 
                     state <- nextState
                     z <- z + 1
-                    yield completed
+                    yield objectStream<uint8> completed
                 else
                     more <- false
 
@@ -332,7 +375,7 @@ let streamConnectedObjectsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) a
                 |> List.map (snd >> toStreamedObject)
 
             if finalCompleted.Length > 0 then
-                yield finalCompleted
+                yield objectStream<uint8> finalCompleted
         }
 
     let pipe =
@@ -374,6 +417,19 @@ let private invertedBinaryChunk (chunk: Chunk<uint8>) =
         Chunk.decRef output
         raise ex
 
+let private backgroundBinaryChunk background (chunk: Chunk<uint8>) =
+    let output = Chunk.create<uint8> chunk.Size
+    try
+        let inputPixels = Chunk.span<uint8> chunk
+        let outputPixels = Chunk.span<uint8> output
+        for i in 0 .. inputPixels.Length - 1 do
+            outputPixels[i] <- if inputPixels[i] = background then 1uy else 0uy
+        output
+    with
+    | ex ->
+        Chunk.decRef output
+        raise ex
+
 let private emitChunkBufferThrough width height cutoff (buffer: SortedDictionary<int, uint8[]>) =
     seq {
         let mutable emitting = true
@@ -403,6 +459,23 @@ let private bufferedBinaryChunkComponentEdit
     componentChunk
     isProtectedComponent
     : Stage<Chunk<uint8>, Chunk<uint8>> =
+
+    if maximumVolume > uint64 Int32.MaxValue then
+        invalidArg "maximumVolume" $"{name} maximumVolume must fit in Int32 because slice indices are Int32-backed, got {maximumVolume}."
+
+    let maxRetainedSlices = int maximumVolume
+
+    let couldStillEdit width height firstZ (object: ActiveObject) =
+        object.Size <= maximumVolume
+        && not (isProtectedComponent width height firstZ None (toStreamedObject object))
+
+    let pruneUneditablePositions width height firstZ active =
+        active
+        |> Map.map (fun _ object ->
+            if couldStillEdit width height firstZ object then
+                object
+            else
+                { object with PositionsReversed = [] })
 
     let apply _debug (input: AsyncSeq<Chunk<uint8>>) =
         asyncSeq {
@@ -448,22 +521,32 @@ let private bufferedBinaryChunkComponentEdit
                             Chunk.decRef componentInput
                             Chunk.decRef chunk
 
-                    state <- nextState
+                    state <-
+                        let nextLabel, active = nextState
+                        nextLabel, pruneUneditablePositions currentWidth currentHeight firstZ active
 
                     for object in completed do
                         if object.Size <= maximumVolume && not (isProtectedComponent currentWidth currentHeight firstZ None object) then
                             paintObjectValue currentWidth targetValue buffer object
 
                     let _, active = state
+                    let editableActiveMinZ =
+                        active
+                        |> Map.toSeq
+                        |> Seq.choose (fun (_, object) ->
+                            if couldStillEdit currentWidth currentHeight firstZ object then
+                                Some object.Bounds.MinZ
+                            else
+                                None)
+                        |> Seq.fold (fun current value ->
+                            match current with
+                            | None -> Some value
+                            | Some minimum -> Some (min minimum value)) None
+
                     let cutoff =
-                        if active.IsEmpty then
-                            z
-                        else
-                            active
-                            |> Map.toSeq
-                            |> Seq.map (fun (_, object) -> object.Bounds.MinZ)
-                            |> Seq.min
-                            |> fun minActiveZ -> minActiveZ - 1
+                        match editableActiveMinZ with
+                        | Some minActiveZ -> minActiveZ - 1
+                        | None -> z
 
                     for chunk in emitChunkBufferThrough currentWidth currentHeight cutoff buffer do
                         yield chunk
@@ -495,60 +578,153 @@ let private bufferedBinaryChunkComponentEdit
           Apply = apply
           Profile = Streaming }
 
-    Stage.fromPipe name (ProfileTransition.create Streaming Streaming) id id pipe
+    let memoryNeed nPixels =
+        nPixels * (uint64 (maxRetainedSlices + 3))
+
+    Stage.fromPipe name (ProfileTransition.create Streaming Streaming) memoryNeed id pipe
+
+let private binaryComponentEditChunk
+    name
+    maximumVolume
+    connectivity
+    componentValue
+    replacementValue
+    defaultReplacementValue
+    defaultComponentChunk
+    isProtectedComponent
+    : Stage<Chunk<uint8>, Chunk<uint8>> =
+    let targetValue, componentChunk =
+        let replacement =
+            replacementValue
+            |> Option.map convertFloat<uint8>
+            |> Option.defaultValue defaultReplacementValue
+
+        match componentValue |> Option.map convertFloat<uint8> with
+        | Some componentValue -> replacement, backgroundBinaryChunk componentValue
+        | None -> replacement, defaultComponentChunk
+
+    bufferedBinaryChunkComponentEdit
+        name
+        maximumVolume
+        connectivity
+        targetValue
+        componentChunk
+        isProtectedComponent
 
 let removeSmallObjectsChunk maximumVolume connectivity : Stage<Chunk<uint8>, Chunk<uint8>> =
-    bufferedBinaryChunkComponentEdit
+    binaryComponentEditChunk
         "chunkRemoveSmallObjects"
         maximumVolume
         connectivity
+        None
+        None
         0uy
         Chunk.incRef
         (fun _ _ _ _ _ -> false)
 
-let fillSmallHolesChunk maximumVolume connectivity : Stage<Chunk<uint8>, Chunk<uint8>> =
+let fillSmallHolesChunk maximumVolume connectivity backgroundValue foregroundValue : Stage<Chunk<uint8>, Chunk<uint8>> =
     let protectExterior width height firstZ lastZ object =
         touchesXYBoundary width height object
         || (firstZ |> Option.exists (fun z -> object.Bounds.MinZ = z))
         || (lastZ |> Option.exists (fun z -> object.Bounds.MaxZ = z))
 
-    bufferedBinaryChunkComponentEdit
+    binaryComponentEditChunk
         "chunkFillSmallHoles"
         maximumVolume
         connectivity
+        backgroundValue
+        foregroundValue
         1uy
         invertedBinaryChunk
         protectExterior
 
-let private paintObjectChunkBatch width height (objects: StreamedObject list) =
+let private paintObjectSlice<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (width: uint)
+    (height: uint)
+    (background: 'T)
+    (foreground: 'T)
+    z
+    (objects: StreamedObject list)
+    =
     if width = 0u then invalidArg (nameof width) "paintObjectsChunk width must be positive."
     if height = 0u then invalidArg (nameof height) "paintObjectsChunk height must be positive."
 
     let width = int width
     let height = int height
+    let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+    let pixels = Chunk.span chunk
+    pixels.Fill background
 
-    objects
-    |> List.collect _.Positions
-    |> List.groupBy _.Z
-    |> List.sortBy fst
-    |> List.map (fun (_z, positions) ->
-        let chunk = Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
-        chunk.Bytes.AsSpan(0, chunk.ByteLength).Clear()
-        let pixels = Chunk.span chunk
+    for object in objects do
+        for position in object.Positions do
+            if position.Z = z then
+                if position.X < 0 || position.X >= width || position.Y < 0 || position.Y >= height then
+                    invalidOp $"Object position ({position.X},{position.Y},{position.Z}) is outside the requested paint chunk size {width}x{height}."
 
-        for position in positions do
-            if position.X < 0 || position.X >= width || position.Y < 0 || position.Y >= height then
-                invalidOp $"Object position ({position.X},{position.Y},{position.Z}) is outside the requested paint chunk size {width}x{height}."
+                pixels[flatIndex2 width position.X position.Y] <- foreground
 
-            pixels[flatIndex2 width position.X position.Y] <- 1uy
+    chunk
 
-        chunk)
+let paintObjectsChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (width: uint)
+    (height: uint)
+    (depth: uint)
+    (backgroundValue: double option)
+    (foregroundValue: double option)
+    : Stage<ObjectStream<'T>, Chunk<'T>> =
+    if width = 0u then invalidArg (nameof width) "paintObjectsChunk width must be positive."
+    if height = 0u then invalidArg (nameof height) "paintObjectsChunk height must be positive."
 
-let paintObjectsChunk width height : Stage<StreamedObject list, Chunk<uint8>> =
-    Stage.map "paintObjectsChunk" (fun _ -> paintObjectChunkBatch width height) id id
-    --> Stage.flatten "paintObjectsChunk: flatten"
+    let background = backgroundValue |> Option.defaultValue 0.0 |> convertFloat<'T>
+    let foreground = foregroundValue |> Option.defaultValue 1.0 |> convertFloat<'T>
 
-let private paintCroppedObjectChunkBatch (objects: StreamedObject list) =
+    let apply _debug (input: AsyncSeq<ObjectStream<'T>>) =
+        asyncSeq {
+            let mutable currentZ = 0
+            let mutable active: StreamedObject list = []
+            let depth = int depth
+
+            let emitUntil targetZ =
+                asyncSeq {
+                    let targetZ = min targetZ depth
+
+                    while currentZ < targetZ do
+                        active <- active |> List.filter (fun object -> object.Bounds.MaxZ >= currentZ)
+                        yield paintObjectSlice<'T> width height background foreground currentZ active
+                        currentZ <- currentZ + 1
+                }
+
+            for stream in input do
+                let orderedBatch =
+                    stream.Objects
+                    |> List.sortBy (fun object -> object.Bounds.MinZ)
+
+                for object in orderedBatch do
+                    if currentZ < depth && object.Bounds.MinZ < depth then
+                        yield! emitUntil object.Bounds.MinZ
+
+                    if currentZ < depth && object.Bounds.MaxZ >= currentZ && object.Bounds.MinZ < depth then
+                        active <- object :: active
+
+            yield! emitUntil depth
+        }
+
+    let memoryNeed nPixels =
+        nPixels * 2UL * uint64 (Marshal.SizeOf<'T>())
+
+    Stage.fromAsyncSeq
+        "paintObjectsChunk"
+        apply
+        (ProfileTransition.create Streaming Streaming)
+        (StageMemoryModel.fromSinglePeak Map memoryNeed)
+        (fun _ -> uint64 depth)
+    |> Stage.withSliceCardinality (SliceCardinality.reduceTo (uint64 depth))
+
+let private paintCroppedObjectChunkBatch<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (objects: StreamedObject list)
+    =
+    let foreground = convertFloat<'T> 1.0
+
     objects
     |> List.collect (fun object ->
         let width = object.Bounds.MaxX - object.Bounds.MinX + 1
@@ -561,7 +737,7 @@ let private paintCroppedObjectChunkBatch (objects: StreamedObject list) =
             |> List.groupBy _.Z
             |> List.sortBy fst
             |> List.map (fun (_z, positions) ->
-                let chunk = Chunk.create<uint8> (uint64 width, uint64 height, 1UL)
+                let chunk = Chunk.create<'T> (uint64 width, uint64 height, 1UL)
                 chunk.Bytes.AsSpan(0, chunk.ByteLength).Clear()
                 let pixels = Chunk.span chunk
 
@@ -572,13 +748,155 @@ let private paintCroppedObjectChunkBatch (objects: StreamedObject list) =
                     if x < 0 || x >= width || y < 0 || y >= height then
                         invalidOp $"Object position ({position.X},{position.Y},{position.Z}) is outside its bounding box."
 
-                    pixels[flatIndex2 width x y] <- 1uy
+                    pixels[flatIndex2 width x y] <- foreground
 
                 chunk))
 
-let paintObjectsCroppedChunk : Stage<StreamedObject list, Chunk<uint8>> =
-    Stage.map "paintObjectsCroppedChunk" (fun _ -> paintCroppedObjectChunkBatch) id id
+let paintObjectsCroppedChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    : Stage<ObjectStream<'T>, Chunk<'T>> =
+    Stage.map "paintObjectsCroppedChunk" (fun _ stream -> paintCroppedObjectChunkBatch<'T> stream.Objects) id id
     --> Stage.flatten "paintObjectsCroppedChunk: flatten"
+
+let private objectFileSuffix (suffix: string) =
+    let suffix = if String.IsNullOrWhiteSpace suffix then ".csv" else suffix
+    if not (suffix.Equals(".csv", StringComparison.OrdinalIgnoreCase)) then
+        failwith $"Unsupported object output format '{suffix}'. Currently supported: .csv."
+    suffix
+
+let private objectFileName suffix (object: StreamedObject) =
+    sprintf "object_z%010d_z%010d_label%020d%s" object.Bounds.MinZ object.Bounds.MaxZ object.Label suffix
+
+let private objectCsvHeader = "label,x,y,z,size,minX,maxX,minY,maxY,minZ,maxZ"
+
+let private writeObjectCsv (writer: StreamWriter) (object: StreamedObject) =
+    writer.WriteLine(objectCsvHeader)
+
+    for position in object.Positions do
+        writer.WriteLine(
+            String.Join(
+                ",",
+                [| object.Label.ToString(CultureInfo.InvariantCulture)
+                   position.X.ToString(CultureInfo.InvariantCulture)
+                   position.Y.ToString(CultureInfo.InvariantCulture)
+                   position.Z.ToString(CultureInfo.InvariantCulture)
+                   object.Size.ToString(CultureInfo.InvariantCulture)
+                   object.Bounds.MinX.ToString(CultureInfo.InvariantCulture)
+                   object.Bounds.MaxX.ToString(CultureInfo.InvariantCulture)
+                   object.Bounds.MinY.ToString(CultureInfo.InvariantCulture)
+                   object.Bounds.MaxY.ToString(CultureInfo.InvariantCulture)
+                   object.Bounds.MinZ.ToString(CultureInfo.InvariantCulture)
+                   object.Bounds.MaxZ.ToString(CultureInfo.InvariantCulture) |]))
+
+let private parseInvariantUInt64 (text: string) =
+    UInt64.Parse(text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture)
+
+let private parseInvariantInt (text: string) =
+    Int32.Parse(text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture)
+
+let private readObjectCsvFile path =
+    let rows =
+        File.ReadLines(path)
+        |> Seq.filter (fun line -> not (String.IsNullOrWhiteSpace line))
+        |> Seq.toArray
+
+    if rows.Length < 2 then
+        invalidOp $"Object CSV file '{path}' did not contain any object rows."
+
+    let parsedRows =
+        rows
+        |> Seq.skip 1
+        |> Seq.map (fun line ->
+            let columns = line.Split(',') |> Array.map _.Trim()
+            if columns.Length <> 11 then
+                invalidOp $"Object CSV rows must have 11 columns, but '{path}' contained '{line}'."
+
+            let label = parseInvariantUInt64 columns[0]
+            let position =
+                { X = parseInvariantInt columns[1]
+                  Y = parseInvariantInt columns[2]
+                  Z = parseInvariantInt columns[3] }
+            let size = parseInvariantUInt64 columns[4]
+            let bounds =
+                { MinX = parseInvariantInt columns[5]
+                  MaxX = parseInvariantInt columns[6]
+                  MinY = parseInvariantInt columns[7]
+                  MaxY = parseInvariantInt columns[8]
+                  MinZ = parseInvariantInt columns[9]
+                  MaxZ = parseInvariantInt columns[10] }
+            label, position, size, bounds)
+        |> Seq.toList
+
+    let labels = parsedRows |> List.map (fun (label, _, _, _) -> label) |> Set.ofList
+    if labels.Count <> 1 then
+        invalidOp $"Object CSV file '{path}' contains multiple labels."
+
+    let sizes = parsedRows |> List.map (fun (_, _, size, _) -> size) |> Set.ofList
+    if sizes.Count <> 1 then
+        invalidOp $"Object CSV file '{path}' contains inconsistent object sizes."
+
+    let bounds = parsedRows |> List.map (fun (_, _, _, bounds) -> bounds) |> Set.ofList
+    if bounds.Count <> 1 then
+        invalidOp $"Object CSV file '{path}' contains inconsistent object bounds."
+
+    let label, _, size, bounds = parsedRows.Head
+    let positions = parsedRows |> List.map (fun (_, position, _, _) -> position)
+    if uint64 positions.Length <> size then
+        invalidOp $"Object CSV file '{path}' declares size {size}, but contains {positions.Length} positions."
+
+    { Label = label
+      Positions = positions
+      Bounds = bounds
+      Size = size }
+
+let readObjects<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (input: string)
+    (suffix: string)
+    (template: Plan<unit, unit>)
+    : Plan<unit, ObjectStream<'T>> =
+    let suffix = objectFileSuffix suffix
+    if not (Directory.Exists input) then
+        invalidOp $"Object directory '{input}' does not exist."
+
+    let objects =
+        Directory.GetFiles(input, "*" + suffix, SearchOption.TopDirectoryOnly)
+        |> Array.map readObjectCsvFile
+        |> Array.sortBy (fun object -> object.Bounds.MinZ, object.Bounds.MaxZ, object.Label)
+        |> Array.toList
+
+    objectSource<'T> objects template
+
+let writeObjects<'T> (output: string) (suffix: string) : Stage<ObjectStream<'T>, unit> =
+    let reducer (debug: bool) (input: AsyncSeq<ObjectStream<'T>>) =
+        async {
+            let suffix = objectFileSuffix suffix
+            if debug then
+                printfn $"[writeObjects] Writing objects to {output}"
+
+            Directory.CreateDirectory(output) |> ignore
+            for existing in Directory.GetFiles(output, "*" + suffix, SearchOption.TopDirectoryOnly) do
+                File.Delete existing
+
+            let mutable fileOrdinal = 0UL
+
+            do!
+                input
+                |> AsyncSeq.iterAsync (fun stream ->
+                    async {
+                        for object in stream.Objects do
+                            let fileName =
+                                let candidate = objectFileName suffix object
+                                if File.Exists(Path.Combine(output, candidate)) then
+                                    sprintf "object_z%010d_z%010d_label%020d_%020d%s" object.Bounds.MinZ object.Bounds.MaxZ object.Label fileOrdinal suffix
+                                else
+                                    candidate
+                            fileOrdinal <- fileOrdinal + 1UL
+
+                            use writer = new StreamWriter(Path.Combine(output, fileName), false, Encoding.UTF8)
+                            writeObjectCsv writer object
+                    })
+        }
+
+    Stage.reduce $"writeObjects \"{output}\" \"{suffix}\"" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
 
 let private measurementsOfObject (object: StreamedObject) =
     { Label = object.Label
@@ -593,8 +911,8 @@ let private measurementsOfObject (object: StreamedObject) =
       Height = uint64 (object.Bounds.MaxY - object.Bounds.MinY + 1)
       Depth = uint64 (object.Bounds.MaxZ - object.Bounds.MinZ + 1) }
 
-let measureObjects : Stage<StreamedObject list, ObjectMeasurements list> =
-    Stage.map "measureObjects" (fun _ objects -> objects |> List.map measurementsOfObject) id id
+let measureObjects<'T> : Stage<ObjectStream<'T>, ObjectMeasurements list> =
+    Stage.map "measureObjects" (fun _ stream -> stream.Objects |> List.map measurementsOfObject) id id
 
 let objectSizes : Stage<ObjectMeasurements list, uint64 list> =
     Stage.map "objectSizes" (fun _ measurements -> measurements |> List.map (fun measurement -> measurement.Size)) id id
