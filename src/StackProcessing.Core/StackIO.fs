@@ -1963,6 +1963,114 @@ let readChunkSlicesRandom<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T:
         [ "count", string count ]
         pl
 
+let histogramEstimate<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (maxSlices: uint)
+    inputDir
+    suffix
+    method
+    confidence
+    targetError
+    (pl: Plan<unit, unit>)
+    : Plan<unit, ChunkFunctions.HistogramEstimate<'T>> =
+
+    let name = "histogramEstimate"
+    if maxSlices = 0u then invalidArg "maxSlices" "histogramEstimate maxSlices must be positive."
+    if targetError <= 0.0 then invalidArg "targetError" $"histogramEstimate target error must be positive, got {targetError}."
+    ensureDirectTiffChunkRead<'T> suffix
+
+    let files = getStackFiles inputDir suffix
+    if files.Length = 0 then
+        stopWithInputError $"No {suffixDescription suffix} files found in input stack directory: {inputDir}"
+
+    let pages = getStackPagesForFiles files
+    if pages.Length = 0 then
+        stopWithInputError $"No {suffixDescription suffix} pages found in input stack directory: {inputDir}"
+
+    let readPlan = inspectChunkTiffSliceForRead<'T> files[0]
+    let width = readPlan.Width
+    let height = readPlan.Height
+    let readSliceIntoOffset = scalarTiffReaderForPlan<'T> readPlan
+    let elementBytes = uint64 readPlan.RowBytes * uint64 height
+    let sourcePeek =
+        SourcePeek.create
+            name
+            elementBytes
+            (Some 1UL)
+            (Map.ofList
+                [ "kind", "histogram-estimate-random-tiff-slices"
+                  "inputDir", inputDir
+                  "suffix", suffix
+                  "width", string width
+                  "height", string height
+                  "sourceDepth", string pages.Length
+                  "maxSlices", string maxSlices
+                  "pixelType", typeof<'T>.Name
+                  "method", method
+                  "confidence", string confidence
+                  "targetError", string targetError
+                  "tiffStrategy", tiffReadStrategyName readPlan.Strategy ])
+
+    let mapper (_: int) =
+        let rng = Random()
+        let estimate = Dictionary<'T, uint64>()
+        let holdout = Dictionary<'T, uint64>()
+        let mutable estimateSamples = 0UL
+        let mutable holdoutSamples = 0UL
+        let mutable sampleIndex = 0UL
+        let mutable slicesRead = 0u
+        let mutable latest: ChunkFunctions.HistogramEstimate<'T> option = None
+        let mutable doneSampling = false
+
+        while slicesRead < maxSlices && not doneSampling do
+            let sourceZ = rng.Next(pages.Length)
+            let fileName, pageIndex = pages[sourceZ]
+            if pl.debug then
+                printfn $"[{name}] Reading random source z {sourceZ}: {fileName} page {pageIndex} as {typeof<'T>.Name}"
+
+            let chunk =
+                Chunk.create<'T> (uint64 width, uint64 height, 1UL)
+                |> Chunk.withIndex (0, 0, sourceZ)
+                |> Chunk.withSourceDepth (uint pages.Length)
+
+            try
+                readSliceIntoOffset fileName pageIndex chunk 0
+                let estimateSamples', holdoutSamples', sampleIndex' =
+                    ChunkFunctions.addHistogramEstimateChunk 1 estimate holdout estimateSamples holdoutSamples sampleIndex chunk
+
+                estimateSamples <- estimateSamples'
+                holdoutSamples <- holdoutSamples'
+                sampleIndex <- sampleIndex'
+            finally
+                Chunk.decRef chunk
+
+            slicesRead <- slicesRead + 1u
+            let estimateMap = ChunkFunctions.dictionaryToMap estimate
+            let holdoutMap = ChunkFunctions.dictionaryToMap holdout
+            let current =
+                ChunkFunctions.finishHistogramEstimate method confidence slicesRead estimateSamples holdoutSamples estimateMap holdoutMap
+
+            latest <- Some current
+            doneSampling <- ChunkFunctions.histogramEstimateErrorReached method targetError current
+
+        match latest with
+        | Some estimate -> estimate
+        | None -> invalidOp "histogramEstimate produced no samples."
+
+    let transition = ProfileTransition.create Unit Streaming
+    let memoryNeed _ = elementBytes
+    let elementTransformation _ = 1UL
+    let memoryModel = StageMemoryModel.fromSinglePeak Source memoryNeed
+    let timeCostModel =
+        StageTimeCostModel.ioRead Source (Some $"{name}.{typeof<'T>.Name}") (fun _ -> elementBytes) (fun _ -> uint64 maxSlices)
+    let stage =
+        Stage.init name 1u mapper transition memoryNeed elementTransformation
+        |> withCostModel (StageCostModel.create memoryModel timeCostModel)
+        |> Some
+
+    Plan.createWithOptimizer stage pl.memAvail elementBytes elementBytes 1UL pl.debug pl.optimize
+    |> Plan.withRuntimeOptionsFrom pl
+    |> Plan.withSourcePeek sourcePeek
+
 let private readSelectedColorChunkSlices
     (name: string)
     (inputDir: string)

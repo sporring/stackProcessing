@@ -74,7 +74,7 @@ let catalogSuite =
     testList "Studio.Graph catalog" [
         testCase "catalog exposes expected generic functions" <| fun _ ->
             let ids = BuiltInCatalog.orderedFunctions |> List.map _.Id
-            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "ReadRandom"; "EstimateHistogram"; "ReadRange"; "ReadPointSet"; "Zero"; "CoordinateX"; "CoordinateY"; "CoordinateZ"; "NormalNoise"; "SaltAndPepperNoise"; "PoissonNoise"; "Write"; "WriteChunks"; "WriteMesh"; "WritePointSet"; "WriteMatrix"; "Expand"; "GetChunkInfo"; "GetZarrInfo"; "GetNexusInfo"; "Resize"; "Resample"; "CreatePadding"; "Crop"; "MarchingCubes"; "SurfaceArea"; "DogKeypoints"; "SiftKeypoints"; "LogBlobKeypoints"; "HessianKeypoints"; "Forstner3DKeypoints"; "PhaseCongruencyKeypoints"; "PointPairDistances"; "AffineRegistrationMatrix"; "AffineRegistrationInverseMatrix"; "StreamConnectedObjects"; "MeasureObjects"; "ObjectSizes"; "ObjectSizeStats"; "PaintObjects"; "PaintObjectsCropped"; "ImageOpImage"; "ComputeStats"; "FitBiasModel"; "FitBiasModelMasked"; "CorrectBias"; "CorrectBiasMasked"; "SerialPolynomialBiasCorrect"; "SerialEstTrans"; "SerialApplyTrans"; "SerialEstBoundingBox"; "Volume"; "Quantiles"; "Chart"; "SumProjection"; "ImHistogram"; "ImHistogramData"; "Histogram"] "Important Studio functions should be in the palette catalog."
+            Expect.containsAll ids ["Scalar"; "FileDirectory"; "Read"; "ReadRandom"; "EstimateHistogram"; "ReadRange"; "ReadPointSet"; "Zero"; "CoordinateX"; "CoordinateY"; "CoordinateZ"; "NormalNoise"; "SaltAndPepperNoise"; "PoissonNoise"; "Write"; "WriteChunks"; "WriteMesh"; "WritePointSet"; "WriteMatrix"; "Expand"; "GetChunkInfo"; "GetZarrInfo"; "GetNexusInfo"; "Resize"; "Resample"; "CreatePadding"; "Crop"; "MarchingCubes"; "ObjectSurfaceArea"; "DogKeypoints"; "SiftKeypoints"; "LogBlobKeypoints"; "HessianKeypoints"; "Forstner3DKeypoints"; "PhaseCongruencyKeypoints"; "PointPairDistances"; "AffineRegistrationMatrix"; "AffineRegistrationInverseMatrix"; "StreamConnectedObjects"; "MeasureObjects"; "ObjectSizes"; "ObjectSizeStats"; "PaintObjects"; "PaintObjectsCropped"; "ImageOpImage"; "ComputeStats"; "FitBiasModel"; "FitBiasModelMasked"; "CorrectBias"; "CorrectBiasMasked"; "SerialPolynomialBiasCorrect"; "SerialEstTrans"; "SerialApplyTrans"; "SerialEstBoundingBox"; "ObjectVolume"; "Quantiles"; "Chart"; "SumProjection"; "ImHistogram"; "ImHistogramData"; "Histogram"] "Important Studio functions should be in the palette catalog."
             Expect.isFalse (ids |> List.contains "WriteVolume") "Volume-file writing should be selected from the combined Write box."
             Expect.isFalse (ids |> List.contains "WriteZarr") "Zarr writing should be selected from the combined Write box."
             Expect.isFalse (ids |> List.contains "WriteNexus") "NeXus writing should be selected from the combined Write box."
@@ -114,19 +114,19 @@ let catalogSuite =
 
         testCase "geometry measurement catalog uses mesh and scalar reducer ports" <| fun _ ->
             let ids = BuiltInCatalog.orderedFunctions |> List.map _.Id
-            let surfaceArea = BuiltInCatalog.find "SurfaceArea"
-            let volume = BuiltInCatalog.find "Volume"
+            let surfaceArea = BuiltInCatalog.find "ObjectSurfaceArea"
+            let volume = BuiltInCatalog.find "ObjectVolume"
             let pointPairDistances = BuiltInCatalog.find "PointPairDistances"
             let affineRegistration = BuiltInCatalog.find "AffineRegistrationMatrix"
             let affineRegistrationInverse = BuiltInCatalog.find "AffineRegistrationInverseMatrix"
             let writeMatrix = BuiltInCatalog.find "WriteMatrix"
 
-            Expect.equal surfaceArea.Inputs.[0].Type (PortType.Custom "Mesh") "surfaceArea should consume streamed triangle sets."
-            Expect.equal surfaceArea.Outputs.[0].Type (PortType.Scalar(BasicType.Numeric Float64)) "surfaceArea should emit a scalar Float64 reducer output."
-            Expect.equal surfaceArea.Parameters.Length 3 "surfaceArea should expose x/y/z unit parameters."
-            Expect.equal volume.Inputs.[0].Type (PortType.Image UInt8) "volume should consume UInt8 0-1 mask slices."
-            Expect.equal volume.Outputs.[0].Type (PortType.Scalar(BasicType.Numeric Float64)) "volume should emit a scalar Float64 reducer output."
-            Expect.equal volume.Parameters.Length 3 "volume should expose x/y/z unit parameters."
+            Expect.equal surfaceArea.Inputs.[0].Type (PortType.Custom "Mesh") "objectSurfaceArea should consume streamed triangle sets."
+            Expect.equal surfaceArea.Outputs.[0].Type (PortType.Scalar(BasicType.Numeric Float64)) "objectSurfaceArea should emit a scalar Float64 reducer output."
+            Expect.equal surfaceArea.Parameters.Length 3 "objectSurfaceArea should expose x/y/z unit parameters."
+            Expect.equal volume.Inputs.[0].Type (PortType.Image UInt8) "objectVolume should consume UInt8 0-1 mask slices."
+            Expect.equal volume.Outputs.[0].Type (PortType.Scalar(BasicType.Numeric Float64)) "objectVolume should emit a scalar Float64 reducer output."
+            Expect.equal volume.Parameters.Length 3 "objectVolume should expose x/y/z unit parameters."
             Expect.equal pointPairDistances.Inputs.[0].Type (PortType.Custom "PointSet") "pointPairDistances should consume point sets."
             Expect.equal pointPairDistances.Outputs.[0].Type (PortType.Custom "Float64Matrix") "pointPairDistances should emit a vectorized Float64 matrix."
             Expect.equal (affineRegistration.Inputs |> List.map _.Type) [ PortType.Custom "PointSet"; PortType.Custom "PointSet" ] "affineRegistration should consume fixed and moving point sets."

@@ -12,15 +12,15 @@
       "parameters": [
         { "key": "type", "value": "UInt8", "useInput": false },
         { "key": "surfaceValue", "value": "127.5", "useInput": false } ] },
-    { "id": "area", "functionId": "SurfaceArea", "x": 520.0, "y": 90.0,
+    { "id": "area", "functionId": "ObjectSurfaceArea", "x": 520.0, "y": 90.0,
       "parameters": [
         { "key": "xUnit", "value": "1.0", "useInput": false },
         { "key": "yUnit", "value": "1.0", "useInput": false },
         { "key": "zUnit", "value": "1.0", "useInput": false } ] },
     { "id": "printArea", "functionId": "Print", "x": 740.0, "y": 90.0,
       "parameters": [
-        { "key": "format", "value": "Surface area: {Area}", "useInput": false },
-        { "key": "input1", "value": "Area", "useInput": true } ] },
+        { "key": "format", "value": "Surface area: {ObjectSurfaceArea}", "useInput": false },
+        { "key": "input1", "value": "ObjectSurfaceArea", "useInput": true } ] },
     { "id": "readVolume", "functionId": "Read", "x": 80.0, "y": 250.0,
       "parameters": [
         { "key": "availableMemory", "value": "2147483648UL", "useInput": false },
@@ -33,15 +33,15 @@
         { "key": "type", "value": "UInt8", "useInput": false },
         { "key": "lower", "value": "1", "useInput": false },
         { "key": "upper", "value": "255", "useInput": false } ] },
-    { "id": "volume", "functionId": "Volume", "x": 520.0, "y": 250.0,
+    { "id": "volume", "functionId": "ObjectVolume", "x": 520.0, "y": 250.0,
       "parameters": [
         { "key": "xUnit", "value": "1.0", "useInput": false },
         { "key": "yUnit", "value": "1.0", "useInput": false },
         { "key": "zUnit", "value": "1.0", "useInput": false } ] },
     { "id": "printVolume", "functionId": "Print", "x": 740.0, "y": 250.0,
       "parameters": [
-        { "key": "format", "value": "Volume: {Volume}", "useInput": false },
-        { "key": "input1", "value": "Volume", "useInput": true } ] }
+        { "key": "format", "value": "Volume: {ObjectVolume}", "useInput": false },
+        { "key": "input1", "value": "ObjectVolume", "useInput": true } ] }
   ],
   "edges": [
     { "fromNode": "readArea", "fromKind": "dataOutput", "fromPort": 0, "toNode": "cubes", "toKind": "dataInput", "toPort": 0 },

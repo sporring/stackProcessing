@@ -212,7 +212,7 @@ let private triangleArea xUnit yUnit zUnit (triangle: Triangle) =
     let cz = ux * vy - uy * vx
     0.5 * Math.Sqrt(cx * cx + cy * cy + cz * cz)
 
-let surfaceArea xUnit yUnit zUnit : Stage<TriangleSet, float> =
+let objectSurfaceArea xUnit yUnit zUnit : Stage<TriangleSet, float> =
     validateUnit (nameof xUnit) xUnit
     validateUnit (nameof yUnit) yUnit
     validateUnit (nameof zUnit) zUnit
@@ -222,7 +222,7 @@ let surfaceArea xUnit yUnit zUnit : Stage<TriangleSet, float> =
         |> List.sumBy (triangleArea xUnit yUnit zUnit)
         |> (+) area
 
-    Stage.fold "surfaceArea" folder 0.0 id (fun _ -> 1UL)
+    Stage.fold "objectSurfaceArea" folder 0.0 id (fun _ -> 1UL)
 
 type MeshFormat =
     | Obj

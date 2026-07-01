@@ -864,7 +864,7 @@ let generatorSuite =
             Expect.stringContains code "|> sink" "Terminal WriteMesh should run the mesh writer."
 
             let surfaceArea =
-                node "area" "SurfaceArea"
+                node "area" "ObjectSurfaceArea"
                     [ p "xUnit" "2.0" false
                       p "yUnit" "3.0" false
                       p "zUnit" "4.0" false ]
@@ -875,8 +875,8 @@ let generatorSuite =
                       edge "mesh" "output" 0 "area" "input" 0 ]
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains areaCode ">=> surfaceArea 2.0 3.0 4.0" "SurfaceArea should generate the physical area reducer."
-            Expect.stringContains areaCode "|> drain" "Terminal SurfaceArea should be drained."
+            Expect.stringContains areaCode ">=> objectSurfaceArea 2.0 3.0 4.0" "ObjectSurfaceArea should generate the physical area reducer."
+            Expect.stringContains areaCode "|> drain" "Terminal ObjectSurfaceArea should be drained."
 
         testCase "dogKeypoints and point-set IO boxes lower to CSV point-set DSL functions" <| fun _ ->
             let read =
@@ -2297,8 +2297,8 @@ let generatorSuite =
                 graph [ histogram ] []
                 |> PipelineCodeGenerator.generateSavedGraph
 
-            Expect.stringContains code ">=> imHistogramFixedBins 0.0 255.0 256u" "Configured fixed-bin controls should lower to the fixed-bin reducer."
-            Expect.stringContains code "showChartXYWithLabels \"Column\" \"Intensity histogram\" \"Intensity\" \"Pixels\"" "Histogram should pass title and axis labels to the shared chart helper."
+            Expect.stringContains code ">=> imageHistogramFixedBins (0.0) (255.0) (256u)" "Configured fixed-bin controls should lower to the fixed-bin reducer."
+            Expect.stringContains code ">=> plotHistogramWithLabels \"Intensity histogram\" \"Intensity\" \"Pixels\"" "Histogram should pass title and axis labels to the shared histogram plot stage."
 
         testCase "estimateHistogram source exposes histogram map and diagnostics" <| fun _ ->
             let read =

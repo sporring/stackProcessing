@@ -11,20 +11,15 @@ let main args =
         | [| input |] -> input
         | _ -> "../data/rotatingBoxes"
 
-    let voxelVolume =
+    // Calculate the volume and surface area of the foreground mask. This also demonstrates the synchroneous fan-out operator >=>>. Since marchingCubes requires 2 neighbouring slices, but volume only needs a single slice, the pipeline is delayed by 1 to ensure that input and output is synchroneously served.
+    let area, volume =
         src
         |> read<uint8> input ".tiff"
         >=> thresholdRange 1 255
-        >=> volume 1.0 1.0 1.0
+        >=>> (marchingCubes 127.5 --> objectSurfaceArea 1.0 1.0 1.0, objectVolume 1.0 1.0 1.0)
         |> drain
 
-    let area =
-        src
-        |> read<uint8> input ".tiff"
-        >=> marchingCubes 127.5
-        >=> surfaceArea 1.0 1.0 1.0
-        |> drain
-
-    printfn "Foreground volume: %.3f" voxelVolume
+    printfn "Foreground volume: %.3f" volume
     printfn "Surface area: %.3f" area
+
     0

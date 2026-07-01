@@ -2386,7 +2386,7 @@ let computeStats<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct a
 
     Stage.reduce $"chunkComputeStats.{typeof<'T>.Name}" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
 
-let volume xUnit yUnit zUnit : Stage<Chunk<uint8>, float> =
+let objectVolume xUnit yUnit zUnit : Stage<Chunk<uint8>, float> =
     if xUnit <= 0.0 then invalidArg "xUnit" "xUnit must be positive."
     if yUnit <= 0.0 then invalidArg "yUnit" "yUnit must be positive."
     if zUnit <= 0.0 then invalidArg "zUnit" "zUnit must be positive."
@@ -2404,7 +2404,7 @@ let volume xUnit yUnit zUnit : Stage<Chunk<uint8>, float> =
                         match pixels[i] with
                         | 0uy -> ()
                         | 1uy -> foreground <- foreground + 1UL
-                        | value -> invalidOp $"chunkVolume expects a UInt8 0-1 mask stream; got pixel value {value}."
+                        | value -> invalidOp $"chunkObjectVolume expects a UInt8 0-1 mask stream; got pixel value {value}."
                         i <- i + 1
 
                     total <- total + float foreground * voxelVolume
@@ -2414,7 +2414,7 @@ let volume xUnit yUnit zUnit : Stage<Chunk<uint8>, float> =
             return total
         }
 
-    Stage.reduce "chunkVolume" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
+    Stage.reduce "chunkObjectVolume" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
 
 let histogramReducer<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> () =
     let reducer _debug (input: AsyncSeq<Chunk<'T>>) =
@@ -2450,6 +2450,140 @@ let histogramReducerParallel<'T when 'T: equality and 'T: comparison and 'T: (ne
             Streaming
             (fun _ -> 0UL)
             (fun _ -> 1UL)
+
+type HistogramEstimate<'T when 'T: comparison> =
+    { Histogram: Histogram<'T>
+      Samples: uint64
+      SlicesRead: uint
+      CdfHalfWidth: float
+      HoldoutMaxCdfDelta: float
+      Method: string
+      Confidence: float }
+
+let private addValueIntoDictionary<'T when 'T: equality> (counts: Dictionary<'T, uint64>) value =
+    match counts.TryGetValue value with
+    | true, count -> counts[value] <- count + 1UL
+    | false, _ -> counts[value] <- 1UL
+
+let histogramEstimateDkwCdfHalfWidth samples confidence =
+    if samples = 0UL then
+        Double.PositiveInfinity
+    else
+        let alpha = 1.0 - confidence
+        if alpha <= 0.0 || alpha >= 1.0 then
+            invalidArg "confidence" $"histogramEstimate confidence must be between 0 and 1, got {confidence}."
+        sqrt (log (2.0 / alpha) / (2.0 * float samples))
+
+let histogramEstimateMaxCdfDelta<'T when 'T: comparison> (left: Map<'T, uint64>) leftTotal (right: Map<'T, uint64>) rightTotal =
+    if leftTotal = 0UL || rightTotal = 0UL then
+        0.0
+    else
+        let keys =
+            Seq.append (left |> Seq.map _.Key) (right |> Seq.map _.Key)
+            |> Seq.distinct
+            |> Seq.sort
+
+        let mutable leftCumulative = 0UL
+        let mutable rightCumulative = 0UL
+        let mutable maxDelta = 0.0
+
+        for key in keys do
+            match left.TryFind key with
+            | Some count -> leftCumulative <- leftCumulative + count
+            | None -> ()
+
+            match right.TryFind key with
+            | Some count -> rightCumulative <- rightCumulative + count
+            | None -> ()
+
+            let delta = abs (float leftCumulative / float leftTotal - float rightCumulative / float rightTotal)
+            if delta > maxDelta then
+                maxDelta <- delta
+
+        maxDelta
+
+let addHistogramEstimateChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    strideI
+    (estimate: Dictionary<'T, uint64>)
+    (holdout: Dictionary<'T, uint64>)
+    estimateSamples
+    holdoutSamples
+    sampleIndex
+    (chunk: Chunk<'T>)
+    =
+    let width64, height64, depth64 = chunk.Size
+    if width64 > uint64 Int32.MaxValue || height64 > uint64 Int32.MaxValue || depth64 > uint64 Int32.MaxValue then
+        invalidArg "chunk" $"histogramEstimate chunk dimensions must fit Int32, got {chunk.Size}."
+
+    let width = int width64
+    let height = int height64
+    let depth = int depth64
+    let values = Chunk.span chunk
+    let mutable estimateSamples = estimateSamples
+    let mutable holdoutSamples = holdoutSamples
+    let mutable sampleIndex = sampleIndex
+    let mutable z = 0
+
+    while z < depth do
+        let mutable y = 0
+        while y < height do
+            let mutable x = 0
+            while x < width do
+                let value = values[Chunk.toIndex width height x y z]
+                if sampleIndex % 2UL = 0UL then
+                    addValueIntoDictionary estimate value
+                    estimateSamples <- estimateSamples + 1UL
+                else
+                    addValueIntoDictionary holdout value
+                    holdoutSamples <- holdoutSamples + 1UL
+                sampleIndex <- sampleIndex + 1UL
+                x <- x + strideI
+            y <- y + strideI
+        z <- z + strideI
+
+    estimateSamples, holdoutSamples, sampleIndex
+
+let finishHistogramEstimate<'T when 'T: comparison>
+    (method: string)
+    confidence
+    slicesRead
+    estimateSamples
+    holdoutSamples
+    (estimateMap: Map<'T, uint64>)
+    (holdoutMap: Map<'T, uint64>)
+    =
+    let method = if String.IsNullOrWhiteSpace method then "DKWAndHoldout" else method
+    let cdfHalfWidth =
+        if method.Equals("Holdout", StringComparison.OrdinalIgnoreCase) then
+            0.0
+        else
+            histogramEstimateDkwCdfHalfWidth estimateSamples confidence
+    let holdoutMaxCdfDelta =
+        if method.Equals("DKW", StringComparison.OrdinalIgnoreCase) then
+            0.0
+        else
+            histogramEstimateMaxCdfDelta estimateMap estimateSamples holdoutMap holdoutSamples
+
+    { Histogram = estimateMap |> Histogram.ofMap
+      Samples = estimateSamples
+      SlicesRead = slicesRead
+      CdfHalfWidth = cdfHalfWidth
+      HoldoutMaxCdfDelta = holdoutMaxCdfDelta
+      Method = method
+      Confidence = confidence }
+
+let histogramEstimateErrorReached (method: string) targetError (estimate: HistogramEstimate<'T>) =
+    if targetError <= 0.0 then
+        invalidArg "targetError" $"histogramEstimate target error must be positive, got {targetError}."
+
+    if method.Equals("DKW", StringComparison.OrdinalIgnoreCase) then
+        estimate.CdfHalfWidth <= targetError
+    elif method.Equals("Holdout", StringComparison.OrdinalIgnoreCase) then
+        estimate.HoldoutMaxCdfDelta <= targetError
+    else
+        estimate.CdfHalfWidth <= targetError && estimate.HoldoutMaxCdfDelta <= targetError
+
+let histogramEstimateMap estimate = estimate.Histogram
 
 let histogramDenseReducer<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> () =
     let reducer _debug (input: AsyncSeq<Chunk<'T>>) =
@@ -2542,9 +2676,10 @@ let histogramFixedBinsReducer<'T when 'T: equality and 'T: (new: unit -> 'T) and
 let histogramEqualizationDense<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     dense
     : Stage<Chunk<'T>, Chunk<'T>> =
-    let mapper _debug chunk =
+    let equalize: Chunk<'T> -> Chunk<'T> = ChunkKernel.histogramEqualizationDenseMapper<'T> dense
+    let mapper _debug (chunk: Chunk<'T>) =
         try
-            ChunkKernel.histogramEqualizationDense<'T> dense chunk
+            equalize chunk
         finally
             Chunk.decRef chunk
 
@@ -2553,9 +2688,10 @@ let histogramEqualizationDense<'T when 'T: equality and 'T: (new: unit -> 'T) an
 let histogramEqualizationLeftEdges<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     histogram
     : Stage<Chunk<'T>, Chunk<'T>> =
-    let mapper _debug chunk =
+    let equalize: Chunk<'T> -> Chunk<'T> = ChunkKernel.histogramEqualizationLeftEdgesMapper<'T> histogram
+    let mapper _debug (chunk: Chunk<'T>) =
         try
-            ChunkKernel.histogramEqualizationLeftEdges<'T> histogram chunk
+            equalize chunk
         finally
             Chunk.decRef chunk
 
@@ -2564,9 +2700,10 @@ let histogramEqualizationLeftEdges<'T when 'T: equality and 'T: (new: unit -> 'T
 let histogramEqualizationSparse<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     counts
     : Stage<Chunk<'T>, Chunk<'T>> =
-    let mapper _debug chunk =
+    let equalize: Chunk<'T> -> Chunk<'T> = ChunkKernel.histogramEqualizationSparseMapper<'T> counts
+    let mapper _debug (chunk: Chunk<'T>) =
         try
-            ChunkKernel.histogramEqualizationSparse<'T> counts chunk
+            equalize chunk
         finally
             Chunk.decRef chunk
 

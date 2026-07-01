@@ -66,6 +66,19 @@ let showChartXYWithLabels kind title xAxis yAxis x y =
 let showChartXY kind x y =
     showChartXYWithLabels kind "" "" "" x y
 
+let private histogramToXY (histogram: Histogram<'T>) =
+    histogram.Counts
+    |> Map.toList
+    |> List.map (fun (x, y) -> Convert.ToDouble x, Convert.ToDouble y)
+    |> List.unzip
+
+let showHistogramWithLabels title xAxis yAxis histogram =
+    let x, y = histogramToXY histogram
+    showChartDataWithLabels "Column" title xAxis yAxis x y
+
+let showHistogram histogram =
+    showHistogramWithLabels "" "" "" histogram
+
 let private chunkToSeqSeq<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
     let width64, height64, depth64 = chunk.Size
     if depth64 <> 1UL then

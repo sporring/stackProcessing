@@ -161,6 +161,13 @@ module private Pipe =
     type TeeMsg<'T> =
         | Next of TeeSide * AsyncReplyChannel<'T option>
 
+    type OutputZipMsg<'U, 'V> =
+        | LeftOutput of 'U * AsyncReplyChannel<unit>
+        | RightOutput of 'V * AsyncReplyChannel<unit>
+        | LeftComplete
+        | RightComplete
+        | NextOutputPair of AsyncReplyChannel<('U * 'V) option>
+
     let create (name: string) (apply: bool -> AsyncSeq<'S> -> AsyncSeq<'T>) (profile: Profile) : Pipe<'S,'T> =
         { Name = name; Apply = apply; Profile = profile }
 
@@ -256,6 +263,10 @@ module private Pipe =
         create name apply pipe.Profile
 *)
 
+    let private maxInputLead = function
+        | Window(windowSize, _, pad, _, _) -> max 1L (int64 windowSize + int64 pad - 1L)
+        | _ -> 1L
+
     let tee (debug: bool) (p: Pipe<'In, 'T>) : Pipe<'In, 'T> * Pipe<'In, 'T> =
         // Shared lazy value to ensure Apply is only triggered once
         let mutable shared: Lazy<AsyncSeq<'T> * AsyncSeq<'T>> option = None
@@ -267,50 +278,42 @@ module private Pipe =
             let agent = MailboxProcessor.Start(fun inbox ->
                 async {
                     let enum = src.GetAsyncEnumerator()
-                    let buffer = ResizeArray<'T>()
-                    let mutable bufferStart = 0L
-                    let mutable leftIndex = 0L
-                    let mutable rightIndex = 0L
-                    let mutable finished = false
+                    let mutable leftReply: AsyncReplyChannel<'T option> option = None
+                    let mutable rightReply: AsyncReplyChannel<'T option> option = None
 
-                    let rec ensureAvailable index =
+                    let serveIfReady () =
                         async {
-                            while not finished && bufferStart + int64 buffer.Count <= index do
+                            match leftReply, rightReply with
+                            | Some left, Some right ->
+                                leftReply <- None
+                                rightReply <- None
                                 let! hasNext = enum.MoveNextAsync().AsTask() |> Async.AwaitTask
                                 if hasNext then
-                                    buffer.Add(enum.Current)
+                                    let value = Some enum.Current
+                                    left.Reply value
+                                    right.Reply value
                                 else
-                                    finished <- true
+                                    left.Reply None
+                                    right.Reply None
+                            | _ -> ()
                         }
-
-                    let trimConsumedPrefix () =
-                        let minIndex = min leftIndex rightIndex
-                        let removable = minIndex - bufferStart
-                        if removable > 0L then
-                            buffer.RemoveRange(0, int removable)
-                            bufferStart <- minIndex
 
                     let rec loop () = async {
                         let! msg = inbox.Receive()
 
                         match msg with
                         | Next(side, reply) ->
-                            let index =
-                                match side with
-                                | Left -> leftIndex
-                                | Right -> rightIndex
+                            match side with
+                            | Left ->
+                                if leftReply.IsSome then
+                                    invalidOp "Synchronized tee received a second left request before the right branch was ready."
+                                leftReply <- Some reply
+                            | Right ->
+                                if rightReply.IsSome then
+                                    invalidOp "Synchronized tee received a second right request before the left branch was ready."
+                                rightReply <- Some reply
 
-                            do! ensureAvailable index
-
-                            if index < bufferStart + int64 buffer.Count then
-                                let value = buffer[int (index - bufferStart)]
-                                match side with
-                                | Left -> leftIndex <- leftIndex + 1L
-                                | Right -> rightIndex <- rightIndex + 1L
-                                trimConsumedPrefix ()
-                                reply.Reply(Some value)
-                            else
-                                reply.Reply(None)
+                            do! serveIfReady ()
 
                         return! loop ()
                     }
@@ -351,6 +354,110 @@ module private Pipe =
 
         makeTeePipe "left" fst, makeTeePipe "right" snd
 
+    let zipBufferedOutputs (leftCapacity: int64) (rightCapacity: int64) (left: AsyncSeq<'U>) (right: AsyncSeq<'V>) : AsyncSeq<'U * 'V> =
+        let leftCapacity = max 1 (int leftCapacity)
+        let rightCapacity = max 1 (int rightCapacity)
+
+        let agent =
+            MailboxProcessor.Start(fun inbox ->
+                async {
+                    let leftQueue = Queue<'U>()
+                    let rightQueue = Queue<'V>()
+                    let pendingLeft = Queue<'U * AsyncReplyChannel<unit>>()
+                    let pendingRight = Queue<'V * AsyncReplyChannel<unit>>()
+                    let mutable leftComplete = false
+                    let mutable rightComplete = false
+                    let mutable waitingNext: AsyncReplyChannel<('U * 'V) option> option = None
+
+                    let admitPending () =
+                        while leftQueue.Count < leftCapacity && pendingLeft.Count > 0 do
+                            let value, reply = pendingLeft.Dequeue()
+                            leftQueue.Enqueue value
+                            reply.Reply()
+
+                        while rightQueue.Count < rightCapacity && pendingRight.Count > 0 do
+                            let value, reply = pendingRight.Dequeue()
+                            rightQueue.Enqueue value
+                            reply.Reply()
+
+                    let tryReplyNext () =
+                        match waitingNext with
+                        | Some reply when leftQueue.Count > 0 && rightQueue.Count > 0 ->
+                            waitingNext <- None
+                            let value = leftQueue.Dequeue(), rightQueue.Dequeue()
+                            admitPending ()
+                            reply.Reply(Some value)
+                        | Some reply when (leftComplete && leftQueue.Count = 0) || (rightComplete && rightQueue.Count = 0) ->
+                            waitingNext <- None
+                            reply.Reply(None)
+                        | _ -> ()
+
+                    let rec loop () =
+                        async {
+                            let! msg = inbox.Receive()
+
+                            match msg with
+                            | LeftOutput(value, reply) ->
+                                if leftQueue.Count < leftCapacity then
+                                    leftQueue.Enqueue value
+                                    reply.Reply()
+                                else
+                                    pendingLeft.Enqueue(value, reply)
+                            | RightOutput(value, reply) ->
+                                if rightQueue.Count < rightCapacity then
+                                    rightQueue.Enqueue value
+                                    reply.Reply()
+                                else
+                                    pendingRight.Enqueue(value, reply)
+                            | LeftComplete -> leftComplete <- true
+                            | RightComplete -> rightComplete <- true
+                            | NextOutputPair reply ->
+                                if waitingNext.IsSome then
+                                    invalidOp "Buffered output zipper received overlapping output pair requests."
+                                waitingNext <- Some reply
+
+                            tryReplyNext ()
+                            return! loop ()
+                        }
+
+                    return! loop ()
+                })
+
+        async {
+            let enum = left.GetAsyncEnumerator()
+            let mutable running = true
+            while running do
+                let! hasNext = enum.MoveNextAsync().AsTask() |> Async.AwaitTask
+                if hasNext then
+                    do! agent.PostAndAsyncReply(fun reply -> LeftOutput(enum.Current, reply))
+                else
+                    running <- false
+            agent.Post LeftComplete
+        }
+        |> Async.Start
+
+        async {
+            let enum = right.GetAsyncEnumerator()
+            let mutable running = true
+            while running do
+                let! hasNext = enum.MoveNextAsync().AsTask() |> Async.AwaitTask
+                if hasNext then
+                    do! agent.PostAndAsyncReply(fun reply -> RightOutput(enum.Current, reply))
+                else
+                    running <- false
+            agent.Post RightComplete
+        }
+        |> Async.Start
+
+        asyncSeq {
+            let mutable running = true
+            while running do
+                let! value = agent.PostAndAsyncReply(fun reply -> NextOutputPair reply)
+                match value with
+                | Some pair -> yield pair
+                | None -> running <- false
+        }
+
     let id (name: string) : Pipe<'T, 'T> =
         let apply (debug: bool) input = input
         create name apply Streaming  // or use profile passed as arg if you prefer
@@ -365,7 +472,7 @@ module private Pipe =
         let apply debug input =
             let stream1 = composedPipe1.Apply debug input
             let stream2 = composedPipe2.Apply debug input
-            AsyncSeqExtensions.zipConcurrent stream1 stream2 
+            zipBufferedOutputs (maxInputLead pipe2.Profile) (maxInputLead pipe1.Profile) stream1 stream2
             |> AsyncSeq.map (fun (u, v) -> 
                 let result = f u v; 
                 result)
@@ -1514,6 +1621,9 @@ module Stage =
         if stage1.Transition.From <> stage2.Transition.From then
             failwith $"[fork] can only apply stages with the same streaming profile ({stage1.Transition.From} <> {stage2.Transition.From})"
 
+        if stage1.Transition.To <> stage2.Transition.To then
+            failwith $"[fork] Cannot synchronize branches with different output profiles ({stage1.Transition.To} <> {stage2.Transition.To})"
+
         if stage1.SliceCardinality <> stage2.SliceCardinality then
             failwith $"[fork] Cannot synchronize branches with different slice domains {stage1.SliceCardinality} vs {stage2.SliceCardinality}"
 
@@ -2287,6 +2397,9 @@ module Plan =
     let (>=>>) (pl: Plan<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Plan<'In, 'U * 'V> =
         if stage1.Transition.From <> stage2.Transition.From then 
             failwith $"[>=>>] can only apply stages with the same streaming profile ({stage1.Transition.From} <> {stage2.Transition.From})"
+
+        if stage1.Transition.To <> stage2.Transition.To then
+            failwith $"[>=>>] Cannot synchronize branches with different output profiles ({stage1.Transition.To} <> {stage2.Transition.To})"
 
         let memoryNeed nElemsPerSlice = 
             // nElemsPerSlice is always Singel

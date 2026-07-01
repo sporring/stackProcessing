@@ -1,7 +1,4 @@
-﻿// To run, remember to:
-// export DYLD_LIBRARY_PATH=./StackPipeline/lib:$(pwd)/bin/Debug/net10.0
-open StackProcessing
-open Plotly.NET
+﻿open StackProcessing
 
 [<EntryPoint>]
 let main arg =
@@ -14,22 +11,11 @@ let main arg =
         else
             "../data/volume"
 
-    // Plotly.Net plot function
-    let plt (x:float list) (y:float list) = 
-         Chart.Column(values = y, Keys = x)
-        |> Chart.withTitle "Histogram"
-        |> Chart.withXAxisStyle ("gray values")
-        |> Chart.withYAxisStyle ("count")
-        |> Chart.show
-
-    let histogramMaker = 
-        src
-        |> read<uint8> input ".tiff"
-        >=> imageHistogram () --> histogram2pairs --> pairs2floats
-    histogramMaker
-    >=>> (print (),plot plt)
-    //>=>> (tap "left", tap "right")
-    >>=> ignorePairs ()
+    // Demonstrate the >=>> operator, which fans out the measured histogram
+    src
+    |> read<uint8> input ".tiff"
+    >=> imageHistogram ()
+    >=>> (print (), plotHistogramWithLabels "Histogram" "gray values" "count")
     |> sink
 
     0

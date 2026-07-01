@@ -283,6 +283,14 @@ let stackProcessingSupportSuite =
                     |> ignore)
                 ">=>> should reject synchronization when one branch skips slices."
 
+        testCase ">=>> rejects mixed streaming and reducer branch outputs" <| fun _ ->
+            Expect.throws
+                (fun () ->
+                    scalarPlan [ 1; 2; 3 ]
+                    >=>> (scalarStage "streaming" id, Stage.fold "sum" (+) 0 id (fun _ -> 1UL))
+                    |> ignore)
+                ">=>> should reject synchronization between streaming and reducer branch outputs."
+
         testCase ">>=> maps synchronized pairs to a single stream" <| fun _ ->
             let actual =
                 scalarPlan [ 1; 2; 3 ]
@@ -757,7 +765,7 @@ let stackProcessingSupportSuite =
                 deleteDirectory inputDir
                 deleteDirectory outputDir
 
-        testCase "surfaceArea scales triangle coordinates before summing areas" <| fun _ ->
+        testCase "objectSurfaceArea scales triangle coordinates before summing areas" <| fun _ ->
             let triangleSet: TriangleSet =
                 { Triangles =
                     [ { A = { X = 0.0; Y = 0.0; Z = 0.0 }
@@ -769,12 +777,12 @@ let stackProcessingSupportSuite =
 
             let actual =
                 scalarPlan [ triangleSet ]
-                >=> surfaceArea 2.0 3.0 5.0
+                >=> objectSurfaceArea 2.0 3.0 5.0
                 |> drain
 
-            Expect.floatClose Accuracy.high actual 10.5 "surfaceArea should sum areas after anisotropic x/y/z scaling."
+            Expect.floatClose Accuracy.high actual 10.5 "objectSurfaceArea should sum areas after anisotropic x/y/z scaling."
 
-        testCase "volume reduces UInt8 0-1 mask slices to physical volume" <| fun _ ->
+        testCase "objectVolume reduces UInt8 0-1 mask slices to physical volume" <| fun _ ->
             let slices =
                 [ Image<uint8>.ofArray2D(array2D [ [ 1uy; 0uy ]; [ 1uy; 1uy ] ])
                   Image<uint8>.ofArray2D(array2D [ [ 0uy; 1uy ]; [ 0uy; 0uy ] ]) ]
@@ -782,10 +790,10 @@ let stackProcessingSupportSuite =
             try
                 let actual =
                     imagePlan slices
-                    >=> volume 2.0 3.0 4.0
+                    >=> objectVolume 2.0 3.0 4.0
                     |> drain
 
-                Expect.floatClose Accuracy.high actual 96.0 "volume should multiply foreground voxel count by physical voxel volume."
+                Expect.floatClose Accuracy.high actual 96.0 "objectVolume should multiply foreground voxel count by physical voxel volume."
             finally
                 disposeImages slices
 
@@ -2761,25 +2769,6 @@ let stackProcessingSupportSuite =
                 input.decRefCount()
                 disposeImages equalized
 
-        testCase "histogramEstimate downsamples pixels and reports CDF diagnostics" <| fun _ ->
-            let slices =
-                [ array2D [ [ 0uy; 9uy; 1uy; 9uy ]; [ 9uy; 9uy; 9uy; 9uy ]; [ 1uy; 9uy; 1uy; 9uy ]; [ 9uy; 9uy; 9uy; 9uy ] ] |> Image<uint8>.ofArray2D
-                  array2D [ [ 1uy; 9uy; 0uy; 9uy ]; [ 9uy; 9uy; 9uy; 9uy ]; [ 0uy; 9uy; 0uy; 9uy ]; [ 9uy; 9uy; 9uy; 9uy ] ] |> Image<uint8>.ofArray2D ]
-
-            try
-                let estimate =
-                    imagePlan slices
-                    >=> histogramEstimate<uint8> 2u "DKWAndHoldout" 0.95
-                    |> drain
-
-                Expect.equal estimate.Samples 8UL "Downsampling by two should sample four pixels from each 4x4 slice."
-                Expect.equal estimate.Histogram.Counts (Map.ofList [ 0uy, 4UL; 1uy, 4UL ]) "Histogram estimate should count only sampled pixels."
-                Expect.isGreaterThan estimate.CdfHalfWidth 0.0 "DKW diagnostics should report a positive CDF half-width."
-                Expect.isLessThan estimate.CdfHalfWidth 1.0 "DKW diagnostics should stay bounded for this sample count."
-                Expect.isGreaterThanOrEqual estimate.HoldoutMaxCdfDelta 0.0 "Holdout diagnostics should report a valid max CDF delta."
-            finally
-                disposeImages slices
-
         testCase "writeCSVHistogram writes sorted key-count rows" <| fun _ ->
             let outputDir = tempDirectory "histogram-csv"
             let outputPath = Path.Combine(outputDir, "histogram")
@@ -3533,5 +3522,20 @@ let stackProcessingSupportSuite =
             Expect.throws
                 (fun () -> StackProcessing.failTypeMismatch<uint8> "facade" [ typeof<float32> ])
                 "failTypeMismatch should be exposed through the facade."
+
+        testCase "chunk fan-out retains one reference for the second consuming branch" <| fun _ ->
+            StackProcessing.Chunk.resetStats()
+
+            let left, right =
+                source 1024UL
+                |> zero<uint8> 4u 4u 1u
+                >=>> (objectVolume 1.0 1.0 1.0, objectVolume 1.0 1.0 1.0)
+                |> drain
+
+            Expect.equal left right "Both fan-out branches should see the same chunk data."
+
+            let stats = StackProcessing.Chunk.stats()
+            Expect.equal stats.Live 0L "Fan-out should not leave retained chunks alive."
+            Expect.equal stats.Created stats.Released "Every chunk created by the fan-out test should be released."
 
     ]

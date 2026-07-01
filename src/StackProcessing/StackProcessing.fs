@@ -19,6 +19,7 @@ type SpectralLayout = StackCore.SpectralLayout
 type SpectralChunk = StackCore.SpectralChunk
 type HistogramBinning = StackCore.HistogramBinning
 type Histogram<'T when 'T: comparison> = StackCore.Histogram<'T>
+type HistogramEstimate<'T when 'T: comparison> = ChunkFunctions.HistogramEstimate<'T>
 type ImageStats = StackCore.ImageStats
 type Point2D = StackCore.Point2D
 type Polygon2D = StackCore.Polygon2D
@@ -69,6 +70,8 @@ let showChart = StackCharts.showChart
 let showChartWithLabels = StackCharts.showChartWithLabels
 let showChartXY = StackCharts.showChartXY
 let showChartXYWithLabels = StackCharts.showChartXYWithLabels
+let showHistogram = StackCharts.showHistogram
+let showHistogramWithLabels = StackCharts.showHistogramWithLabels
 let showChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackCharts.showChunk<'T>
 let showChunkWithLabels<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> colorMap title xAxis yAxis chunk =
     StackCharts.showChunkWithLabels<'T> colorMap title xAxis yAxis chunk
@@ -311,12 +314,15 @@ let imageHistogramLeftEdges<'T when 'T: equality and 'T: (new: unit -> 'T) and '
     ChunkFunctions.histogramLeftEdgesReducer<'T> leftEdges
 let imageHistogramFixedBins<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> firstLeftEdge lastLeftEdge bins =
     ChunkFunctions.histogramFixedBinsReducer<'T> firstLeftEdge lastLeftEdge bins
+let histogramEstimate<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> maxSlices input suffix method confidence targetError =
+    StackIO.histogramEstimate<'T> maxSlices input suffix method confidence targetError
+let histogramEstimateMap = ChunkFunctions.histogramEstimateMap
 let histogramEqualization<'T, 'H when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (histogram: 'H) =
     ChunkFunctions.histogramEqualization<'T> (box histogram)
 let quantiles quantileValues histogram =
     ChunkFunctions.quantiles quantileValues (box histogram)
 let computeStats<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> () = ChunkFunctions.computeStats<'T> ()
-let volume = ChunkFunctions.volume
+let objectVolume = ChunkFunctions.objectVolume
 let sumProjection<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> projectionKind =
     ChunkFunctions.chunkSumProjection<'T> projectionKind
 
@@ -399,6 +405,18 @@ let plot (plt: float list -> float list -> unit) : Stage<(float * float) list, u
         let x, y = points |> List.unzip
         plt x y
     SlimPipeline.Stage.consumeWith "plot" consumer (fun _ -> 0UL)
+
+let plotHistogramWithLabels title xAxis yAxis : Stage<Histogram<'T>, unit> =
+    SlimPipeline.Stage.consumeWith
+        "plotHistogramWithLabels"
+        (fun _debug _index histogram -> showHistogramWithLabels title xAxis yAxis histogram)
+        (fun _ -> 0UL)
+
+let plotHistogram () : Stage<Histogram<'T>, unit> =
+    SlimPipeline.Stage.consumeWith
+        "plotHistogram"
+        (fun _debug _index histogram -> showHistogram histogram)
+        (fun _ -> 0UL)
 
 let otsuThresholdFromHistogram (histogram: Histogram<'T>) : float =
     let ordered =
@@ -663,9 +681,13 @@ let hessianUpper sigma radius =
     ChunkFunctions.hessianUpperNativeParallelCollect sigma radius stackProcessingWorkers
 let hessianUpperXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ =
     ChunkFunctions.hessianUpperNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ stackProcessingWorkers
-let laplacian sigma radius =
+let laplacian sigma windowSize =
+    let radius = windowSize |> gaussianWindowSizeOrDefault sigma |> radiusFromOddWindowSize "windowSize"
     ChunkFunctions.laplacianNativeParallelCollect sigma radius stackProcessingWorkers
-let laplacianXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ =
+let laplacianXYZ sigmaX windowSizeX sigmaY windowSizeY sigmaZ windowSizeZ =
+    let radiusX = windowSizeX |> gaussianWindowSizeOrDefault sigmaX |> radiusFromOddWindowSize "windowSizeX"
+    let radiusY = windowSizeY |> gaussianWindowSizeOrDefault sigmaY |> radiusFromOddWindowSize "windowSizeY"
+    let radiusZ = windowSizeZ |> gaussianWindowSizeOrDefault sigmaZ |> radiusFromOddWindowSize "windowSizeZ"
     ChunkFunctions.laplacianNativeParallelCollectXYZ sigmaX radiusX sigmaY radiusY sigmaZ radiusZ stackProcessingWorkers
 let sobelMagnitude () =
     ChunkFunctions.sobelMagnitudeNativeParallelCollect stackProcessingWorkers
@@ -727,7 +749,7 @@ type Triangle = StackMesh.Triangle
 type TriangleSet = StackMesh.TriangleSet
 let marchingCubes<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> surfaceValue =
     StackMesh.marchingCubesChunk<'T> surfaceValue
-let surfaceArea = StackMesh.surfaceArea
+let objectSurfaceArea = StackMesh.objectSurfaceArea
 let writeMesh = StackMesh.writeMesh
 let meshFilePath = StackMesh.meshFilePath
 

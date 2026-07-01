@@ -13,15 +13,15 @@
         { "key": "type", "value": "UInt8", "useInput": false },
         { "key": "lower", "value": "1", "useInput": false },
         { "key": "upper", "value": "255", "useInput": false } ] },
-    { "id": "volume", "functionId": "Volume", "x": 520.0, "y": 120.0,
+    { "id": "volume", "functionId": "ObjectVolume", "x": 520.0, "y": 120.0,
       "parameters": [
         { "key": "xUnit", "value": "1.0", "useInput": false },
         { "key": "yUnit", "value": "1.0", "useInput": false },
         { "key": "zUnit", "value": "1.0", "useInput": false } ] },
     { "id": "print", "functionId": "Print", "x": 740.0, "y": 120.0,
       "parameters": [
-        { "key": "format", "value": "Foreground volume: {Volume}", "useInput": false },
-        { "key": "input1", "value": "Volume", "useInput": true } ] }
+        { "key": "format", "value": "Foreground volume: {ObjectVolume}", "useInput": false },
+        { "key": "input1", "value": "ObjectVolume", "useInput": true } ] }
   ],
   "edges": [
     { "fromNode": "read", "fromKind": "dataOutput", "fromPort": 0, "toNode": "mask", "toKind": "dataInput", "toPort": 0 },

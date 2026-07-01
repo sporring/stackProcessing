@@ -193,6 +193,8 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "paintObjects", "samples\pai
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "addNormalNoise", "samples\addNormalNoise\addNormalNoise.fsproj", "{CC7592C3-EB4C-4092-99B2-14F86740E5CA}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "histogramEstimate", "samples\histogramEstimate\histogramEstimate.fsproj", "{807389F6-4E1E-44BD-898B-9908C8716102}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -1283,6 +1285,18 @@ Global
 		{CC7592C3-EB4C-4092-99B2-14F86740E5CA}.Release|x64.Build.0 = Release|Any CPU
 		{CC7592C3-EB4C-4092-99B2-14F86740E5CA}.Release|x86.ActiveCfg = Release|Any CPU
 		{CC7592C3-EB4C-4092-99B2-14F86740E5CA}.Release|x86.Build.0 = Release|Any CPU
+		{807389F6-4E1E-44BD-898B-9908C8716102}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{807389F6-4E1E-44BD-898B-9908C8716102}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{807389F6-4E1E-44BD-898B-9908C8716102}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{807389F6-4E1E-44BD-898B-9908C8716102}.Debug|x64.Build.0 = Debug|Any CPU
+		{807389F6-4E1E-44BD-898B-9908C8716102}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{807389F6-4E1E-44BD-898B-9908C8716102}.Debug|x86.Build.0 = Debug|Any CPU
+		{807389F6-4E1E-44BD-898B-9908C8716102}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{807389F6-4E1E-44BD-898B-9908C8716102}.Release|Any CPU.Build.0 = Release|Any CPU
+		{807389F6-4E1E-44BD-898B-9908C8716102}.Release|x64.ActiveCfg = Release|Any CPU
+		{807389F6-4E1E-44BD-898B-9908C8716102}.Release|x64.Build.0 = Release|Any CPU
+		{807389F6-4E1E-44BD-898B-9908C8716102}.Release|x86.ActiveCfg = Release|Any CPU
+		{807389F6-4E1E-44BD-898B-9908C8716102}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -1380,5 +1394,6 @@ Global
 		{418C494F-486A-4F80-BF1B-F5FEA090EE19} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 		{F850F3EA-DE0B-4271-96A0-A3FA554B9BA5} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 		{CC7592C3-EB4C-4092-99B2-14F86740E5CA} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
+		{807389F6-4E1E-44BD-898B-9908C8716102} = {5D20AA90-6969-D8BD-9DCD-8634F4692FDA}
 	EndGlobalSection
 EndGlobal

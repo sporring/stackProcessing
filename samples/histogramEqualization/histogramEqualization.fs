@@ -12,16 +12,21 @@ let main args =
         | [| input |] -> input, "../tmp/histogramEqualization"
         | _ -> "../data/volume", "../tmp/histogramEqualization"
 
+    // Estiamte a dense histogram
     let histogram =
         src
-        |> readRandom<uint8> 8u input ".tiff"
+        |> readRandom<uint8> 16u input ".tiff"
         >=> imageHistogramDense ()
         |> drain
+    // plot the histogram before equalization
+    showHistogramWithLabels "Before equalization" "gray values" "count" histogram
 
+    // Equalize the stack using the estimated histogram and plot the histogram after equalization
     src
     |> read<uint8> input ".tiff"
     >=> histogramEqualization histogram
-    >=> write output ".tiff"
+    >=> imageHistogram ()
+    >=> plotHistogramWithLabels "Histogram" "gray values" "count"
     |> sink
 
     0

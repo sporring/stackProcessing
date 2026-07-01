@@ -164,8 +164,7 @@ let private sobelEdge<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: str
     cast<'T, float32> --> StackProcessing.sobelMagnitude ()
 
 let private laplacian<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> windowSize =
-    let radius = windowSize |> Option.map (fun w -> int ((w - 1u) / 2u)) |> Option.defaultValue 3
-    cast<'T, float32> --> StackProcessing.laplacian 1.0 radius
+    cast<'T, float32> --> StackProcessing.laplacian 1.0 windowSize
 
 let private sqrt<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> =
     if typeof<'T> = typeof<float32> then

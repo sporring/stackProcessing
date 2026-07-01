@@ -191,6 +191,130 @@ let chunkResourceOps<'T when 'T: equality> : ResourceOps<Chunk<'T>> =
       Release = Chunk.decRef
       MemoryOf = fun chunk -> Some(uint64 chunk.ByteLength) }
 
+let private unsupportedFanoutResource value =
+    let typeName =
+        if isNull value then
+            "<null>"
+        else
+            value.GetType().FullName
+
+    invalidOp $"StackProcessing fan-out does not know how to retain/release resource value of type {typeName}."
+
+let private chunkResourceOpsBoxed<'S> : ResourceOps<'S> =
+    let retain (value: 'S) =
+        match box value with
+        | :? Chunk<bool> as chunk -> Chunk.incRef chunk |> ignore
+        | :? Chunk<byte> as chunk -> Chunk.incRef chunk |> ignore
+        | :? Chunk<sbyte> as chunk -> Chunk.incRef chunk |> ignore
+        | :? Chunk<uint16> as chunk -> Chunk.incRef chunk |> ignore
+        | :? Chunk<int16> as chunk -> Chunk.incRef chunk |> ignore
+        | :? Chunk<uint32> as chunk -> Chunk.incRef chunk |> ignore
+        | :? Chunk<int32> as chunk -> Chunk.incRef chunk |> ignore
+        | :? Chunk<uint64> as chunk -> Chunk.incRef chunk |> ignore
+        | :? Chunk<int64> as chunk -> Chunk.incRef chunk |> ignore
+        | :? Chunk<float32> as chunk -> Chunk.incRef chunk |> ignore
+        | :? Chunk<float> as chunk -> Chunk.incRef chunk |> ignore
+        | value -> unsupportedFanoutResource value
+
+    let release (value: 'S) =
+        match box value with
+        | :? Chunk<bool> as chunk -> Chunk.decRef chunk
+        | :? Chunk<byte> as chunk -> Chunk.decRef chunk
+        | :? Chunk<sbyte> as chunk -> Chunk.decRef chunk
+        | :? Chunk<uint16> as chunk -> Chunk.decRef chunk
+        | :? Chunk<int16> as chunk -> Chunk.decRef chunk
+        | :? Chunk<uint32> as chunk -> Chunk.decRef chunk
+        | :? Chunk<int32> as chunk -> Chunk.decRef chunk
+        | :? Chunk<uint64> as chunk -> Chunk.decRef chunk
+        | :? Chunk<int64> as chunk -> Chunk.decRef chunk
+        | :? Chunk<float32> as chunk -> Chunk.decRef chunk
+        | :? Chunk<float> as chunk -> Chunk.decRef chunk
+        | value -> unsupportedFanoutResource value
+
+    let memoryOf (value: 'S) =
+        match box value with
+        | :? Chunk<bool> as chunk -> Some(uint64 chunk.ByteLength)
+        | :? Chunk<byte> as chunk -> Some(uint64 chunk.ByteLength)
+        | :? Chunk<sbyte> as chunk -> Some(uint64 chunk.ByteLength)
+        | :? Chunk<uint16> as chunk -> Some(uint64 chunk.ByteLength)
+        | :? Chunk<int16> as chunk -> Some(uint64 chunk.ByteLength)
+        | :? Chunk<uint32> as chunk -> Some(uint64 chunk.ByteLength)
+        | :? Chunk<int32> as chunk -> Some(uint64 chunk.ByteLength)
+        | :? Chunk<uint64> as chunk -> Some(uint64 chunk.ByteLength)
+        | :? Chunk<int64> as chunk -> Some(uint64 chunk.ByteLength)
+        | :? Chunk<float32> as chunk -> Some(uint64 chunk.ByteLength)
+        | :? Chunk<float> as chunk -> Some(uint64 chunk.ByteLength)
+        | value -> unsupportedFanoutResource value
+
+    { Retain = retain
+      Release = release
+      MemoryOf = memoryOf }
+
+let private vectorChunkResourceOpsBoxed<'S> : ResourceOps<'S> =
+    let retain (value: 'S) =
+        match box value with
+        | :? VectorChunk<bool> as vector -> Chunk.incRefVector vector |> ignore
+        | :? VectorChunk<byte> as vector -> Chunk.incRefVector vector |> ignore
+        | :? VectorChunk<sbyte> as vector -> Chunk.incRefVector vector |> ignore
+        | :? VectorChunk<uint16> as vector -> Chunk.incRefVector vector |> ignore
+        | :? VectorChunk<int16> as vector -> Chunk.incRefVector vector |> ignore
+        | :? VectorChunk<uint32> as vector -> Chunk.incRefVector vector |> ignore
+        | :? VectorChunk<int32> as vector -> Chunk.incRefVector vector |> ignore
+        | :? VectorChunk<uint64> as vector -> Chunk.incRefVector vector |> ignore
+        | :? VectorChunk<int64> as vector -> Chunk.incRefVector vector |> ignore
+        | :? VectorChunk<float32> as vector -> Chunk.incRefVector vector |> ignore
+        | :? VectorChunk<float> as vector -> Chunk.incRefVector vector |> ignore
+        | value -> unsupportedFanoutResource value
+
+    let release (value: 'S) =
+        match box value with
+        | :? VectorChunk<bool> as vector -> Chunk.decRefVector vector
+        | :? VectorChunk<byte> as vector -> Chunk.decRefVector vector
+        | :? VectorChunk<sbyte> as vector -> Chunk.decRefVector vector
+        | :? VectorChunk<uint16> as vector -> Chunk.decRefVector vector
+        | :? VectorChunk<int16> as vector -> Chunk.decRefVector vector
+        | :? VectorChunk<uint32> as vector -> Chunk.decRefVector vector
+        | :? VectorChunk<int32> as vector -> Chunk.decRefVector vector
+        | :? VectorChunk<uint64> as vector -> Chunk.decRefVector vector
+        | :? VectorChunk<int64> as vector -> Chunk.decRefVector vector
+        | :? VectorChunk<float32> as vector -> Chunk.decRefVector vector
+        | :? VectorChunk<float> as vector -> Chunk.decRefVector vector
+        | value -> unsupportedFanoutResource value
+
+    let memoryOf (value: 'S) =
+        match box value with
+        | :? VectorChunk<bool> as vector -> Some(vector.Components |> Array.sumBy (fun chunk -> uint64 chunk.ByteLength))
+        | :? VectorChunk<byte> as vector -> Some(vector.Components |> Array.sumBy (fun chunk -> uint64 chunk.ByteLength))
+        | :? VectorChunk<sbyte> as vector -> Some(vector.Components |> Array.sumBy (fun chunk -> uint64 chunk.ByteLength))
+        | :? VectorChunk<uint16> as vector -> Some(vector.Components |> Array.sumBy (fun chunk -> uint64 chunk.ByteLength))
+        | :? VectorChunk<int16> as vector -> Some(vector.Components |> Array.sumBy (fun chunk -> uint64 chunk.ByteLength))
+        | :? VectorChunk<uint32> as vector -> Some(vector.Components |> Array.sumBy (fun chunk -> uint64 chunk.ByteLength))
+        | :? VectorChunk<int32> as vector -> Some(vector.Components |> Array.sumBy (fun chunk -> uint64 chunk.ByteLength))
+        | :? VectorChunk<uint64> as vector -> Some(vector.Components |> Array.sumBy (fun chunk -> uint64 chunk.ByteLength))
+        | :? VectorChunk<int64> as vector -> Some(vector.Components |> Array.sumBy (fun chunk -> uint64 chunk.ByteLength))
+        | :? VectorChunk<float32> as vector -> Some(vector.Components |> Array.sumBy (fun chunk -> uint64 chunk.ByteLength))
+        | :? VectorChunk<float> as vector -> Some(vector.Components |> Array.sumBy (fun chunk -> uint64 chunk.ByteLength))
+        | value -> unsupportedFanoutResource value
+
+    { Retain = retain
+      Release = release
+      MemoryOf = memoryOf }
+
+let private fanoutResourceOps<'S> () : ResourceOps<'S> option =
+    let valueType = typeof<'S>
+
+    if valueType.IsGenericType then
+        let genericType = valueType.GetGenericTypeDefinition()
+
+        if genericType = typedefof<Chunk<_>> then
+            Some chunkResourceOpsBoxed<'S>
+        elif genericType = typedefof<VectorChunk<_>> then
+            Some vectorChunkResourceOpsBoxed<'S>
+        else
+            None
+    else
+        None
+
 let fork (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Stage<'S, 'U * 'V> =
     Stage.fork (stage1, stage2)
 
@@ -202,7 +326,9 @@ let (-->>) (stage: Stage<'S, 'T>) (stage1: Stage<'T, 'U>, stage2: Stage<'T, 'V>)
     stage --> fork (stage1, stage2)
 
 let (>=>>) (pl: Plan<'In, 'S>) (stage1: Stage<'S, 'U>, stage2: Stage<'S, 'V>) : Plan<'In, 'U * 'V> =
-    Plan.(>=>>) pl (stage1, stage2)
+    match fanoutResourceOps<'S>() with
+    | Some ops -> Plan.(>=>>) (pl >=> Stage.retainWith "fanout.retain" ops) (stage1, stage2)
+    | None -> Plan.(>=>>) pl (stage1, stage2)
 
 let ignoreSingles () : Stage<_,unit> = Stage.ignore ignore
 let ignorePairs () : Stage<_,unit> = Stage.ignorePairs (ignore, ignore)

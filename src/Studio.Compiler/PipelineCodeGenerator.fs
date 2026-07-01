@@ -440,8 +440,8 @@ module PipelineCodeGenerator =
         |> Array.tryItem portIndex
 
     let private isSingleValueReducerNode (node: SavedNode) =
-        node.FunctionId = "SurfaceArea"
-        || node.FunctionId = "Volume"
+        node.FunctionId = "ObjectSurfaceArea"
+        || node.FunctionId = "ObjectVolume"
         || node.FunctionId = "PointPairDistances"
         || node.FunctionId = "FitBiasModel"
         || node.FunctionId = "FitBiasModelMasked"
@@ -1434,7 +1434,7 @@ module PipelineCodeGenerator =
             let title = quotedParameter "title"
             let xAxis = quotedParameter "xAxis"
             let yAxis = quotedParameter "yAxis"
-            $"{histogramStage} >=> histogram2pairs --> pairs2floats --> plot (showChartXYWithLabels \"Column\" {title} {xAxis} {yAxis})"
+            $"{histogramStage} >=> plotHistogramWithLabels {title} {xAxis} {yAxis}"
         | "ImHistogramData" ->
             histogramStageExpression ()
         | "Histogram" ->
@@ -1623,7 +1623,8 @@ module PipelineCodeGenerator =
             $">=> sobelMagnitude ()"
         | "Laplacian" ->
             let sigma = "1.0"
-            $">=> laplacian {sigma} 3"
+            let windowSize = parameterValue "windowSize" |> optionUInt
+            $">=> laplacian {sigma} {windowSize}"
         | "GrayscaleErode" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let radius = parameterValue "radius"
@@ -1708,16 +1709,16 @@ module PipelineCodeGenerator =
             $">=> changeLabel<{pixelType}> {fromLabel} {toLabel}"
         | "ComputeStats" ->
             $">=> computeStats ()"
-        | "SurfaceArea" ->
+        | "ObjectSurfaceArea" ->
             let xUnit = parameterValue "xUnit"
             let yUnit = parameterValue "yUnit"
             let zUnit = parameterValue "zUnit"
-            $">=> surfaceArea {xUnit} {yUnit} {zUnit}"
-        | "Volume" ->
+            $">=> objectSurfaceArea {xUnit} {yUnit} {zUnit}"
+        | "ObjectVolume" ->
             let xUnit = parameterValue "xUnit"
             let yUnit = parameterValue "yUnit"
             let zUnit = parameterValue "zUnit"
-            $">=> volume {xUnit} {yUnit} {zUnit}"
+            $">=> objectVolume {xUnit} {yUnit} {zUnit}"
         | "FitBiasModel" ->
             let pixelType = pixelTypeNameFromParameter "type" "Float32" node
             let order = parameterValue "order"
@@ -2447,8 +2448,8 @@ module PipelineCodeGenerator =
                     match node.FunctionId with
                     | "ComputeStats" ->
                         $"{expression}{newLine}|> drain"
-                    | "SurfaceArea"
-                    | "Volume"
+                    | "ObjectSurfaceArea"
+                    | "ObjectVolume"
                     | "PointPairDistances"
                     | "FitBiasModel"
                     | "FitBiasModelMasked"

@@ -3797,21 +3797,26 @@ module ChunkFunctions =
     let private totalCounts (counts: uint64[]) =
         counts |> Array.fold (fun acc count -> acc + count) 0UL
 
-    let private denseEqualizationLut dense =
+    type private ExactEqualizationModel<'T when 'T: comparison> =
+        ('T * uint64)[] * Dictionary<'T, int> * uint64[] * uint64[] * float[] * float[] * float * float
+
+    let private denseEqualizationModel dense =
         let counts, outputMinimum, outputMaximum = denseDomain dense
         let total = totalCounts counts
         if total = 0UL then
             invalidArg "histogram" "Histogram equalization needs at least one counted pixel."
 
         let scale = (outputMaximum - outputMinimum) / float total
-        let lut = Array.zeroCreate<float> counts.Length
+        let cdfBefore = Array.zeroCreate<uint64> counts.Length
+        let cdfEnd = Array.zeroCreate<float> counts.Length
         let mutable cumulative = 0UL
         for i in 0 .. counts.Length - 1 do
+            cdfBefore[i] <- cumulative
             cumulative <- cumulative + counts[i]
-            lut[i] <- outputMinimum + float cumulative * scale
-        lut
+            cdfEnd[i] <- outputMinimum + float cumulative * scale
+        counts, cdfBefore, cdfEnd, Array.zeroCreate<uint64> counts.Length, outputMinimum, scale
 
-    let private exactEqualizationLut<'T when 'T: comparison> (counts: Map<'T, uint64>) =
+    let private exactEqualizationModel<'T when 'T: comparison> (counts: Map<'T, uint64>) : ExactEqualizationModel<'T> =
         if counts.IsEmpty then
             invalidArg "histogram" "Histogram equalization needs at least one counted pixel."
 
@@ -3828,14 +3833,21 @@ module ChunkFunctions =
             else
                 (maximum - minimum) / float total
 
-        let lut = Dictionary<'T, float>()
+        let indexByValue = Dictionary<'T, int>()
+        let cdfBefore = Array.zeroCreate<uint64> ordered.Length
+        let keys = Array.zeroCreate<float> ordered.Length
+        let representativeValues = Array.zeroCreate<float> ordered.Length
         let mutable cumulative = 0UL
-        for value, count in ordered do
+        for index in 0 .. ordered.Length - 1 do
+            let value, count = ordered[index]
+            keys[index] <- Convert.ToDouble(value)
+            cdfBefore[index] <- cumulative
             cumulative <- cumulative + count
-            lut[value] <- minimum + float cumulative * scale
-        lut
+            representativeValues[index] <- minimum + (float cdfBefore[index] + 0.5 * float count) * scale
+            indexByValue[value] <- index
+        ordered, indexByValue, cdfBefore, Array.zeroCreate<uint64> ordered.Length, keys, representativeValues, minimum, scale
 
-    let private leftEdgeEqualizationLut (histogram: LeftEdgeHistogram) =
+    let private leftEdgeEqualizationModel (histogram: LeftEdgeHistogram) =
         let edges = validateLeftEdges histogram.LeftEdges
         if histogram.Counts.Length <> edges.Length then
             invalidArg "histogram" $"Left-edge histogram has {edges.Length} edges but {histogram.Counts.Length} counts."
@@ -3850,42 +3862,71 @@ module ChunkFunctions =
                 0.0
             else
                 (outputMaximum - outputMinimum) / float total
-        let lut = Array.zeroCreate<float> edges.Length
+        let cdfBefore = Array.zeroCreate<uint64> edges.Length
+        let cdfEnd = Array.zeroCreate<float> edges.Length
         let mutable cumulative = 0UL
         for i in 0 .. edges.Length - 1 do
+            cdfBefore[i] <- cumulative
             cumulative <- cumulative + histogram.Counts[i]
-            lut[i] <- outputMinimum + float cumulative * scale
-        edges, lut
+            cdfEnd[i] <- outputMinimum + float cumulative * scale
+        edges, histogram.Counts, cdfBefore, cdfEnd, Array.zeroCreate<uint64> edges.Length, outputMinimum, scale
 
-    let inline private equalizeDenseUInt8 (lut: float[]) (inputPixels: Span<uint8>) (outputPixels: Span<uint8>) =
+    let inline private equalizedSubIntensity
+        (counts: uint64[])
+        (cdfBefore: uint64[])
+        (cdfEnd: float[])
+        (seen: uint64[])
+        outputMinimum
+        scale
+        bin
+        =
+        let count = counts[bin]
+        if count = 0UL then
+            cdfEnd[bin]
+        else
+            let rank = seen[bin]
+            seen[bin] <- rank + 1UL
+            let subRank = float (rank % count) + 0.5
+            outputMinimum + (float cdfBefore[bin] + subRank) * scale
+
+    let inline private equalizeDenseUInt8 model (inputPixels: Span<uint8>) (outputPixels: Span<uint8>) =
+        let counts, cdfBefore, cdfEnd, seen, outputMinimum, scale = model
         let mutable i = 0
         while i < inputPixels.Length do
-            outputPixels[i] <- clampRoundToByte (float32 lut[int inputPixels[i]])
+            outputPixels[i] <- clampRoundToByte (float32 (equalizedSubIntensity counts cdfBefore cdfEnd seen outputMinimum scale (int inputPixels[i])))
             i <- i + 1
 
-    let inline private equalizeDenseInt8 (lut: float[]) (inputPixels: Span<int8>) (outputPixels: Span<int8>) =
+    let inline private equalizeDenseInt8 model (inputPixels: Span<int8>) (outputPixels: Span<int8>) =
+        let counts, cdfBefore, cdfEnd, seen, outputMinimum, scale = model
         let offset = -int SByte.MinValue
         let mutable i = 0
         while i < inputPixels.Length do
-            outputPixels[i] <- clampRoundToSByte (float32 lut[int inputPixels[i] + offset])
+            outputPixels[i] <- clampRoundToSByte (float32 (equalizedSubIntensity counts cdfBefore cdfEnd seen outputMinimum scale (int inputPixels[i] + offset)))
             i <- i + 1
 
-    let inline private equalizeDenseUInt16 (lut: float[]) (inputPixels: Span<uint16>) (outputPixels: Span<uint16>) =
+    let inline private equalizeDenseUInt16 model (inputPixels: Span<uint16>) (outputPixels: Span<uint16>) =
+        let counts, cdfBefore, cdfEnd, seen, outputMinimum, scale = model
         let mutable i = 0
         while i < inputPixels.Length do
-            outputPixels[i] <- clampRoundToUInt16 (float32 lut[int inputPixels[i]])
+            outputPixels[i] <- clampRoundToUInt16 (float32 (equalizedSubIntensity counts cdfBefore cdfEnd seen outputMinimum scale (int inputPixels[i])))
             i <- i + 1
 
-    let inline private equalizeDenseInt16 (lut: float[]) (inputPixels: Span<int16>) (outputPixels: Span<int16>) =
+    let inline private equalizeDenseInt16 model (inputPixels: Span<int16>) (outputPixels: Span<int16>) =
+        let counts, cdfBefore, cdfEnd, seen, outputMinimum, scale = model
         let offset = -int Int16.MinValue
         let mutable i = 0
         while i < inputPixels.Length do
-            outputPixels[i] <- clampRoundToInt16 (float32 lut[int inputPixels[i] + offset])
+            outputPixels[i] <- clampRoundToInt16 (float32 (equalizedSubIntensity counts cdfBefore cdfEnd seen outputMinimum scale (int inputPixels[i] + offset)))
             i <- i + 1
 
     let inline private equalizeLeftEdgesTyped
         (edges: float[])
-        (lut: float[])
+        (counts: uint64[])
+        (cdfBefore: uint64[])
+        (cdfEnd: float[])
+        (seen: uint64[])
+        outputMinimum
+        scale
         (inputPixels: Span< ^T>)
         (outputPixels: Span< ^T>)
         (convert: float -> ^T)
@@ -3896,7 +3937,8 @@ module ChunkFunctions =
             if Double.IsNaN value || Double.IsInfinity value then
                 outputPixels[i] <- inputPixels[i]
             else
-                outputPixels[i] <- convert lut[leftEdgeBin edges value]
+                let bin = leftEdgeBin edges value
+                outputPixels[i] <- convert (equalizedSubIntensity counts cdfBefore cdfEnd seen outputMinimum scale bin)
             i <- i + 1
 
     let private convertEqualizedGeneric<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (value: float) =
@@ -3924,22 +3966,46 @@ module ChunkFunctions =
         else
             Convert.ChangeType(value, t) :?> 'T
 
-    let histogramEqualizationDense<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
-        dense
+    let private interpolateExactEqualization (keys: float[]) (representativeValues: float[]) value =
+        if keys.Length = 0 then
+            value
+        elif value <= keys[0] then
+            representativeValues[0]
+        elif value >= keys[keys.Length - 1] then
+            representativeValues[representativeValues.Length - 1]
+        else
+            let mutable lo = 0
+            let mutable hi = keys.Length - 1
+            while hi - lo > 1 do
+                let mid = lo + (hi - lo) / 2
+                if keys[mid] <= value then
+                    lo <- mid
+                else
+                    hi <- mid
+
+            let leftKey = keys[lo]
+            let rightKey = keys[hi]
+            if rightKey = leftKey then
+                representativeValues[lo]
+            else
+                let t = (value - leftKey) / (rightKey - leftKey)
+                representativeValues[lo] + t * (representativeValues[hi] - representativeValues[lo])
+
+    let private histogramEqualizationDenseWithModel<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        model
         (chunk: Chunk<'T>)
         =
-        let lut = denseEqualizationLut dense
         let output = create<'T> chunk.Size
         try
             let t = typeof<'T>
             if t = typeof<uint8> then
-                equalizeDenseUInt8 lut (MemoryMarshal.Cast<byte, uint8>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, uint8>(output.Bytes.AsSpan(0, output.ByteLength)))
+                equalizeDenseUInt8 model (MemoryMarshal.Cast<byte, uint8>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, uint8>(output.Bytes.AsSpan(0, output.ByteLength)))
             elif t = typeof<int8> then
-                equalizeDenseInt8 lut (MemoryMarshal.Cast<byte, int8>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, int8>(output.Bytes.AsSpan(0, output.ByteLength)))
+                equalizeDenseInt8 model (MemoryMarshal.Cast<byte, int8>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, int8>(output.Bytes.AsSpan(0, output.ByteLength)))
             elif t = typeof<uint16> then
-                equalizeDenseUInt16 lut (MemoryMarshal.Cast<byte, uint16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, uint16>(output.Bytes.AsSpan(0, output.ByteLength)))
+                equalizeDenseUInt16 model (MemoryMarshal.Cast<byte, uint16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, uint16>(output.Bytes.AsSpan(0, output.ByteLength)))
             elif t = typeof<int16> then
-                equalizeDenseInt16 lut (MemoryMarshal.Cast<byte, int16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, int16>(output.Bytes.AsSpan(0, output.ByteLength)))
+                equalizeDenseInt16 model (MemoryMarshal.Cast<byte, int16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, int16>(output.Bytes.AsSpan(0, output.ByteLength)))
             else
                 invalidArg "T" $"Dense histogram equalization supports UInt8, Int8, UInt16, and Int16 chunks, got {t.Name}."
             output
@@ -3948,53 +4014,89 @@ module ChunkFunctions =
             decRef output
             reraise()
 
-    let histogramEqualizationSparse<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
-        counts
+    let histogramEqualizationDenseMapper<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        dense
+        =
+        let model = denseEqualizationModel dense
+        histogramEqualizationDenseWithModel<'T> model
+
+    let histogramEqualizationDense<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        dense
+        =
+        histogramEqualizationDenseMapper<'T> dense
+
+    let private histogramEqualizationSparseWithModel<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        (model: ExactEqualizationModel<'T>)
         (chunk: Chunk<'T>)
         =
-        let lut = exactEqualizationLut counts
+        let ordered, indexByValue, cdfBefore, seen, keys, representativeValues, outputMinimum, scale = model
         let output = create<'T> chunk.Size
         try
             let inputPixels = span<'T> chunk
             let outputPixels = span<'T> output
             for i in 0 .. inputPixels.Length - 1 do
-                match lut.TryGetValue inputPixels[i] with
-                | true, value -> outputPixels[i] <- convertEqualizedGeneric<'T> value
-                | false, _ -> outputPixels[i] <- inputPixels[i]
+                match indexByValue.TryGetValue inputPixels[i] with
+                | true, index ->
+                    let _, count = ordered[index]
+                    let value =
+                        if count = 0UL then
+                            outputMinimum + float cdfBefore[index] * scale
+                        else
+                            let rank = seen[index]
+                            seen[index] <- rank + 1UL
+                            outputMinimum + (float cdfBefore[index] + float (rank % count) + 0.5) * scale
+                    outputPixels[i] <- convertEqualizedGeneric<'T> value
+                | false, _ ->
+                    let value = Convert.ToDouble(inputPixels[i])
+                    if Double.IsNaN value || Double.IsInfinity value then
+                        outputPixels[i] <- inputPixels[i]
+                    else
+                        outputPixels[i] <- convertEqualizedGeneric<'T> (interpolateExactEqualization keys representativeValues value)
             output
         with
         | _ ->
             decRef output
             reraise()
 
-    let histogramEqualizationLeftEdges<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
-        histogram
+    let histogramEqualizationSparseMapper<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        counts
+        =
+        let model = exactEqualizationModel counts
+        histogramEqualizationSparseWithModel<'T> model
+
+    let histogramEqualizationSparse<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        counts
+        =
+        histogramEqualizationSparseMapper<'T> counts
+
+    let private histogramEqualizationLeftEdgesWithModel<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        model
         (chunk: Chunk<'T>)
         =
-        let edges, lut = leftEdgeEqualizationLut histogram
+        let edges, counts, cdfBefore, cdfEnd, seen, outputMinimum, scale = model
         let output = create<'T> chunk.Size
         try
             let t = typeof<'T>
             if t = typeof<uint8> then
-                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, uint8>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, uint8>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToByte
+                equalizeLeftEdgesTyped edges counts cdfBefore cdfEnd seen outputMinimum scale (MemoryMarshal.Cast<byte, uint8>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, uint8>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToByte
             elif t = typeof<int8> then
-                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, int8>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, int8>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToSByte
+                equalizeLeftEdgesTyped edges counts cdfBefore cdfEnd seen outputMinimum scale (MemoryMarshal.Cast<byte, int8>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, int8>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToSByte
             elif t = typeof<uint16> then
-                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, uint16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, uint16>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToUInt16
+                equalizeLeftEdgesTyped edges counts cdfBefore cdfEnd seen outputMinimum scale (MemoryMarshal.Cast<byte, uint16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, uint16>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToUInt16
             elif t = typeof<int16> then
-                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, int16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, int16>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToInt16
+                equalizeLeftEdgesTyped edges counts cdfBefore cdfEnd seen outputMinimum scale (MemoryMarshal.Cast<byte, int16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, int16>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToInt16
             elif t = typeof<int32> then
-                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, int32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, int32>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToInt32
+                equalizeLeftEdgesTyped edges counts cdfBefore cdfEnd seen outputMinimum scale (MemoryMarshal.Cast<byte, int32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, int32>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToInt32
             elif t = typeof<uint32> then
-                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, uint32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, uint32>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToUInt32
+                equalizeLeftEdgesTyped edges counts cdfBefore cdfEnd seen outputMinimum scale (MemoryMarshal.Cast<byte, uint32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, uint32>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToUInt32
             elif t = typeof<int64> then
-                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, int64>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, int64>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToInt64
+                equalizeLeftEdgesTyped edges counts cdfBefore cdfEnd seen outputMinimum scale (MemoryMarshal.Cast<byte, int64>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, int64>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToInt64
             elif t = typeof<uint64> then
-                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, uint64>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, uint64>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToUInt64
+                equalizeLeftEdgesTyped edges counts cdfBefore cdfEnd seen outputMinimum scale (MemoryMarshal.Cast<byte, uint64>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, uint64>(output.Bytes.AsSpan(0, output.ByteLength))) clampRoundDoubleToUInt64
             elif t = typeof<float32> then
-                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, float32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, float32>(output.Bytes.AsSpan(0, output.ByteLength))) float32
+                equalizeLeftEdgesTyped edges counts cdfBefore cdfEnd seen outputMinimum scale (MemoryMarshal.Cast<byte, float32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, float32>(output.Bytes.AsSpan(0, output.ByteLength))) float32
             elif t = typeof<float> then
-                equalizeLeftEdgesTyped edges lut (MemoryMarshal.Cast<byte, float>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, float>(output.Bytes.AsSpan(0, output.ByteLength))) id
+                equalizeLeftEdgesTyped edges counts cdfBefore cdfEnd seen outputMinimum scale (MemoryMarshal.Cast<byte, float>(chunk.Bytes.AsSpan(0, chunk.ByteLength))) (MemoryMarshal.Cast<byte, float>(output.Bytes.AsSpan(0, output.ByteLength))) id
             else
                 invalidArg "T" $"Left-edge histogram equalization supports real numeric chunks, got {t.Name}."
             output
@@ -4002,3 +4104,14 @@ module ChunkFunctions =
         | _ ->
             decRef output
             reraise()
+
+    let histogramEqualizationLeftEdgesMapper<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        histogram
+        =
+        let model = leftEdgeEqualizationModel histogram
+        histogramEqualizationLeftEdgesWithModel<'T> model
+
+    let histogramEqualizationLeftEdges<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+        histogram
+        =
+        histogramEqualizationLeftEdgesMapper<'T> histogram

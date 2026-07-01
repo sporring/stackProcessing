@@ -1388,8 +1388,8 @@ type PipelineNodeViewModel(
         | "OtsuThresholdFromHistogram"
         | "MomentsThresholdFromHistogram" -> ScalarOutput
         | "ComputeStats"
-        | "SurfaceArea"
-        | "Volume"
+        | "ObjectSurfaceArea"
+        | "ObjectVolume"
         | "PointPairDistances"
         | "AffineRegistrationMatrix"
         | "AffineRegistrationInverseMatrix"

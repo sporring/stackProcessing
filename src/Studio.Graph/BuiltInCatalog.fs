@@ -838,8 +838,8 @@ module BuiltInCatalog =
               [ makeParameter "type" "Type" "Float64" BasicType.String
                 makeParameter "order" "Order" "2" (BasicType.Numeric Int32) ] }
 
-        { Id = "Volume"
-          DisplayName = "volume"
+        { Id = "ObjectVolume"
+          DisplayName = "objectVolume"
           Category = "Statistics"
           Summary = "Reduce a UInt8 0-1 mask stream to real-world object volume."
           Description = "Counts foreground voxels in a UInt8 mask stream where pixels must be 0 or 1, then multiplies by xUnit * yUnit * zUnit. Use the unit parameters to convert voxel counts into physical volume units."
@@ -979,12 +979,12 @@ module BuiltInCatalog =
               [ makeParameter "output" "Output" "surface" BasicType.String
                 makeParameter "format" "Format" ".obj" BasicType.String ] }
 
-        { Id = "SurfaceArea"
-          DisplayName = "surfaceArea"
+        { Id = "ObjectSurfaceArea"
+          DisplayName = "objectSurfaceArea"
           Category = "Geometry"
           Summary = "Reduce a triangle mesh stream to real-world surface area."
           Description = "Sums triangle areas from streamed triangle sets, scaling x, y, and z coordinates by the supplied unit sizes before area is computed. This lets marching-cubes surfaces be measured in physical units when voxel spacing is anisotropic."
-          Aliases = [ "area"; "surface"; "mesh"; "triangles"; "measure"; "reducer" ]
+          Aliases = [ "area"; "surface"; "mesh"; "triangles"; "object"; "measure"; "reducer" ]
           Inputs = [ makePort "Mesh" mesh ]
           Outputs = [ makePort "Area: Float64" (Scalar(BasicType.Numeric Float64)) ]
           Parameters =
