@@ -15,7 +15,7 @@ let main args =
     let area, volume =
         src
         |> read<uint8> input ".tiff"
-        >=> thresholdRange 1 255
+        >=> threshold 1.0
         >=>> (marchingCubes 127.5 --> objectSurfaceArea 1.0 1.0 1.0, objectVolume 1.0 1.0 1.0)
         |> drain
 

@@ -12,16 +12,17 @@ let main args =
         | [| input |] -> input, "../tmp/momentsThreshold"
         | _ -> "../data/rotatingBoxes", "../tmp/momentsThreshold"
 
+    // Estimate a moments threshold from sampled slices, then threshold the full stack.
     let thresholdValue =
         src
-        |> readRandom<uint8> 16u input ".tiff"
-        >=> imageHistogram ()
+        |> histogramEstimate<uint8> 16u input ".tiff" None None None
+        >=> momentsThreshold ()
         |> drain
-        |> momentsThresholdFromHistogram
 
     src
     |> read<uint8> input ".tiff"
-    >=> thresholdRange thresholdValue 255.0
+    >=> threshold thresholdValue
+    >=> intensityStretch 0.0 1.0 0.0 255.0
     >=> write output ".tiff"
     |> sink
 

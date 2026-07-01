@@ -167,7 +167,7 @@ type PipelineNodeState(definition: Function, parameters: PipelineParameterViewMo
             SolidColorBrush.Parse("#FFF8E1") :> IBrush
         elif isProblemHighlighted then
             SolidColorBrush.Parse("#FFE5E5") :> IBrush
-        elif definition.Id = "ComputeStats" || definition.Id = "ComponentTranslationTable" || definition.Id = "ImHistogramData" || definition.Id = "Histogram" || definition.Id = "ObjectSizeStats" then
+        elif definition.Id = "ComputeStats" || definition.Id = "ComponentTranslationTable" || definition.Id = "ImHistogramData" || definition.Id = "Histogram" || definition.Id = "Stats" then
             SolidColorBrush.Parse("#F3E0C3") :> IBrush
         else
             SolidColorBrush.Parse("#EAF3FF") :> IBrush
@@ -179,7 +179,7 @@ type PipelineNodeState(definition: Function, parameters: PipelineParameterViewMo
             SolidColorBrush.Parse("#F2A900") :> IBrush
         elif isProblemHighlighted then
             SolidColorBrush.Parse("#D64545") :> IBrush
-        elif definition.Id = "ComputeStats" || definition.Id = "ComponentTranslationTable" || definition.Id = "ImHistogramData" || definition.Id = "Histogram" || definition.Id = "ObjectSizeStats" then
+        elif definition.Id = "ComputeStats" || definition.Id = "ComponentTranslationTable" || definition.Id = "ImHistogramData" || definition.Id = "Histogram" || definition.Id = "Stats" then
             SolidColorBrush.Parse("#B7791F") :> IBrush
         else
             SolidColorBrush.Parse("#2F80ED") :> IBrush

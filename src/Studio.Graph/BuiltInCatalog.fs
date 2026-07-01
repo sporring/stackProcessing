@@ -33,8 +33,7 @@ module BuiltInCatalog =
   let chunkInfo = PortType.Custom "ChunkInfo"
   let serialTransPair = PortType.Tuple(imageAny, serialSliceManifest)
   let streamedObjects = PortType.Custom "StreamedObjects"
-  let objectMeasurements = PortType.Custom "ObjectMeasurements"
-  let objectSizeStats = PortType.Custom "ObjectSizeStats"
+  let numberStats = PortType.Custom "NumberStats"
   let intList = PortType.Custom "IntList"
   let uint64List = PortType.Custom "UInt64List"
 
@@ -83,7 +82,7 @@ module BuiltInCatalog =
         makePort "Sum: Float64" (Scalar(BasicType.Numeric Float64))
         makePort "Var: Float64" (Scalar(BasicType.Numeric Float64)) ]
 
-  let private objectSizeStatsOutputs =
+  let private numberStatsOutputs =
       [ makePort "Count: UInt64" (Scalar(BasicType.Numeric UInt64))
         makePort "Mean: Float64" (Scalar(BasicType.Numeric Float64))
         makePort "Variance: Float64" (Scalar(BasicType.Numeric Float64))
@@ -93,7 +92,7 @@ module BuiltInCatalog =
   let expandOutputsFor portType =
       match portType with
       | Custom "ImageStats" -> imageStatsOutputs
-      | Custom "ObjectSizeStats" -> objectSizeStatsOutputs
+      | Custom "NumberStats" -> numberStatsOutputs
       | Custom "ImageInfo" -> imageInfoOutputs
       | Custom "ChunkInfo" -> chunkInfoOutputs
       | _ -> []
@@ -189,7 +188,7 @@ module BuiltInCatalog =
       "Computes an intensity histogram from the image stream and immediately shows it as a chart.\n\nThe x-axis is the pixel value or histogram bin key, and the y-axis is the number of pixels observed. Title, horizontal axis label, and vertical axis label are shown on the chart when filled in. Use this to inspect intensity distributions before choosing thresholds, stretches, or quantiles.\n\nFor very large or continuous-valued images, consider sampling first so the chart stays readable."
 
   let private histogramDataDescription =
-      "Computes an intensity histogram and emits it as data instead of displaying it directly.\n\nThis is the preferred input to quantiles, otsuThresholdFromHistogram, and momentsThresholdFromHistogram. The histogram is reduced over the whole connected stream, so the output is available after the histogram branch has been drained.\n\nUse readRandom or readRange upstream when an estimated histogram is enough."
+      "Computes an intensity histogram and emits it as data instead of displaying it directly.\n\nThis is the preferred input to quantiles, otsuThreshold, and momentsThresholdFromHistogram. The histogram is reduced over the whole connected stream, so the output is available after the histogram branch has been drained.\n\nUse readRandom or readRange upstream when an estimated histogram is enough."
 
   let private estimateHistogramDescription =
       "Randomly samples whole slices from an image stack, downsamples pixels within those slices, and emits an estimated histogram plus diagnostics. This is a reducer-style source/sink: it does not stream sampled images onward.\n\nType selects the pixel type used to read the sampled slices. Slices is the number of randomly chosen stack slices. Input and suffix identify the image stack. Down is the in-slice pixel stride: 1 uses every pixel in the sampled slices, 2 uses every second x/y pixel, and so on. Estimator selects DKW, Holdout, or DKWAndHoldout. Confidence is used by DKW to report a distribution-free half-width for the empirical CDF.\n\nThe histogram output can feed quantiles, threshold estimators, chart, writeCSV, or histogramEqualization. Samples reports the number of pixels used. CDF half-width is the DKW epsilon at the selected confidence. Holdout max CDF delta splits sampled pixels into two alternating halves and reports the maximum CDF difference between them."
@@ -228,7 +227,7 @@ module BuiltInCatalog =
       "Streams completed connected objects from a binary mask. Each input slice is inspected for non-zero foreground pixels, object fronts touching the advancing z-boundary are carried forward, and objects are emitted once the next slice proves they cannot continue. Six-connectivity uses face contacts only; TwentySix-connectivity also allows diagonal contacts. paintObjects converts the emitted integer positions back into mask slices, using background 0 and foreground 1 by default or explicit values when supplied."
 
   let private thresholdDescription =
-      "Turns a numeric image into a UInt8 binary mask.\n\nPixels between lower and upper, including the limits, become foreground; pixels outside the range become background. Use infinity as the upper limit when you want a simple lower-threshold operation.\n\nThresholds can be typed directly or linked from computeStats, quantiles, otsuThresholdFromHistogram, or momentsThresholdFromHistogram."
+      "Turns a numeric image into a UInt8 binary mask.\n\nPixels greater than or equal to the threshold become foreground; pixels below it become background.\n\nThresholds can be typed directly or linked from computeStats, quantiles, otsuThreshold, or momentsThresholdFromHistogram."
 
   let private binaryShapeDescription =
       "Changes the shape of a UInt8 binary mask using a spherical local neighborhood.\n\nBinary morphology expects a 0/1 UInt8 image: 0 is background and 1 is foreground. Erode removes foreground pixels near object boundaries and can break thin connections. Dilate expands foreground regions and can close small gaps. Opening is erosion followed by dilation and tends to remove small foreground objects. Closing is dilation followed by erosion and tends to fill small background gaps.\n\nThe radius controls the sphere size."
@@ -257,17 +256,14 @@ module BuiltInCatalog =
   let private computeStatsDescription =
       "Computes whole-stream summary statistics for an image stack.\n\nThe outputs include pixel count, mean, standard deviation, minimum, maximum, sum, and sum of squares. Use these values to choose thresholds, normalize intensities, or report basic measurements.\n\nBecause the result summarizes the input stream, it is usually used on a separate branch before a second processing pass that applies the chosen parameters."
 
-  let private objectMeasurementsDescription =
-      "Measures streamed connected objects. The input is the object stream produced by streamConnectedObjects, and the output carries per-object measurements such as voxel count and bounding box. Use objectSizeStats for summary statistics or objectSizes followed by histogram for a size distribution."
-
-  let private objectSizeStatsDescription =
-      "Reduces measured objects to size statistics: count, mean, variance, minimum, and maximum voxel count. Connect the output to expand and print to report the fields."
+  let private numberStatsDescription =
+      "Reduces a stream of UInt64 lists to summary statistics: count, mean, variance, minimum, and maximum. Use this after objectSizes or any other numeric-list stream."
 
   let private objectSizesDescription =
-      "Extracts object sizes as a streamed list of UInt64 voxel counts. This is useful before the general histogram reducer or any other numeric-stream summary."
+      "Extracts sizes from streamed connected objects as a streamed list of UInt64 voxel counts. This is useful before the general histogram reducer or any other numeric-stream summary."
 
   let private numberHistogramDescription =
-      "Reduces a stream of UInt64 values to a histogram map. Bin width is measured in the input value units; for object sizes that means voxels. Connect the map to chart for a native Plotly visualization."
+      "Reduces a stream of UInt64 values to an exact histogram map. For object sizes, keys are voxel counts. Connect the map to chart for a native Plotly visualization."
 
   let private localDenoiseDescription =
       "These denoising filters are local-neighborhood smoothing operations rather than global iterative solvers. smoothWMedian uses a radius in x, y, and z and is streamed through windows large enough to cover the z-neighborhood. smoothWBilateral is edge-preserving and can be slower; use the window size to give the z-neighborhood enough context. No recursive Gaussian, curvature-flow, or anisotropic-diffusion filters are included here because their iteration/global-dependency structure is less friendly to LMIP streaming."
@@ -1208,8 +1204,7 @@ module BuiltInCatalog =
           Aliases = [ "plot"; "chart"; "histogram"; "points"; "reducer"; "size"; "objects" ]
           Inputs = [ makePort "UInt64 list" uint64List ]
           Outputs = [ makePort "Map" (Scalar BasicType.Map) ]
-          Parameters =
-              [ makeParameter "binWidth" "Bin width" "100" (BasicType.Numeric UInt64) ] }
+          Parameters = [] }
 
         { Id = "Quantiles"
           DisplayName = "quantiles"
@@ -1981,8 +1976,7 @@ module BuiltInCatalog =
           Outputs = [ makePort "UInt8" imageUInt8 ]
           Parameters =
               [ makeParameter "type" "Type" "Float64" BasicType.String
-                makeParameter "lower" "Lower" "128.0" (BasicType.Numeric Float64)
-                makeParameter "upper" "Upper" "infinity" (BasicType.Numeric Float64) ] }
+                makeParameter "threshold" "Threshold" "128.0" (BasicType.Numeric Float64) ] }
 
         { Id = "Erode"
           DisplayName = "erode"
@@ -2093,33 +2087,23 @@ module BuiltInCatalog =
           Parameters =
               [ makeParameter "connectivity" "Connectivity" "Six" BasicType.String ] }
 
-        { Id = "MeasureObjects"
-          DisplayName = "measureObjects"
-          Category = "Segmentation"
-          Summary = "Measure streamed connected objects."
-          Description = objectMeasurementsDescription
-          Aliases = [ "objects"; "measure"; "size"; "bounds"; "volume" ]
-          Inputs = [ makePort "Objects" streamedObjects ]
-          Outputs = [ makePort "Object measurements" objectMeasurements ]
-          Parameters = [] }
-
-        { Id = "ObjectSizeStats"
-          DisplayName = "objectSizeStats"
+        { Id = "Stats"
+          DisplayName = "stats"
           Category = "Statistics"
-          Summary = "Summarize measured object sizes."
-          Description = objectSizeStatsDescription
-          Aliases = [ "objects"; "size"; "stats"; "count"; "mean"; "variance" ]
-          Inputs = [ makePort "Object measurements" objectMeasurements ]
-          Outputs = [ makePort "ObjectSizeStats" objectSizeStats ]
+          Summary = "Summarize streamed UInt64 values."
+          Description = numberStatsDescription
+          Aliases = [ "numbers"; "size"; "stats"; "count"; "mean"; "variance"; "min"; "max" ]
+          Inputs = [ makePort "UInt64 list" uint64List ]
+          Outputs = [ makePort "NumberStats" numberStats ]
           Parameters = [] }
 
         { Id = "ObjectSizes"
           DisplayName = "objectSizes"
           Category = "Statistics"
-          Summary = "Extract measured object sizes."
+          Summary = "Extract object sizes."
           Description = objectSizesDescription
           Aliases = [ "objects"; "size"; "voxel count"; "histogram" ]
-          Inputs = [ makePort "Object measurements" objectMeasurements ]
+          Inputs = [ makePort "Objects" streamedObjects ]
           Outputs = [ makePort "UInt64 list" uint64List ]
           Parameters = [] }
 
@@ -2280,11 +2264,11 @@ module BuiltInCatalog =
                 makeParameter "stride" "Stride" "8" (BasicType.Numeric UInt32) ] }
 
         { Id = "OtsuThresholdFromHistogram"
-          DisplayName = "otsuThresholdFromHistogram"
+          DisplayName = "otsuThreshold"
           Category = "Statistics"
           Summary = "Estimate an Otsu threshold from a histogram."
           Description =
-            "Takes a histogram, usually from histogramData on a sampled or random-read branch, and returns a scalar threshold by maximizing Otsu's between-class variance.\n\nThis box does not threshold images itself. Link its scalar output to the lower bound of the standard threshold box, and use infinity or another upper bound there. Keeping threshold estimation separate from threshold application makes the two-pass LMIP structure explicit."
+            "Takes a histogram, usually from histogramData on a sampled or random-read branch, and returns a scalar threshold by maximizing Otsu's between-class variance.\n\nThis box does not threshold images itself. Link its scalar output to the threshold input of the standard threshold box. Keeping threshold estimation separate from threshold application makes the two-pass LMIP structure explicit."
           Aliases = [ "threshold"; "otsu"; "histogram"; "statistics"; "scalar"; "segment" ]
           Inputs = []
           Outputs = [ makePort "Threshold: Float64" (Scalar(BasicType.Numeric Float64)) ]
@@ -2296,7 +2280,7 @@ module BuiltInCatalog =
           Category = "Statistics"
           Summary = "Estimate a moment-preserving threshold from a histogram."
           Description =
-            "Takes a histogram, usually from histogramData on a sampled or random-read branch, and returns a scalar threshold from the first three histogram moments using Tsai's moment-preserving method.\n\nThis box does not threshold images itself. Link its scalar output to the lower bound of the standard threshold box, and use infinity or another upper bound there. Keeping threshold estimation separate from threshold application makes the two-pass LMIP structure explicit."
+            "Takes a histogram, usually from histogramData on a sampled or random-read branch, and returns a scalar threshold from the first three histogram moments using Tsai's moment-preserving method.\n\nThis box does not threshold images itself. Link its scalar output to the threshold input of the standard threshold box. Keeping threshold estimation separate from threshold application makes the two-pass LMIP structure explicit."
           Aliases = [ "threshold"; "moments"; "histogram"; "statistics"; "scalar"; "segment" ]
           Inputs = []
           Outputs = [ makePort "Threshold: Float64" (Scalar(BasicType.Numeric Float64)) ]

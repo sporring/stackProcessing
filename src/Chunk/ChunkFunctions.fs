@@ -2173,6 +2173,65 @@ module ChunkFunctions =
         | _ ->
             Chunk.decRef output
             reraise()
+
+    let thresholdToUInt8Chunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (threshold: double) (chunk: Chunk<'T>) =
+        let output = Chunk.create<uint8> chunk.Size
+        try
+            let t = typeof<'T>
+            let outputPixels = output.Bytes.AsSpan(0, output.ByteLength)
+            if t = typeof<uint8> then
+                let threshold = byte (Math.Clamp(Math.Ceiling(threshold), 0.0, 255.0))
+                let inputPixels = chunk.Bytes.AsSpan(0, chunk.ByteLength)
+                thresholdUInt8Vector threshold inputPixels outputPixels
+            elif t = typeof<int8> then
+                let threshold = sbyte (Math.Clamp(Math.Ceiling(threshold), float SByte.MinValue, float SByte.MaxValue))
+                let inputPixels = MemoryMarshal.Cast<byte, sbyte>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+                let mutable i = 0
+                while i < inputPixels.Length do
+                    outputPixels[i] <- if inputPixels[i] >= threshold then 1uy else 0uy
+                    i <- i + 1
+            elif t = typeof<uint16> then
+                let threshold = uint16 (Math.Clamp(Math.Ceiling(threshold), 0.0, float UInt16.MaxValue))
+                let inputPixels = MemoryMarshal.Cast<byte, uint16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+                let mutable i = 0
+                while i < inputPixels.Length do
+                    outputPixels[i] <- if inputPixels[i] >= threshold then 1uy else 0uy
+                    i <- i + 1
+            elif t = typeof<int16> then
+                let threshold = int16 (Math.Clamp(Math.Ceiling(threshold), float Int16.MinValue, float Int16.MaxValue))
+                let inputPixels = MemoryMarshal.Cast<byte, int16>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+                let mutable i = 0
+                while i < inputPixels.Length do
+                    outputPixels[i] <- if inputPixels[i] >= threshold then 1uy else 0uy
+                    i <- i + 1
+            elif t = typeof<int32> then
+                let threshold = int32 (Math.Clamp(Math.Ceiling(threshold), float Int32.MinValue, float Int32.MaxValue))
+                let inputPixels = MemoryMarshal.Cast<byte, int32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+                let mutable i = 0
+                while i < inputPixels.Length do
+                    outputPixels[i] <- if inputPixels[i] >= threshold then 1uy else 0uy
+                    i <- i + 1
+            elif t = typeof<float32> then
+                let threshold = float32 threshold
+                let inputPixels = MemoryMarshal.Cast<byte, float32>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+                let mutable i = 0
+                while i < inputPixels.Length do
+                    outputPixels[i] <- if inputPixels[i] >= threshold then 1uy else 0uy
+                    i <- i + 1
+            elif t = typeof<float> then
+                let inputPixels = MemoryMarshal.Cast<byte, float>(chunk.Bytes.AsSpan(0, chunk.ByteLength))
+                let mutable i = 0
+                while i < inputPixels.Length do
+                    outputPixels[i] <- if inputPixels[i] >= threshold then 1uy else 0uy
+                    i <- i + 1
+            else
+                invalidArg "T" $"ChunkFunctions.threshold supports Int8, UInt8, Int16, UInt16, Int32, Float32, and Float chunks, got {t.Name}."
+            output
+        with
+        | _ ->
+            Chunk.decRef output
+            reraise()
+
     let castChunkToUInt8<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (chunk: Chunk<'T>) =
         let output = Chunk.create<uint8> chunk.Size
         try

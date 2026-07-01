@@ -14,6 +14,7 @@ let main arg =
         else
             64u, 64u, 64u, "../tmp/multiplyConstant"
 
+    // Demonstrate the merging of two sources: an image source and a constant mask.
     let maskMaker = 
         src
         |> zero<uint8> width height depth

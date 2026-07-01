@@ -99,14 +99,14 @@
     },
     {
       "id": "node-3",
-      "functionId": "MeasureObjects",
+      "functionId": "ObjectSizes",
       "x": 483.4839872688218,
       "y": 101.20265305234189,
       "parameters": []
     },
     {
       "id": "node-4",
-      "functionId": "ObjectSizeStats",
+      "functionId": "Stats",
       "x": 648.671354528043,
       "y": 0,
       "parameters": []
@@ -172,24 +172,11 @@
       ]
     },
     {
-      "id": "node-7",
-      "functionId": "ObjectSizes",
-      "x": 645.310171991744,
-      "y": 209.78339462401755,
-      "parameters": []
-    },
-    {
       "id": "node-8",
       "functionId": "Histogram",
       "x": 813.671354528043,
       "y": 209.78339462401755,
-      "parameters": [
-        {
-          "key": "binWidth",
-          "value": "100",
-          "useInput": false
-        }
-      ]
+      "parameters": []
     },
     {
       "id": "node-9",
@@ -300,14 +287,6 @@
     },
     {
       "fromNode": "node-3",
-      "fromKind": "dataOutput",
-      "fromPort": 0,
-      "toNode": "node-7",
-      "toKind": "dataInput",
-      "toPort": 0
-    },
-    {
-      "fromNode": "node-7",
       "fromKind": "dataOutput",
       "fromPort": 0,
       "toNode": "node-8",

@@ -1403,7 +1403,7 @@ type PipelineNodeViewModel(
         | "SerialEstBoundingBox"
         | "ImHistogramData"
         | "Histogram"
-        | "ObjectSizeStats"
+        | "Stats"
         | "EstimateHistogram"
         | "Quantiles" -> ReducerOutput
         | _ -> DataOutput

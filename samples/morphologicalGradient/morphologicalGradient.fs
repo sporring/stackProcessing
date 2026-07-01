@@ -12,9 +12,10 @@ let main args =
         | [| input |] -> input, "../tmp/morphologicalGradient"
         | _ -> "../data/volume", "../tmp/morphologicalGradient"
 
+    // Compute the binary zonohedral morphological gradient of a mask stack. The morphological gradient is the difference between the dilation and erosion of a binary mask.
     src
     |> read<uint8> input ".tiff"
-    >=> thresholdRange 1 255
+    >=> threshold 1.0
     >=> binaryGradient 3u
     >=> write output ".tiff"
     |> sink

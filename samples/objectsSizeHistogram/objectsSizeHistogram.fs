@@ -7,30 +7,21 @@ let main args =
 
     let src, args = commandLineSource availableMemory args
 
-    let input, binWidth =
+    let input =
         match args with
-        | [| input; binWidth |] -> input, uint64 binWidth
-        | [| input |] -> input, 100UL
-        | _ -> "../data/rotatingBoxes", 100UL
+        | [| input |] -> input
+        | _ -> "../data/objects"
 
-    let measured =
+    // Streams connected objects from the synthetic object image and calculate object related statistics in two different ways.
+    let stats, sizeHistogram =
         src
         |> read<uint8> input ".tiff"
         >=> streamConnectedObjects ObjectConnectivity.TwentySix
-        >=> measureObjects
-
-    let stats =
-        measured
-        >=> objectSizeStats
-        |> drain
-
-    let histogram =
-        measured
         >=> objectSizes
-        >=> histogram binWidth
+        >=>> (stats (), histogram ())
         |> drain
 
     printfn "Object size stats: count=%d mean=%g variance=%g min=%d max=%d" stats.Count stats.Mean stats.Variance stats.Minimum stats.Maximum
-    printfn "Histogram bins: %A" histogram
-    showChartWithLabels "Column" "Streamed object-size histogram" "size bin" "object count" histogram.Counts
+    printfn "Histogram bins: %A" sizeHistogram
+
     0

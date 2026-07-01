@@ -1,5 +1,4 @@
 // Runs marching cubes on the binary object image and writes a mesh file.
-open System.IO
 open StackProcessing
 
 [<EntryPoint>]
@@ -14,15 +13,11 @@ let main args =
         | [| input |] -> input, "../tmp/surface"
         | _ -> "../data/rotatingBoxes", "../tmp/surface"
 
-    let directory = Path.GetDirectoryName(output)
-    if not (System.String.IsNullOrWhiteSpace directory) then
-        Directory.CreateDirectory(directory) |> ignore
-
+    // Runs marching cubes on the binary object image and writes a mesh file viewable e.g. with the meshview app.
     src
     |> read<uint8> input ".tiff"
     >=> marchingCubes 0.5
     >=> writeMesh output ".obj"
     |> sink
 
-    printfn "Wrote mesh to %s" (Path.GetFullPath(meshFilePath output ".obj"))
     0

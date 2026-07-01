@@ -88,6 +88,34 @@ errors or shelved capabilities.
   slices through `signedDistanceBand`.
 - Fill-small-holes and remove-small-objects have Chunk flood-fill style stages.
 
+### Future Optimization: Zonohedral Morphology Memory
+
+The binary zonohedral morphology path is algorithmically separable: a
+zonohedral approximation is represented as a Minkowski sum of line segments,
+and dilation/erosion by that sum is implemented as a serial composition of line
+dilations/erosions. For radius 3, the current coefficient table expands to
+seven line passes.
+
+The current implementation exposes those line passes as separate streaming
+stages. This is correct, but each line stage owns its own small z-halo queue and
+padding slices. When these stages are composed, the live chunk count becomes the
+sum of several in-flight line-stage buffers rather than the maximum halo of a
+single fused operator. This is visible in `morphologicalGradient`: even though a
+direct radius-3 spherical operator suggests a 7-slice window plus lookahead,
+the composed zonohedral erosion and dilation branches peak higher because the
+two branches each run a chain of line stages.
+
+Future work:
+
+- add a fused zonohedral morphology engine that advances the composed line
+  filters inside one stage, with explicit ownership of intermediate buffers
+- specialize morphological gradient to compute erosion and dilation in one
+  coordinated stage, avoiding duplicated branch warm-up where possible
+- keep the current line-stage implementation as the clear reference path while
+  validating the fused path against it
+- benchmark peak live chunks and wall time for `erode`, `dilate`, `opening`,
+  `closing`, top-hat, contour, and morphological gradient
+
 ## FFT And Complex Chunks
 
 - Complex64-interleaved Chunk construction and scalar operations:
@@ -134,6 +162,27 @@ errors or shelved capabilities.
 The dense-volume smoothing used by keypoint stages is currently simple and
 direct. Absolute-z handling is local to the surrounding stream metadata rather
 than embedded in plain `Chunk<'T>`.
+
+### Future Optimization: Harris And Forstner Keypoints
+
+Harris3D and Forstner3D are currently marked as implementation candidates for
+tighter Chunk-native streaming. The desired shape is to keep the structure
+tensor path aligned with the newer fast primitives:
+
+- separable Gaussian smoothing for both the derivative scale `sigma` and the
+  tensor integration scale `rho`
+- finite differences and tensor component products operating on pooled Chunk
+  buffers rather than materialized 3D arrays
+- response calculation over flat spans/Chunk buffers, avoiding conversion to
+  `double[,,]` or other dense temporary array representations in the hot path
+- clear ownership: temporary Chunk buffers should be released as soon as their
+  consumers have advanced, not retained until the keypoint reducer finishes
+- focused benchmarks for Harris and Forstner on the same input, reporting wall
+  time, allocated bytes, and peak live chunks
+
+The benchmark target is not just lower runtime. These stages should also expose
+whether the tensor smoothing/windowing shape is causing avoidable live-slice
+accumulation similar to the zonohedral morphology line-stage composition.
 
 ## Sample And Graph Status
 

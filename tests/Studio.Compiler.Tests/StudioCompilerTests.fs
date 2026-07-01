@@ -1326,8 +1326,7 @@ let generatorSuite =
             let threshold =
                 node "threshold" "Threshold"
                     [ p "type" "Float64" false
-                      p "lower" "e" false
-                      p "upper" "pi" false ]
+                      p "threshold" "e" false ]
 
             let write =
                 node "write" "Write"
@@ -1351,7 +1350,7 @@ let generatorSuite =
 
             Expect.stringContains code "let Float640 = System.Math.PI" "Numeric scalar pi should lower to Math.PI."
             Expect.stringContains code "let String0 = \"e\"" "String scalar e should remain a string literal."
-            Expect.stringContains code ">=> threshold System.Math.E System.Math.PI" "Numeric parameters should lower standard names to Math constants."
+            Expect.stringContains code ">=> threshold System.Math.E" "Numeric parameters should lower standard names to Math constants."
 
         testCase "read stack info output binds file info fields for scalar outputs" <| fun _ ->
             let path =
@@ -2432,8 +2431,7 @@ let generatorSuite =
             let threshold =
                 node "threshold" "Threshold"
                     [ p "type" "Float64" false
-                      p "lower" "0.0" true
-                      p "upper" "infinity" false ]
+                      p "threshold" "0.0" true ]
 
             let write =
                 node "write" "Write"
@@ -2451,8 +2449,8 @@ let generatorSuite =
                 |> PipelineCodeGenerator.generateSavedGraph
 
             Expect.stringContains code "let Histogram0 =" "Linked histogram data should be bound before threshold estimation."
-            Expect.stringContains code "let Float640 = otsuThresholdFromHistogram Histogram0" "Otsu threshold estimation should be a scalar binding."
-            Expect.stringContains code ">=> threshold Float640 infinity" "The scalar threshold should feed the standard threshold stage."
+            Expect.stringContains code "let Float640 = scalarPlan [ Histogram0 ] >=> otsuThreshold () |> drain" "Otsu threshold estimation should be a scalar binding through the stage form."
+            Expect.stringContains code ">=> threshold Float640" "The scalar threshold should feed the standard threshold stage."
 
         testCase "histogram equalization consumes linked histogram data" <| fun _ ->
             let read =

@@ -210,6 +210,14 @@ slices, and release consumed chunks through the window resource rules.
 `opening`, `closing`, white top-hat, black top-hat, morphological gradient, and
 binary contour are stage compositions over erosion and dilation.
 
+One subtlety is that the zonohedral separability is represented as a composition
+of several line-scan stages. This is algorithmically correct, but the live
+streaming memory is the accumulated buffering of those composed line stages,
+not simply the radius-derived halo of a single fused spherical operator. A
+future fused zonohedral stage could keep the same separable mathematics while
+reducing intermediate live chunks, especially for morphological gradient where
+erosion and dilation are both evaluated.
+
 ## Convolution And Derivatives
 
 Single-axis native convolution is available for `UInt8`, `Int8`, `UInt16`,

@@ -157,7 +157,6 @@ type SpectralChunk =
 
 type HistogramBinning =
     | FixedEdges of firstLeftEdge: float * lastLeftEdge: float * bins: uint32
-    | FixedWidth of binWidth: uint64
 
 type Histogram<'T when 'T: comparison> =
     { Counts: Map<'T, uint64>
@@ -320,10 +319,6 @@ module Histogram =
     let withFixedEdges firstLeftEdge lastLeftEdge bins counts =
         { Counts = counts
           Binning = Some(FixedEdges(firstLeftEdge, lastLeftEdge, bins)) }
-
-    let withFixedWidth binWidth counts =
-        { Counts = counts
-          Binning = Some(FixedWidth binWidth) }
 
 type DenseUInt32UnionFind(initialCapacity: int) =
     let mutable parent = Array.zeroCreate<uint32> (max 2 initialCapacity)

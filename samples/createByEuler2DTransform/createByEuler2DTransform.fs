@@ -47,7 +47,7 @@ let main arg =
     let topDown =      movingMask "TopDown"
     let antiDiagonal = movingMask "AntiDiagonal"
 
-    // Max of a tripple fan-out
+    // Max of a tripple fan-out. This code produces the ../data/rotationBoxes
     zip (zip diagonal topDown >>=> maxOfPair) antiDiagonal
     >>=> maxOfPair
     >=> intensityStretch 0.0 1.0 0.0 255.0

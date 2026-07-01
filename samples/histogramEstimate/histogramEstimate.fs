@@ -13,18 +13,18 @@ let main args =
         | _ -> "../data/volume"
 
     let maxSlices = 16u
-    let confidence = 0.95
     let targetError = 0.02
 
     // Randomly select slices to estimate the histogram with a maxium error of 0.02 at 95% confidence using the DKW inequality and a holdout set to validate the estimate.
     let estimate =
         src
-        |> histogramEstimate<uint8> maxSlices input ".tiff" "DKWAndHoldout" confidence targetError
+        |> histogramEstimate<uint8> maxSlices input ".tiff" None None None
         |> drain
 
     printfn $"max slices: {maxSlices}"
     printfn $"slices read: {estimate.SlicesRead}"
     printfn $"samples in estimate half: {estimate.Samples}"
+    printfn $"method: {estimate.Method}"
     printfn $"confidence: {estimate.Confidence}"
     printfn $"target CDF error: {targetError}"
     printfn $"DKW CDF half-width: {estimate.CdfHalfWidth}"

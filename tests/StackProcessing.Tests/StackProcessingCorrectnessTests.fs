@@ -472,7 +472,7 @@ let stackProcessingCorrectnessSuite =
                     suffix
                     0.5
                     volume
-                    (threshold 0.2 2.0)
+                    (thresholdRange 0.2 2.0)
                     (ImageFunctions.threshold 0.2 2.0)
             finally
                 volume.decRefCount()
@@ -487,7 +487,7 @@ let stackProcessingCorrectnessSuite =
                     suffix
                     0.5
                     volume
-                    (threshold 0.2 2.0)
+                    (thresholdRange 0.2 2.0)
                     (windowedThreshold 5u 0.2 2.0)
             finally
                 volume.decRefCount()
@@ -658,12 +658,12 @@ let stackProcessingCorrectnessSuite =
                     source (2UL * 1024UL * 1024UL * 1024UL)
                     |> readRandom<float32> 4u inputDir suffix
                     >=> imHistogram ()
+                    >=> otsuThreshold ()
                     |> drain
-                    |> otsuThresholdFromHistogram
 
                 source (2UL * 1024UL * 1024UL * 1024UL)
                 |> read<float32> inputDir suffix
-                >=> threshold thresholdValue infinity
+                >=> threshold thresholdValue
                 >=> write outputDir suffix
                 |> sink
 
@@ -700,7 +700,7 @@ let stackProcessingCorrectnessSuite =
 
                 source (2UL * 1024UL * 1024UL * 1024UL)
                 |> read<float32> inputDir suffix
-                >=> threshold thresholdValue infinity
+                >=> threshold thresholdValue
                 >=> write outputDir suffix
                 |> sink
 

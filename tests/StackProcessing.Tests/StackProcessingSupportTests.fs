@@ -2113,7 +2113,7 @@ let stackProcessingSupportSuite =
             try
                 sliceWise <-
                     imagePlan sliceInputs
-                    >=> threshold 7.0 255.0
+                    >=> thresholdRange 7.0 255.0
                     |> drainList
 
                 slabWise <-
@@ -2132,7 +2132,7 @@ let stackProcessingSupportSuite =
                 disposeImages slabInputs
                 disposeImages sliceInputs
 
-        testCase "measureObjects derives per-object measurements and reducers summarize sizes" <| fun _ ->
+        testCase "streamed objects expose dimensions and reducers summarize sizes" <| fun _ ->
             let firstBatch: StreamedObject list =
                 [ { Label = 1UL
                     Positions = [ { X = 1; Y = 1; Z = 0 }; { X = 2; Y = 1; Z = 0 } ]
@@ -2149,19 +2149,14 @@ let stackProcessingSupportSuite =
                     Bounds = { MinX = 0; MaxX = 1; MinY = 0; MaxY = 1; MinZ = 2; MaxZ = 2 }
                     Size = 4UL } ]
 
-            let measurements =
-                scalarPlan [ ({ Objects = firstBatch }: ObjectStream<uint8>); ({ Objects = secondBatch }: ObjectStream<uint8>) ]
-                >=> measureObjects
-                |> drainList
-
-            Expect.equal (measurements.[0].[0].Width) 2UL "Width should be derived from x bounds."
-            Expect.equal (measurements.[0].[1].Height) 3UL "Height should be derived from y bounds."
-            Expect.equal (measurements.[1].[0].Depth) 1UL "Depth should be derived from z bounds."
+            Expect.equal firstBatch.[0].Width 2UL "Width should be derived from x bounds."
+            Expect.equal firstBatch.[1].Height 3UL "Height should be derived from y bounds."
+            Expect.equal secondBatch.[0].Depth 1UL "Depth should be derived from z bounds."
 
             let stats =
                 scalarPlan [ ({ Objects = firstBatch }: ObjectStream<uint8>); ({ Objects = secondBatch }: ObjectStream<uint8>) ]
-                >=> measureObjects
-                >=> objectSizeStats
+                >=> objectSizes
+                >=> stats ()
                 |> drain
 
             Expect.equal stats.Count 3UL "Three objects should be summarized."
@@ -2172,12 +2167,11 @@ let stackProcessingSupportSuite =
 
             let histogram =
                 scalarPlan [ ({ Objects = firstBatch }: ObjectStream<uint8>); ({ Objects = secondBatch }: ObjectStream<uint8>) ]
-                >=> measureObjects
                 >=> objectSizes
-                >=> histogram 2UL
+                >=> histogram ()
                 |> drain
 
-            Expect.equal histogram.Counts (Map.ofList [ 1UL, 2UL; 2UL, 1UL ]) "Size histogram should count bin index size/binWidth."
+            Expect.equal histogram.Counts (Map.ofList [ 2UL, 2UL; 4UL, 1UL ]) "Size histogram should count exact object sizes."
 
         testCase "writeChunks creates chunk files and chunk metadata can be read" <| fun _ ->
             let inputDir = tempDirectory "chunks-input"
@@ -2786,13 +2780,54 @@ let stackProcessingSupportSuite =
         testCase "histogram threshold estimators return scalar thresholds for the standard threshold stage" <| fun _ ->
             let histogram = StackCore.Histogram.ofMap (Map.ofList [ 0.0f, 4UL; 10.0f, 4UL ])
 
-            let otsu = otsuThresholdFromHistogram histogram
+            let otsu =
+                scalarPlan [ histogram ]
+                >=> otsuThreshold ()
+                |> drain
             let moments = momentsThresholdFromHistogram histogram
 
             Expect.isGreaterThan otsu 0.0 "Otsu threshold should lie between the two modes."
             Expect.isLessThan otsu 10.0 "Otsu threshold should lie between the two modes."
             Expect.isGreaterThan moments 0.0 "Moments threshold should lie between the two modes."
             Expect.isLessThan moments 10.0 "Moments threshold should lie between the two modes."
+
+        testCase "histogram threshold stages accept histograms and histogram estimates" <| fun _ ->
+            let histogram = StackCore.Histogram.ofMap (Map.ofList [ 0uy, 4UL; 10uy, 4UL ])
+            let estimate: HistogramEstimate<uint8> =
+                { Histogram = histogram
+                  Samples = 8UL
+                  SlicesRead = 1u
+                  CdfHalfWidth = 0.01
+                  HoldoutMaxCdfDelta = 0.01
+                  Method = "DKWAndHoldout"
+                  Confidence = 0.95 }
+
+            let otsuFromHistogram =
+                scalarPlan [ histogram ]
+                >=> otsuThreshold ()
+                |> drain
+
+            let otsuFromEstimate =
+                scalarPlan [ estimate ]
+                >=> otsuThreshold ()
+                |> drain
+
+            let fromHistogram =
+                scalarPlan [ histogram ]
+                >=> momentsThreshold ()
+                |> drain
+
+            let fromEstimate =
+                scalarPlan [ estimate ]
+                >=> momentsThreshold ()
+                |> drain
+
+            Expect.equal otsuFromEstimate otsuFromHistogram "otsuThreshold should use the embedded histogram from HistogramEstimate."
+            Expect.isGreaterThan otsuFromHistogram 0.0 "Otsu threshold should lie between the two modes."
+            Expect.isLessThan otsuFromHistogram 10.0 "Otsu threshold should lie between the two modes."
+            Expect.equal fromEstimate fromHistogram "momentsThreshold should use the embedded histogram from HistogramEstimate."
+            Expect.isGreaterThan fromHistogram 0.0 "Moments threshold should lie between the two modes."
+            Expect.isLessThan fromHistogram 10.0 "Moments threshold should lie between the two modes."
 
         testCase "sumProjection reduces a stack to one transformed Float64 image" <| fun _ ->
             let slices =

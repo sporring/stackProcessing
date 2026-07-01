@@ -29,28 +29,17 @@ type StreamedObject =
       Bounds: ObjectBounds
       Size: uint64 }
 
+    member object.Width =
+        uint64 (object.Bounds.MaxX - object.Bounds.MinX + 1)
+
+    member object.Height =
+        uint64 (object.Bounds.MaxY - object.Bounds.MinY + 1)
+
+    member object.Depth =
+        uint64 (object.Bounds.MaxZ - object.Bounds.MinZ + 1)
+
 type ObjectStream<'T> =
     { Objects: StreamedObject list }
-
-type ObjectMeasurements =
-    { Label: uint64
-      Size: uint64
-      MinX: int
-      MaxX: int
-      MinY: int
-      MaxY: int
-      MinZ: int
-      MaxZ: int
-      Width: uint64
-      Height: uint64
-      Depth: uint64 }
-
-type ObjectSizeStats =
-    { Count: uint64
-      Mean: float
-      Variance: float
-      Minimum: uint64
-      Maximum: uint64 }
 
 let private objectStream<'T> objects : ObjectStream<'T> =
     { Objects = objects }
@@ -857,13 +846,30 @@ let readObjects<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct an
     if not (Directory.Exists input) then
         invalidOp $"Object directory '{input}' does not exist."
 
-    let objects =
+    let files =
         Directory.GetFiles(input, "*" + suffix, SearchOption.TopDirectoryOnly)
-        |> Array.map readObjectCsvFile
-        |> Array.sortBy (fun object -> object.Bounds.MinZ, object.Bounds.MaxZ, object.Label)
-        |> Array.toList
+        |> Array.sortBy Path.GetFileName
 
-    objectSource<'T> objects template
+    let stage =
+        Stage.init
+            "readObjects"
+            (uint files.Length)
+            (fun i -> objectStream<'T> [ readObjectCsvFile files[i] ])
+            (ProfileTransition.create Unit Streaming)
+            (fun _ -> 0UL)
+            id
+
+    { Plan.createWithOptimizer
+        (Some stage)
+        template.memAvail
+        0UL
+        1UL
+        (uint64 files.Length)
+        template.debug
+        template.optimize with
+        debugLevel = template.debugLevel
+        costDiscrepancy = template.costDiscrepancy
+        costFlagPath = template.costFlagPath }
 
 let writeObjects<'T> (output: string) (suffix: string) : Stage<ObjectStream<'T>, unit> =
     let reducer (debug: bool) (input: AsyncSeq<ObjectStream<'T>>) =
@@ -898,74 +904,5 @@ let writeObjects<'T> (output: string) (suffix: string) : Stage<ObjectStream<'T>,
 
     Stage.reduce $"writeObjects \"{output}\" \"{suffix}\"" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
 
-let private measurementsOfObject (object: StreamedObject) =
-    { Label = object.Label
-      Size = object.Size
-      MinX = object.Bounds.MinX
-      MaxX = object.Bounds.MaxX
-      MinY = object.Bounds.MinY
-      MaxY = object.Bounds.MaxY
-      MinZ = object.Bounds.MinZ
-      MaxZ = object.Bounds.MaxZ
-      Width = uint64 (object.Bounds.MaxX - object.Bounds.MinX + 1)
-      Height = uint64 (object.Bounds.MaxY - object.Bounds.MinY + 1)
-      Depth = uint64 (object.Bounds.MaxZ - object.Bounds.MinZ + 1) }
-
-let measureObjects<'T> : Stage<ObjectStream<'T>, ObjectMeasurements list> =
-    Stage.map "measureObjects" (fun _ stream -> stream.Objects |> List.map measurementsOfObject) id id
-
-let objectSizes : Stage<ObjectMeasurements list, uint64 list> =
-    Stage.map "objectSizes" (fun _ measurements -> measurements |> List.map (fun measurement -> measurement.Size)) id id
-
-let private zeroSizeStats =
-    { Count = 0UL
-      Mean = 0.0
-      Variance = 0.0
-      Minimum = UInt64.MaxValue
-      Maximum = 0UL }
-
-let private addSizeToStats (count, mean, m2, minimum, maximum) (size: uint64) =
-    let count' = count + 1UL
-    let x = float size
-    let delta = x - mean
-    let mean' = mean + delta / float count'
-    let delta2 = x - mean'
-    count', mean', m2 + delta * delta2, min minimum size, max maximum size
-
-let objectSizeStats : Stage<ObjectMeasurements list, ObjectSizeStats> =
-    let reducer (_debug: bool) (input: AsyncSeq<ObjectMeasurements list>) =
-        async {
-            let! count, mean, m2, minimum, maximum =
-                input
-                |> AsyncSeq.fold
-                    (fun state measurements ->
-                        measurements
-                        |> List.fold (fun state measurement -> addSizeToStats state measurement.Size) state)
-                    (0UL, 0.0, 0.0, UInt64.MaxValue, 0UL)
-
-            if count = 0UL then
-                return zeroSizeStats
-            else
-                return
-                    { Count = count
-                      Mean = mean
-                      Variance = if count > 1UL then m2 / float (count - 1UL) else 0.0
-                      Minimum = minimum
-                      Maximum = maximum }
-        }
-
-    Stage.reduce "objectSizeStats" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
-
-let histogram binWidth : Stage<uint64 list, Histogram<uint64>> =
-    if binWidth = 0UL then invalidArg (nameof binWidth) "histogram binWidth must be positive."
-
-    let addToHistogram histogram (value: uint64) =
-        let bin = value / binWidth
-        let current = histogram |> Map.tryFind bin |> Option.defaultValue 0UL
-        histogram |> Map.add bin (current + 1UL)
-
-    let folder histogram values =
-        values |> List.fold addToHistogram histogram
-
-    Stage.fold "histogram" folder Map.empty<uint64, uint64> (fun _ -> 0UL) (fun _ -> 1UL)
-    --> Stage.map "histogram: metadata" (fun _ -> Histogram.withFixedWidth binWidth) id id
+let objectSizes<'T> : Stage<ObjectStream<'T>, uint64 list> =
+    Stage.map "objectSizes" (fun _ stream -> stream.Objects |> List.map (fun object -> object.Size)) id id

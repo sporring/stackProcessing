@@ -26,8 +26,7 @@
     { "id": "threshold", "functionId": "Threshold", "x": 300.0, "y": 180.0,
       "parameters": [
         { "key": "type", "value": "UInt8", "useInput": false },
-        { "key": "lower", "value": "0.0", "useInput": true },
-        { "key": "upper", "value": "infinity", "useInput": false } ] },
+        { "key": "threshold", "value": "0.0", "useInput": true } ] },
     { "id": "write", "functionId": "Write", "x": 520.0, "y": 180.0,
       "parameters": [
         { "key": "format", "value": "Image stack", "useInput": false },

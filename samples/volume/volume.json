@@ -11,8 +11,7 @@
     { "id": "mask", "functionId": "Threshold", "x": 300.0, "y": 120.0,
       "parameters": [
         { "key": "type", "value": "UInt8", "useInput": false },
-        { "key": "lower", "value": "1", "useInput": false },
-        { "key": "upper", "value": "255", "useInput": false } ] },
+        { "key": "threshold", "value": "1.0", "useInput": false } ] },
     { "id": "volume", "functionId": "ObjectVolume", "x": 520.0, "y": 120.0,
       "parameters": [
         { "key": "xUnit", "value": "1.0", "useInput": false },

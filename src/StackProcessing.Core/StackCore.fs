@@ -2,6 +2,8 @@ module StackCore
 
 open SlimPipeline
 open System
+open System.Collections.Generic
+open FSharp.Control
 open System.Runtime.InteropServices
 
 module ChunkPrimitive = Chunk
@@ -25,7 +27,6 @@ type ChunkStats = ChunkPrimitive.ChunkStats
 
 type HistogramBinning =
     | FixedEdges of firstLeftEdge: float * lastLeftEdge: float * bins: uint32
-    | FixedWidth of binWidth: uint64
 
 type Histogram<'T when 'T: comparison> =
     { Counts: Map<'T, uint64>
@@ -45,6 +46,13 @@ type ImageStats =
       Sum: float
       Var: float }
 
+type NumberStats<'T when 'T: comparison> =
+    { Count: uint64
+      Mean: float
+      Variance: float
+      Minimum: 'T
+      Maximum: 'T }
+
 module NativeSp =
     let ensureAvailable () = ChunkPrimitive.NativeSp.ensureAvailable ()
     let fftwfComplexXYInplace(interleaved, width, height, inverse) =
@@ -62,9 +70,97 @@ module Histogram =
         { Counts = counts
           Binning = Some(FixedEdges(firstLeftEdge, lastLeftEdge, bins)) }
 
-    let withFixedWidth binWidth counts =
-        { Counts = counts
-          Binning = Some(FixedWidth binWidth) }
+let histogram<'T when 'T: equality and 'T: comparison> () : Stage<'T list, Histogram<'T>> =
+    let addToHistogram (counts: Dictionary<'T, uint64>) value =
+        match counts.TryGetValue value with
+        | true, count -> counts[value] <- count + 1UL
+        | false, _ -> counts[value] <- 1UL
+
+    let addListInto counts values =
+        values |> List.iter (addToHistogram counts)
+        counts
+
+    let reducer (_debug: bool) (input: AsyncSeq<'T list>) =
+        async {
+            let counts = Dictionary<'T, uint64>()
+            for values in input do
+                addListInto counts values |> ignore
+
+            let map =
+                counts
+                |> Seq.map (fun pair -> pair.Key, pair.Value)
+                |> Map.ofSeq
+
+            return Histogram.ofMap map
+        }
+
+    Stage.reduce "histogram" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
+
+let histogramDense () : Stage<uint8 list, Histogram<uint8>> =
+    let toMap (counts: uint64 array) =
+        seq {
+            for index in 0 .. counts.Length - 1 do
+                let count = counts[index]
+                if count <> 0UL then
+                    uint8 index, count
+        }
+        |> Map.ofSeq
+
+    let reducer (_debug: bool) (input: AsyncSeq<uint8 list>) =
+        async {
+            let counts = Array.zeroCreate<uint64> 256
+            for values in input do
+                for value in values do
+                    counts[int value] <- counts[int value] + 1UL
+            return Histogram.ofMap (toMap counts)
+        }
+
+    Stage.reduce "histogramDense" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
+
+let private zeroNumberStats<'T when 'T: comparison> =
+    { Count = 0UL
+      Mean = 0.0
+      Variance = 0.0
+      Minimum = Unchecked.defaultof<'T>
+      Maximum = Unchecked.defaultof<'T> }
+
+let private addNumberToStats (count, mean, m2, minimum: 'T option, maximum: 'T option) (value: 'T) =
+    let count' = count + 1UL
+    let x = Convert.ToDouble value
+    let delta = x - mean
+    let mean' = mean + delta / float count'
+    let delta2 = x - mean'
+    let minimum' =
+        match minimum with
+        | Some current -> min current value
+        | None -> value
+    let maximum' =
+        match maximum with
+        | Some current -> max current value
+        | None -> value
+    count', mean', m2 + delta * delta2, Some minimum', Some maximum'
+
+let stats<'T when 'T: comparison> () : Stage<'T list, NumberStats<'T>> =
+    let reducer (_debug: bool) (input: AsyncSeq<'T list>) =
+        async {
+            let! count, mean, m2, minimum, maximum =
+                input
+                |> AsyncSeq.fold
+                    (fun state values -> values |> List.fold addNumberToStats state)
+                    (0UL, 0.0, 0.0, None, None)
+
+            if count = 0UL then
+                return zeroNumberStats<'T>
+            else
+                return
+                    { Count = count
+                      Mean = mean
+                      Variance = if count > 1UL then m2 / float (count - 1UL) else 0.0
+                      Minimum = minimum.Value
+                      Maximum = maximum.Value }
+        }
+
+    Stage.reduce "stats" reducer Streaming (fun _ -> 0UL) (fun _ -> 1UL)
 
 module Chunk =
     let create<'T when 'T: equality> = ChunkPrimitive.create<'T>

@@ -21,6 +21,7 @@ type HistogramBinning = StackCore.HistogramBinning
 type Histogram<'T when 'T: comparison> = StackCore.Histogram<'T>
 type HistogramEstimate<'T when 'T: comparison> = ChunkFunctions.HistogramEstimate<'T>
 type ImageStats = StackCore.ImageStats
+type NumberStats<'T when 'T: comparison> = StackCore.NumberStats<'T>
 type Point2D = StackCore.Point2D
 type Polygon2D = StackCore.Polygon2D
 module Chunk = StackCore.Chunk
@@ -314,8 +315,21 @@ let imageHistogramLeftEdges<'T when 'T: equality and 'T: (new: unit -> 'T) and '
     ChunkFunctions.histogramLeftEdgesReducer<'T> leftEdges
 let imageHistogramFixedBins<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> firstLeftEdge lastLeftEdge bins =
     ChunkFunctions.histogramFixedBinsReducer<'T> firstLeftEdge lastLeftEdge bins
-let histogramEstimate<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> maxSlices input suffix method confidence targetError =
-    StackIO.histogramEstimate<'T> maxSlices input suffix method confidence targetError
+let histogramEstimate<'T when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    maxSlices
+    input
+    suffix
+    (method: string option)
+    (confidence: float option)
+    (targetError: float option)
+    =
+    StackIO.histogramEstimate<'T>
+        maxSlices
+        input
+        suffix
+        (method |> Option.defaultValue "DKWAndHoldout")
+        (confidence |> Option.defaultValue 0.95)
+        (targetError |> Option.defaultValue 0.02)
 let histogramEstimateMap = ChunkFunctions.histogramEstimateMap
 let histogramEqualization<'T, 'H when 'T: equality and 'T: comparison and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (histogram: 'H) =
     ChunkFunctions.histogramEqualization<'T> (box histogram)
@@ -387,6 +401,89 @@ let momentsThresholdFromHistogram (histogram: Histogram<'T>) : float =
 
                     threshold
 
+let private momentsThresholdFromHistogramLike name input =
+    let value = box input
+    let histogram =
+        match value.GetType().GetProperty("Histogram") with
+        | null -> value
+        | property -> property.GetValue value
+
+    let countsProperty = histogram.GetType().GetProperty("Counts")
+    if isNull countsProperty then
+        invalidArg "input" $"{name} expects a Histogram or HistogramEstimate, got {value.GetType().Name}."
+
+    let counts = countsProperty.GetValue histogram :?> System.Collections.IEnumerable
+    let ordered =
+        counts
+        |> Seq.cast<obj>
+        |> Seq.map (fun entry ->
+            let entryType = entry.GetType()
+            let key = entryType.GetProperty("Key").GetValue entry
+            let count = entryType.GetProperty("Value").GetValue entry :?> uint64
+            Convert.ToDouble key, count)
+        |> Seq.sortBy fst
+        |> Seq.toArray
+
+    match ordered with
+    | [||] -> invalidArg "input" $"Cannot estimate a moments threshold from an empty histogram."
+    | [| value, _ |] -> value
+    | _ ->
+        let totalCount = ordered |> Array.sumBy (snd >> float)
+        let moment power =
+            ordered
+            |> Array.sumBy (fun (value, count) -> (value ** power) * float count)
+            |> fun value -> value / totalCount
+
+        let m0 = 1.0
+        let m1 = moment 1.0
+        let m2 = moment 2.0
+        let m3 = moment 3.0
+        let cd = m0 * m2 - m1 * m1
+
+        if abs cd < 1e-12 then
+            m1
+        else
+            let c0 = (-m2 * m2 + m1 * m3) / cd
+            let c1 = (-m3 + m2 * m1) / cd
+            let discriminant = c1 * c1 - 4.0 * c0
+
+            if discriminant < 0.0 then
+                m1
+            else
+                let root = sqrt discriminant
+                let z0 = 0.5 * (-c1 - root)
+                let z1 = 0.5 * (-c1 + root)
+                let denominator = z1 - z0
+
+                if abs denominator < 1e-12 then
+                    m1
+                else
+                    let target = ((z1 - m1) / denominator |> max 0.0 |> min 1.0) * totalCount
+                    let mutable cumulative = 0.0
+                    let mutable threshold = fst ordered[ordered.Length - 1]
+                    let mutable found = false
+
+                    for index in 0 .. ordered.Length - 1 do
+                        let value, count = ordered[index]
+                        if not found then
+                            cumulative <- cumulative + float count
+                            if cumulative >= target then
+                                threshold <-
+                                    if index < ordered.Length - 1 then
+                                        0.5 * (value + fst ordered[index + 1])
+                                    else
+                                        value
+                                found <- true
+
+                    threshold
+
+let momentsThreshold () : Stage<'H, float> =
+    SlimPipeline.Stage.liftUnary
+        "momentsThreshold"
+        (momentsThresholdFromHistogramLike "momentsThreshold")
+        id
+        id
+
 let histogram2pairs<'T when 'T: comparison> : Stage<Histogram<'T>, ('T * uint64) list> =
     SlimPipeline.Stage.liftUnary "histogram2pairs" (fun histogram -> histogram.Counts |> Map.toList) id id
 
@@ -418,23 +515,13 @@ let plotHistogram () : Stage<Histogram<'T>, unit> =
         (fun _debug _index histogram -> showHistogram histogram)
         (fun _ -> 0UL)
 
-let otsuThresholdFromHistogram (histogram: Histogram<'T>) : float =
-    let ordered =
-        histogram.Counts
-        |> Map.toList
-        |> List.choose (fun (value, count) ->
-            if count = 0UL then
-                None
-            else
-                Some(Convert.ToDouble value, count))
-        |> List.sortBy fst
-
+let private otsuThresholdFromOrdered (ordered: (float * uint64) array) : float =
     match ordered with
-    | [] -> invalidArg "histogram" "Cannot estimate an Otsu threshold from an empty histogram."
-    | [ value, _ ] -> value
+    | [||] -> invalidArg "input" "Cannot estimate an Otsu threshold from an empty histogram."
+    | [| value, _ |] -> value
     | _ ->
-        let totalCount = ordered |> List.sumBy (snd >> float)
-        let totalMean = ordered |> List.sumBy (fun (value, count) -> value * float count)
+        let totalCount = ordered |> Array.sumBy (snd >> float)
+        let totalMean = ordered |> Array.sumBy (fun (value, count) -> value * float count)
         let mutable bestThreshold = fst ordered[0]
         let mutable bestVariance = Double.NegativeInfinity
         let mutable backgroundWeight = 0.0
@@ -457,7 +544,44 @@ let otsuThresholdFromHistogram (histogram: Histogram<'T>) : float =
 
         bestThreshold
 
+let private otsuThresholdFromInput name input =
+    let value = box input
+    let histogram =
+        match value.GetType().GetProperty("Histogram") with
+        | null -> value
+        | property -> property.GetValue value
+
+    let countsProperty = histogram.GetType().GetProperty("Counts")
+    if isNull countsProperty then
+        invalidArg "input" $"{name} expects a Histogram or HistogramEstimate, got {value.GetType().Name}."
+
+    let counts = countsProperty.GetValue histogram :?> System.Collections.IEnumerable
+    let ordered =
+        counts
+        |> Seq.cast<obj>
+        |> Seq.choose (fun entry ->
+            let entryType = entry.GetType()
+            let key = entryType.GetProperty("Key").GetValue entry
+            let count = entryType.GetProperty("Value").GetValue entry :?> uint64
+            if count = 0UL then
+                None
+            else
+                Some(Convert.ToDouble key, count))
+        |> Seq.sortBy fst
+        |> Seq.toArray
+
+    otsuThresholdFromOrdered ordered
+
+let otsuThreshold () : Stage<'H, float> =
+    SlimPipeline.Stage.liftUnary
+        "otsuThreshold"
+        (otsuThresholdFromInput "otsuThreshold")
+        id
+        id
+
 let finiteDiffKernel1D = ChunkFunctions.finiteDiffKernel1D
+let threshold<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (threshold: double) =
+    ChunkFunctions.threshold<'T> threshold
 let thresholdRange<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (lower: double) (upper: double) =
     ChunkFunctions.thresholdRange<'T> lower upper
 let thresholdZarrChunksUInt8 = ChunkFunctions.thresholdLocatedNativeUInt8
@@ -728,8 +852,6 @@ type ObjectConnectivity = StackObjects.ObjectConnectivity
 type ObjectBounds = StackObjects.ObjectBounds
 type StreamedObject = StackObjects.StreamedObject
 type ObjectStream<'T> = StackObjects.ObjectStream<'T>
-type ObjectMeasurements = StackObjects.ObjectMeasurements
-type ObjectSizeStats = StackObjects.ObjectSizeStats
 let streamConnectedObjects<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> connectivity =
     StackObjects.streamConnectedObjectsChunk<'T> connectivity
 let objectSource = StackObjects.objectSource
@@ -737,10 +859,10 @@ let readObjects<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct an
 let paintObjects = StackObjects.paintObjectsChunk
 let paintObjectsCropped<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> = StackObjects.paintObjectsCroppedChunk<'T>
 let writeObjects<'T> = StackObjects.writeObjects<'T>
-let measureObjects<'T> = StackObjects.measureObjects<'T>
-let objectSizes = StackObjects.objectSizes
-let objectSizeStats = StackObjects.objectSizeStats
-let histogram = StackObjects.histogram
+let objectSizes<'T> = StackObjects.objectSizes<'T>
+let histogram<'T when 'T: equality and 'T: comparison> = StackCore.histogram<'T>
+let histogramDense = StackCore.histogramDense
+let stats<'T when 'T: comparison> = StackCore.stats<'T>
 let removeSmallObjects = StackObjects.removeSmallObjectsChunk
 let fillSmallHoles = StackObjects.fillSmallHolesChunk
 

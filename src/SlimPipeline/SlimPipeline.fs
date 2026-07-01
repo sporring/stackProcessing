@@ -870,7 +870,10 @@ module SliceCardinality =
         | UnknownCardinality, _
         | _, UnknownCardinality -> UnknownCardinality
         | _, ReduceTo count -> ReduceTo count
-        | ReduceTo _, Domain domain -> Domain domain
+        | ReduceTo count, Domain domain ->
+            match SliceDomain.length count domain with
+            | Some outputCount -> ReduceTo outputCount
+            | None -> UnknownCardinality
         | Domain leftDomain, Domain rightDomain -> Domain(SliceDomain.compose leftDomain rightDomain)
 
     let length inputLength cardinality =
@@ -1495,10 +1498,15 @@ module Stage =
 
     let compose (stage1 : Stage<'S,'T>) (stage2 : Stage<'T,'U>) : Stage<'S,'U> =
         let build () = Pipe.compose (stage1.Build ()) (stage2.Build ())
-        let transition = ProfileTransition.create stage1.Transition.From stage2.Transition.To
         let costModel = StageCostModel.combine (Custom $"{stage2.Name} o {stage1.Name}") stage1.CostModel stage2.CostModel
         let elementTransformation = stage1.ElementTransformation >> stage2.ElementTransformation
         let sliceCardinality = SliceCardinality.compose stage1.SliceCardinality stage2.SliceCardinality
+        let outputProfile =
+            match stage2.Transition.To, sliceCardinality with
+            | Unit, _ -> Unit
+            | _, ReduceTo _ -> Constant
+            | _ -> stage2.Transition.To
+        let transition = ProfileTransition.create stage1.Transition.From outputProfile
         createWrappedWithCostModelAndSlice $"{stage2.Name} o {stage1.Name}" build transition costModel elementTransformation sliceCardinality (stage2.Cleaning@stage1.Cleaning)
         |> withGraph (PipelineGraph.compose stage1.Graph stage2.Graph)
 

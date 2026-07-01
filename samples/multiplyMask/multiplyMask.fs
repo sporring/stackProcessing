@@ -20,10 +20,9 @@ let main arg =
         src
         |> read<uint8> mask ".tiff"
 
+    // Demonstrate the merging of two sources.
     (imageMaker, maskMaker) ||> zip
-    >=> tap "[tab] For mul2"
     >=> mulPair
-    >=> tap "[tab] For write"
     >=> write output ".tiff"
     |> sink
 

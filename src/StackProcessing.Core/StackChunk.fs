@@ -2113,6 +2113,20 @@ let thresholdBinary (threshold: uint8) : Stage<Chunk<uint8>, Chunk<uint8>> =
 let private thresholdNativeChunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (threshold: double) (chunk: Chunk<'T>) =
     ChunkKernel.thresholdNativeChunk threshold chunk
 
+let private thresholdToUInt8Chunk<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType> (threshold: double) (chunk: Chunk<'T>) =
+    ChunkKernel.thresholdToUInt8Chunk threshold chunk
+
+let threshold<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
+    (threshold: double)
+    : Stage<Chunk<'T>, Chunk<uint8>> =
+    let mapper _debug chunk =
+        try
+            thresholdToUInt8Chunk threshold chunk |> Chunk.withSameIndex chunk
+        finally
+            Chunk.decRef chunk
+
+    Stage.map $"chunkThreshold.{typeof<'T>.Name}.{threshold}" mapper id id
+
 let thresholdNative<'T when 'T: equality and 'T: (new: unit -> 'T) and 'T: struct and 'T :> ValueType>
     (threshold: double)
     : Stage<Chunk<'T>, Chunk<'T>> =

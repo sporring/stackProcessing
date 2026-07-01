@@ -69,13 +69,8 @@
           "useInput": false
         },
         {
-          "key": "lower",
+          "key": "threshold",
           "value": "128.0",
-          "useInput": false
-        },
-        {
-          "key": "upper",
-          "value": "infinity",
           "useInput": false
         }
       ]

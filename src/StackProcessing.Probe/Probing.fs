@@ -2206,13 +2206,13 @@ let private bottomUpGraphTemplates config =
                  thresholdNode "UInt8" "128.0"
                  "components", "ConnectedComponents", [ "windowSize", "3" ] ]
            ignoreTemplate
-               $"bottomup-124-objectSizeStats-uint8-ignore-{sizeSuffix}"
-               "UInt8 threshold streamed as objects and reduced to object-size statistics."
+               $"bottomup-124-objectSizesStats-uint8-ignore-{sizeSuffix}"
+               "UInt8 threshold streamed as objects, projected to sizes, and reduced to size statistics."
                [ readUInt8
                  thresholdNode "UInt8" "128.0"
                  "objects", "StreamConnectedObjects", [ "connectivity", "Six" ]
-                 "measure", "MeasureObjects", []
-                 "sizes", "ObjectSizeStats", [] ] |]
+                 "sizes", "ObjectSizes", []
+                 "stats", "Stats", [] ] |]
 
     [| "00-empty", emptyLayer
        "01-starters", sourceLayer

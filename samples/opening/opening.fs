@@ -12,9 +12,11 @@ let main args =
         | [| input |] -> input, "../tmp/opening"
         | _ -> "../data/rotatingBoxes", "../tmp/opening"
 
+    // Binary opening removes small foreground details from a UInt8 mask.
     src
     |> read<uint8> input ".tiff"
     >=> binaryOpening 2u
+    >=> intensityStretch 0.0 1.0 0.0 255.0
     >=> write output ".tiff"
     |> sink
 

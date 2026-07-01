@@ -13,19 +13,17 @@ let main arg =
         else
             "../data/volume","../tmp/normalize"
 
-    let Float640 = 255.0
-    let ImageStats0 =
+    // A pipeline implementation of imageStretch.
+    let stat =
         src
-        |> readRandom<float32> 20u input ".tiff"
+        |> readRandom<float32> 12u input ".tiff"
         >=> computeStats ()
         |> drain
-    let Float641 = (ImageStats0.Max - ImageStats0.Min)
-    let Float642 = (Float640 / Float641)
 
     src
     |> read<float32> input ".tiff"
-    >=> subScalar ImageStats0.Min
-    >=> mulScalar Float642
+    >=> subScalar stat.Min
+    >=> mulScalar (255.0 / (stat.Max - stat.Min))
     >=> cast<_, uint8>
     >=> write output ".tiff"
     |> sink
